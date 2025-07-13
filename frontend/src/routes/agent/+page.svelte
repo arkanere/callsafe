@@ -20,6 +20,14 @@
   let currentCallStartTime: number | null = null;
   let callDuration = 0;
   let durationInterval: number;
+  let socketConnected = false;
+  
+  // Reactive statement to update connection status
+  $: {
+    if (socket) {
+      socketConnected = socket.getConnectionStatus();
+    }
+  }
 
   onMount(() => {
     webrtc = new WebRTCManager(false);
@@ -46,8 +54,12 @@
   async function connectToServer() {
     try {
       connectionStatus = 'Connecting to server...';
+      console.log('Attempting to connect to server...');
       await socket.connect();
       connectionStatus = 'Connected';
+      socketConnected = socket.getConnectionStatus(); // Force reactive update
+      console.log('Successfully connected to server');
+      console.log('Socket connection status:', socket.getConnectionStatus());
       
       // Initialize media for agent
       await webrtc.initializeMedia({ audio: true, video: false });
@@ -56,6 +68,7 @@
       connectionStatus = 'Connection failed';
       errorMessage = 'Failed to connect to server. Please refresh and try again.';
       console.error('Failed to connect:', error);
+      console.error('Error details:', error.message, error.stack);
     }
   }
 
@@ -252,7 +265,7 @@
         <div class="flex items-center space-x-4">
           <!-- Connection Status -->
           <div class="flex items-center">
-            <div class="w-3 h-3 rounded-full mr-2 {socket?.getConnectionStatus() ? 'bg-green-500' : 'bg-red-500'}"></div>
+            <div class="w-3 h-3 rounded-full mr-2 {socketConnected ? 'bg-green-500' : 'bg-red-500'}"></div>
             <span class="text-sm font-medium {getStatusColor(connectionStatus)}">
               {connectionStatus}
             </span>
@@ -261,7 +274,7 @@
           <!-- Online Toggle -->
           <button
             on:click={toggleOnlineStatus}
-            disabled={!socket?.getConnectionStatus()}
+            disabled={!socketConnected}
             class="px-6 py-2 rounded-lg font-semibold transition-colors duration-200 {
               isOnline 
                 ? 'bg-green-600 hover:bg-green-700 text-white' 
