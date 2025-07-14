@@ -39,6 +39,11 @@ export class WebRTCManager {
     const turnUsername = import.meta.env.VITE_TURN_USERNAME;
     const turnCredential = import.meta.env.VITE_TURN_CREDENTIAL;
     
+    // Debug environment variables
+    console.log('TURN URL:', turnServerUrl);
+    console.log('TURN User:', turnUsername);
+    console.log('TURN Credential:', turnCredential ? '***' : 'undefined');
+    
     if (turnServerUrl && turnUsername && turnCredential) {
       iceServers.push({
         urls: turnServerUrl,
