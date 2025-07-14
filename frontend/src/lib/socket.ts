@@ -17,22 +17,30 @@ export class SocketManager {
   }
 
   connect(): Promise<void> {
+    console.log('=== SOCKET CONNECT ===');
+    console.log('Server URL:', this.serverUrl);
+    console.log('Browser environment:', browser);
+    
     if (!browser) {
+      console.error('❌ Socket.io not available on server');
       return Promise.reject(new Error('Socket.io not available on server'));
     }
 
     return new Promise((resolve, reject) => {
       try {
+        console.log('🔌 Creating socket connection...');
         this.socket = io(this.serverUrl, {
           autoConnect: true,
           reconnection: false, // We'll handle reconnection manually
           timeout: 10000,
           transports: ['websocket', 'polling']
         });
+        console.log('✅ Socket instance created');
 
         this.setupEventHandlers();
 
         this.socket.on('connect', () => {
+          console.log('🎉 Socket connected successfully!');
           this.isConnected = true;
           this.reconnectAttempts = 0;
           this.reconnectDelay = 1000; // Reset delay
@@ -164,49 +172,62 @@ export class SocketManager {
 
   // Customer methods
   connectAsCustomer(): void {
+    console.log('📤 Emitting customer_connect');
     this.emit('customer_connect');
   }
 
   endCall(): void {
+    console.log('📤 Emitting call_ended');
     this.emit('call_ended');
   }
 
   // Agent methods
   goOnline(): void {
+    console.log('📤 Emitting agent_online');
     this.emit('agent_online');
   }
 
   goOffline(): void {
+    console.log('📤 Emitting agent_offline');
     this.emit('agent_offline');
   }
 
   acceptCall(callId: string): void {
+    console.log('📤 Emitting accept_call for:', callId);
     this.emit('accept_call', callId);
   }
 
   declineCall(callId: string): void {
+    console.log('📤 Emitting decline_call for:', callId);
     this.emit('decline_call', callId);
   }
 
   // WebRTC signaling methods
   sendOffer(callId: string, offer: RTCSessionDescriptionInit): void {
+    console.log('📤 Emitting offer for:', callId, offer);
     this.emit('offer', { callId, offer });
   }
 
   sendAnswer(callId: string, answer: RTCSessionDescriptionInit): void {
+    console.log('📤 Emitting answer for:', callId, answer);
     this.emit('answer', { callId, answer });
   }
 
   sendIceCandidate(callId: string, candidate: RTCIceCandidateInit): void {
+    console.log('📤 Emitting ice_candidate for:', callId, candidate);
     this.emit('ice_candidate', { callId, candidate });
   }
 
   // Generic emit method
   private emit(event: string, data?: any): void {
+    console.log('🔥 Attempting to emit:', event, 'with data:', data);
+    console.log('Socket exists:', !!this.socket, 'Connected:', this.isConnected);
+    
     if (this.socket && this.isConnected) {
       this.socket.emit(event, data);
+      console.log('✅ Event emitted successfully');
     } else {
-      console.warn(`Cannot emit ${event}: socket not connected`);
+      console.warn(`❌ Cannot emit ${event}: socket not connected`);
     }
   }
 

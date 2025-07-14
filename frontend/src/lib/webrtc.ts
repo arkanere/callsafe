@@ -25,21 +25,30 @@ export class WebRTCManager {
   }
 
   private getIceServers(): RTCIceServer[] {
+    console.log('=== GET ICE SERVERS ===');
     const iceServers: RTCIceServer[] = [];
     
     // STUN servers from environment variables
     const stunServer1 = import.meta.env.VITE_STUN_SERVER_1;
     const stunServer2 = import.meta.env.VITE_STUN_SERVER_2;
     
-    if (stunServer1) iceServers.push({ urls: stunServer1 });
-    if (stunServer2) iceServers.push({ urls: stunServer2 });
+    console.log('STUN Server 1:', stunServer1);
+    console.log('STUN Server 2:', stunServer2);
+    
+    if (stunServer1) {
+      iceServers.push({ urls: stunServer1 });
+      console.log('Added STUN server 1');
+    }
+    if (stunServer2) {
+      iceServers.push({ urls: stunServer2 });
+      console.log('Added STUN server 2');
+    }
     
     // TURN server from environment variables
     const turnServerUrl = import.meta.env.VITE_TURN_SERVER_URL;
     const turnUsername = import.meta.env.VITE_TURN_USERNAME;
     const turnCredential = import.meta.env.VITE_TURN_CREDENTIAL;
     
-    // Debug environment variables
     console.log('TURN URL:', turnServerUrl);
     console.log('TURN User:', turnUsername);
     console.log('TURN Credential:', turnCredential ? '***' : 'undefined');
@@ -50,6 +59,9 @@ export class WebRTCManager {
         username: turnUsername,
         credential: turnCredential
       });
+      console.log('Added TURN server');
+    } else {
+      console.log('TURN server not configured - missing credentials');
     }
     
     // Fallback STUN servers
@@ -64,21 +76,25 @@ export class WebRTCManager {
   }
 
   private createPeerConnection(): RTCPeerConnection {
-    // Debug environment variables
-    console.log('TURN URL:', import.meta.env.VITE_TURN_SERVER_URL);
-    console.log('TURN User:', import.meta.env.VITE_TURN_USERNAME);
-    console.log('TURN Credential:', import.meta.env.VITE_TURN_CREDENTIAL ? '***' : 'undefined');
+    console.log('=== CREATE PEER CONNECTION ===');
+    console.log('Getting ICE servers...');
+    
+    const iceServers = this.getIceServers();
+    console.log('ICE Servers:', iceServers);
     
     const config: RTCConfiguration = {
-      iceServers: this.getIceServers(),
+      iceServers: iceServers,
       iceCandidatePoolSize: 10
     };
 
     console.log('WebRTC Config:', config);
     const pc = new RTCPeerConnection(config);
+    console.log('Peer connection created successfully');
     
     pc.onicecandidate = (event) => {
+      console.log('ICE candidate event:', event.candidate);
       if (event.candidate && this.onIceCandidate) {
+        console.log('Sending ICE candidate:', event.candidate);
         this.onIceCandidate(event.candidate);
       }
     };
@@ -91,10 +107,12 @@ export class WebRTCManager {
     };
     
     pc.onconnectionstatechange = () => {
+      console.log('Connection state change:', pc.connectionState);
       this.handleConnectionStateChange(pc.connectionState);
     };
     
     pc.oniceconnectionstatechange = () => {
+      console.log('ICE connection state change:', pc.iceConnectionState);
       this.handleIceConnectionStateChange(pc.iceConnectionState);
     };
     
@@ -102,30 +120,48 @@ export class WebRTCManager {
   }
 
   private handleConnectionStateChange(state: RTCPeerConnectionState) {
+    console.log('=== CONNECTION STATE CHANGE ===');
+    console.log('New state:', state);
+    
     switch (state) {
       case 'connected':
+        console.log('WebRTC connection established!');
         this.updateCallState({ status: 'connected' });
         break;
       case 'disconnected':
       case 'failed':
+        console.log('WebRTC connection failed:', state);
         this.updateCallState({ status: 'failed', error: `Connection ${state}` });
         break;
+      default:
+        console.log('WebRTC connection state:', state);
     }
   }
 
   private handleIceConnectionStateChange(state: RTCIceConnectionState) {
+    console.log('=== ICE CONNECTION STATE CHANGE ===');
+    console.log('New ICE state:', state);
+    
     switch (state) {
       case 'connected':
       case 'completed':
+        console.log('ICE connection established!');
         this.callMetrics.quality = { level: 'good' };
         break;
       case 'disconnected':
+        console.log('ICE connection disconnected');
         this.callMetrics.quality = { level: 'poor' };
         break;
       case 'failed':
+        console.log('ICE connection failed!');
         this.callMetrics.quality = { level: 'failed' };
         this.updateCallState({ status: 'failed', error: 'ICE connection failed' });
         break;
+      case 'checking':
+        console.log('ICE connection checking...');
+        break;
+      default:
+        console.log('ICE connection state:', state);
     }
   }
 
@@ -150,7 +186,15 @@ export class WebRTCManager {
   }
 
   async createOffer(callId: string): Promise<RTCSessionDescriptionInit> {
+    console.log('=== CREATING OFFER START ===');
+    console.log('Call ID:', callId);
+    console.log('Local stream exists:', !!this.localStream);
+    console.log('TURN URL:', import.meta.env.VITE_TURN_SERVER_URL);
+    console.log('TURN User:', import.meta.env.VITE_TURN_USERNAME);
+    console.log('TURN Credential:', import.meta.env.VITE_TURN_CREDENTIAL ? '***' : 'undefined');
+    
     if (!this.localStream) {
+      console.error('ERROR: Local stream not initialized');
       throw new Error('Local stream not initialized');
     }
 
@@ -158,6 +202,7 @@ export class WebRTCManager {
     this.updateCallState({ status: 'connecting' });
     this.callMetrics.connectionAttempts++;
 
+    console.log('Creating peer connection...');
     this.peerConnection = this.createPeerConnection();
     
     // Add local stream to peer connection

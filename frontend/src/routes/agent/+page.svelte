@@ -102,11 +102,15 @@
   }
 
   function setupSocketHandlers() {
+    console.log('=== SETTING UP SOCKET HANDLERS (Agent) ===');
+    
     socket.on('new_incoming_call', (data) => {
+      console.log('📞 New incoming call received:', data);
       const call = {
         callId: data.callId,
         timestamp: Date.now()
       };
+      console.log('📝 Created call object:', call);
       incomingCalls = [...incomingCalls, call];
       
       // Auto-remove call after 30 seconds if not answered
@@ -116,31 +120,41 @@
     });
 
     socket.on('call_routed', async (data) => {
+      console.log('🔄 Call routed to agent:', data);
       callState = { ...callState, callId: data.callId, status: 'connecting' };
       connectionMonitor.startConnectionAttempt();
+      console.log('✅ Agent call state updated to connecting');
     });
 
     socket.on('offer', async (data) => {
+      console.log('📥 Received offer from customer:', data);
       try {
         if (callState.callId === data.callId) {
+          console.log('✅ Call ID matches, creating answer...');
           const answer = await webrtc.createAnswer(data.callId, data.offer);
+          console.log('📤 Sending answer to customer:', answer);
           socket.sendAnswer(data.callId, answer);
+        } else {
+          console.log('❌ Call ID mismatch - expected:', callState.callId, 'received:', data.callId);
         }
       } catch (error) {
+        console.error('❌ Failed to create answer:', error);
         errorMessage = 'Failed to answer call';
-        console.error('Failed to create answer:', error);
       }
     });
 
     socket.on('ice_candidate', async (data) => {
+      console.log('🧊 Received ICE candidate (agent):', data);
       try {
         await webrtc.addIceCandidate(data.candidate);
+        console.log('✅ ICE candidate added successfully (agent)');
       } catch (error) {
-        console.error('Failed to add ICE candidate:', error);
+        console.error('❌ Failed to add ICE candidate (agent):', error);
       }
     });
 
     socket.on('call_ended', () => {
+      console.log('📞 Call ended by customer');
       endCall();
     });
 
@@ -183,11 +197,24 @@
   }
 
   function acceptCall(callId: string) {
-    if (!isOnline) return;
+    console.log('=== ACCEPT CALL CLICKED ===');
+    console.log('Call ID:', callId);
+    console.log('Agent online status:', isOnline);
     
+    if (!isOnline) {
+      console.log('❌ Agent not online, cannot accept call');
+      return;
+    }
+    
+    console.log('✅ Accepting call...');
     socket.acceptCall(callId);
+    console.log('📤 Accept call message sent to server');
+    
     incomingCalls = incomingCalls.filter(call => call.callId !== callId);
+    console.log('🗑️ Removed call from incoming calls list');
+    
     callState = { ...callState, callId, status: 'connecting' };
+    console.log('📞 Agent call state updated:', callState);
   }
 
   function declineCall(callId: string) {

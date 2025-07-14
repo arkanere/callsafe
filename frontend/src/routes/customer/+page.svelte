@@ -60,33 +60,46 @@
   }
 
   function setupSocketHandlers() {
+    console.log('=== SETTING UP SOCKET HANDLERS (Customer) ===');
+    
     socket.on('call_accepted', async (data) => {
+      console.log('🎉 Call accepted by agent:', data);
       connectionStatus = 'Call accepted, connecting...';
       
       try {
-        if (!callState.callId) return;
+        if (!callState.callId) {
+          console.error('❌ No call ID available');
+          return;
+        }
         
+        console.log('📞 Creating WebRTC offer for call:', callState.callId);
         const offer = await webrtc.createOffer(callState.callId);
+        console.log('📤 Sending offer to agent:', offer);
         socket.sendOffer(callState.callId, offer);
       } catch (error) {
+        console.error('❌ Failed to create offer:', error);
         errorMessage = 'Failed to create call offer';
-        console.error('Failed to create offer:', error);
       }
     });
 
     socket.on('answer', async (data) => {
+      console.log('📥 Received answer from agent:', data);
       try {
         await webrtc.setRemoteAnswer(data.answer);
+        console.log('✅ Remote answer set successfully');
       } catch (error) {
+        console.error('❌ Failed to set remote answer:', error);
         errorMessage = 'Failed to connect to agent';
-        console.error('Failed to set remote answer:', error);
       }
     });
 
     socket.on('ice_candidate', async (data) => {
+      console.log('🧊 Received ICE candidate:', data);
       try {
         await webrtc.addIceCandidate(data.candidate);
+        console.log('✅ ICE candidate added successfully');
       } catch (error) {
+        console.error('❌ Failed to add ICE candidate:', error);
         console.error('Failed to add ICE candidate:', error);
       }
     });
@@ -125,27 +138,41 @@
   }
 
   async function startCall() {
-    if (isConnecting || callState.status === 'connecting') return;
+    console.log('=== START CALL CLICKED ===');
+    console.log('Current state - isConnecting:', isConnecting, 'callState.status:', callState.status);
     
+    if (isConnecting || callState.status === 'connecting') {
+      console.log('❌ Call already in progress, ignoring click');
+      return;
+    }
+    
+    console.log('🚀 Starting call process...');
     isConnecting = true;
     errorMessage = '';
     connectionStatus = 'Connecting to service...';
     connectionMonitor.startConnectionAttempt();
 
     try {
+      console.log('🎤 Requesting microphone permission...');
       // Request microphone permission and initialize media
       connectionStatus = 'Requesting microphone access...';
       await webrtc.initializeMedia({ audio: true, video: false });
+      console.log('✅ Microphone access granted');
       
       // Connect to signaling server
+      console.log('🔗 Connecting to signaling server...');
       connectionStatus = 'Connecting to signaling server...';
       await socket.connect();
+      console.log('✅ Connected to signaling server');
       
       // Register as customer
+      console.log('👤 Registering as customer...');
       connectionStatus = 'Looking for available agent...';
       socket.connectAsCustomer();
+      console.log('✅ Customer registration sent');
       
       callState = { ...callState, status: 'connecting' };
+      console.log('📞 Call state updated to connecting');
       
     } catch (error) {
       isConnecting = false;
