@@ -67,8 +67,12 @@
       connectionStatus = 'Call accepted, connecting...';
       
       try {
-        if (!callState.callId) {
-          console.error('❌ No call ID available');
+        // Set the call ID from the server response
+        if (data.callId) {
+          callState = { ...callState, callId: data.callId };
+          console.log('✅ Call ID set from server:', data.callId);
+        } else {
+          console.error('❌ No call ID in server response');
           return;
         }
         
