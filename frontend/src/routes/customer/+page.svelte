@@ -36,13 +36,20 @@
 
   function setupWebRTCHandlers() {
     webrtc.setStateChangeHandler((state) => {
+      const previousStatus = callState.status;
       callState = state;
       
       if (state.status === 'connected') {
         connectionMonitor.recordConnectionSuccess();
+        // Clear any connection messages when successfully connected
+        connectionStatus = '';
       } else if (state.status === 'failed') {
         connectionMonitor.recordConnectionFailure(state.error || 'Unknown error');
         errorMessage = state.error || 'Call failed';
+      } else if (state.status === 'connecting' && previousStatus === 'connected') {
+        // Show reconnecting message without failing the call
+        connectionStatus = 'Reconnecting...';
+        console.log('🔄 Connection temporarily lost, attempting to reconnect...');
       }
     });
 
@@ -367,7 +374,13 @@
     </div>
 
     <!-- Hidden audio element for remote stream -->
-    <audio bind:this={remoteAudio} autoplay hidden></audio>
+    <audio 
+      bind:this={remoteAudio} 
+      autoplay 
+      hidden 
+      playsinline
+      muted={false}
+    ></audio>
 
     <!-- Footer -->
     <div class="mt-8 pt-6 border-t border-gray-200">

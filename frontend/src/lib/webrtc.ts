@@ -84,7 +84,10 @@ export class WebRTCManager {
     
     const config: RTCConfiguration = {
       iceServers: iceServers,
-      iceCandidatePoolSize: 10
+      iceCandidatePoolSize: 10,
+      iceTransportPolicy: 'all',
+      bundlePolicy: 'max-bundle',
+      rtcpMuxPolicy: 'require'
     };
 
     console.log('WebRTC Config:', config);
@@ -104,6 +107,9 @@ export class WebRTCManager {
       if (this.onRemoteStream) {
         this.onRemoteStream(this.remoteStream);
       }
+      
+      // Set audio output to earpiece on mobile
+      this.setMobileAudioOutput();
     };
     
     pc.onconnectionstatechange = () => {
@@ -126,9 +132,22 @@ export class WebRTCManager {
     switch (state) {
       case 'connected':
         console.log('WebRTC connection established!');
-        this.updateCallState({ status: 'connected' });
+        // Only update to connected if we're not already connected (prevent timer reset)
+        if (this.callState.status !== 'connected') {
+          this.updateCallState({ status: 'connected' });
+        }
+        break;
+      case 'connecting':
+        console.log('WebRTC connection attempting...');
+        // Don't reset to connecting if already connected (prevents timer reset)
+        if (this.callState.status === 'idle') {
+          this.updateCallState({ status: 'connecting' });
+        }
         break;
       case 'disconnected':
+        console.log('WebRTC connection disconnected - ICE will handle reconnection');
+        // Let ICE connection state handle reconnection logic
+        break;
       case 'failed':
         console.log('WebRTC connection failed:', state);
         this.updateCallState({ status: 'failed', error: `Connection ${state}` });
@@ -147,10 +166,16 @@ export class WebRTCManager {
       case 'completed':
         console.log('ICE connection established!');
         this.callMetrics.quality = { level: 'good' };
+        // Only update to connected if we're not already connected
+        if (this.callState.status !== 'connected') {
+          this.updateCallState({ status: 'connected' });
+        }
         break;
       case 'disconnected':
-        console.log('ICE connection disconnected');
+        console.log('ICE connection disconnected - attempting reconnection...');
         this.callMetrics.quality = { level: 'poor' };
+        // Don't change status to failed immediately - wait for reconnection
+        this.updateCallState({ status: 'connecting' });
         break;
       case 'failed':
         console.log('ICE connection failed!');
@@ -159,6 +184,7 @@ export class WebRTCManager {
         break;
       case 'checking':
         console.log('ICE connection checking...');
+        // Don't reset timer during normal ICE checking
         break;
       default:
         console.log('ICE connection state:', state);
@@ -253,6 +279,36 @@ export class WebRTCManager {
     }
     
     await this.peerConnection.addIceCandidate(candidate);
+  }
+
+  private setMobileAudioOutput(): void {
+    console.log('🎵 Setting mobile audio output...');
+    
+    // Try to set audio output to earpiece on mobile
+    if (browser && 'setSinkId' in HTMLAudioElement.prototype) {
+      const remoteAudio = document.querySelector('audio[autoplay]') as HTMLAudioElement;
+      if (remoteAudio) {
+        // Try to set to earpiece/phone speaker
+        remoteAudio.setSinkId('communications').then(() => {
+          console.log('✅ Audio output set to earpiece');
+        }).catch((error) => {
+          console.log('⚠️ Could not set audio output:', error);
+        });
+      }
+    }
+    
+    // Also try to set audio context to handle mobile audio routing
+    if (browser && window.AudioContext) {
+      try {
+        const audioContext = new AudioContext();
+        // Request permission for audio on mobile
+        if (audioContext.state === 'suspended') {
+          audioContext.resume();
+        }
+      } catch (error) {
+        console.log('⚠️ Audio context setup failed:', error);
+      }
+    }
   }
 
   toggleMute(): boolean {
