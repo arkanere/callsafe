@@ -64,11 +64,17 @@ export class WebRTCManager {
   }
 
   private createPeerConnection(): RTCPeerConnection {
+    // Debug environment variables
+    console.log('TURN URL:', import.meta.env.VITE_TURN_SERVER_URL);
+    console.log('TURN User:', import.meta.env.VITE_TURN_USERNAME);
+    console.log('TURN Credential:', import.meta.env.VITE_TURN_CREDENTIAL ? '***' : 'undefined');
+    
     const config: RTCConfiguration = {
       iceServers: this.getIceServers(),
       iceCandidatePoolSize: 10
     };
 
+    console.log('WebRTC Config:', config);
     const pc = new RTCPeerConnection(config);
     
     pc.onicecandidate = (event) => {
