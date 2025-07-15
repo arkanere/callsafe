@@ -1,4 +1,84 @@
+<script lang="ts">
+  import { goto } from '$app/navigation';
+  
+  let showLoginModal = false;
+  let email = '';
+  let password = '';
+  let loginError = '';
+  let isLoading = false;
+  
+  const HARDCODED_EMAIL = 'aniruddhakanere7@gmail.com';
+  const HARDCODED_PASSWORD = '***REDACTED***';
+  
+  function openLoginModal() {
+    showLoginModal = true;
+    loginError = '';
+    email = '';
+    password = '';
+  }
+  
+  function closeLoginModal() {
+    showLoginModal = false;
+    loginError = '';
+    email = '';
+    password = '';
+  }
+  
+  async function handleLogin() {
+    if (!email || !password) {
+      loginError = 'Please enter both email and password';
+      return;
+    }
+    
+    isLoading = true;
+    loginError = '';
+    
+    // Simulate loading delay
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    if (email === HARDCODED_EMAIL && password === HARDCODED_PASSWORD) {
+      // Success - redirect to user page
+      closeLoginModal();
+      goto('/user');
+    } else {
+      loginError = 'Invalid email or password';
+    }
+    
+    isLoading = false;
+  }
+  
+  function handleKeydown(event: KeyboardEvent) {
+    if (event.key === 'Enter') {
+      handleLogin();
+    } else if (event.key === 'Escape') {
+      closeLoginModal();
+    }
+  }
+</script>
+
 <div class="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+  <!-- Navigation Bar -->
+  <nav class="bg-white shadow-sm border-b border-gray-200">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex justify-between items-center py-4">
+        <!-- Left side - Logo/Brand -->
+        <div class="flex items-center">
+          <h1 class="text-2xl font-bold text-gray-900">CallSafe</h1>
+        </div>
+        
+        <!-- Right side - Login Button -->
+        <div class="flex items-center">
+          <button
+            on:click={openLoginModal}
+            class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded-lg transition-colors duration-200"
+          >
+            Login
+          </button>
+        </div>
+      </div>
+    </div>
+  </nav>
+
   <!-- Hero Section -->
   <section class="py-20 px-4">
     <div class="max-w-6xl mx-auto text-center">
@@ -212,3 +292,76 @@
     </div>
   </section>
 </div>
+
+<!-- Login Modal -->
+{#if showLoginModal}
+  <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50" on:click={closeLoginModal}>
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8" on:click|stopPropagation>
+      <div class="text-center mb-6">
+        <h2 class="text-2xl font-bold text-gray-900 mb-2">Login to CallSafe</h2>
+        <p class="text-gray-600">Enter your credentials to access your account</p>
+      </div>
+      
+      <form on:submit|preventDefault={handleLogin}>
+        <div class="mb-4">
+          <label for="email" class="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
+          <input
+            type="email"
+            id="email"
+            bind:value={email}
+            on:keydown={handleKeydown}
+            class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            placeholder="Enter your email"
+            required
+          />
+        </div>
+        
+        <div class="mb-6">
+          <label for="password" class="block text-sm font-medium text-gray-700 mb-2">Password</label>
+          <input
+            type="password"
+            id="password"
+            bind:value={password}
+            on:keydown={handleKeydown}
+            class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            placeholder="Enter your password"
+            required
+          />
+        </div>
+        
+        {#if loginError}
+          <div class="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+            <p class="text-sm text-red-700">{loginError}</p>
+          </div>
+        {/if}
+        
+        <div class="flex gap-3">
+          <button
+            type="button"
+            on:click={closeLoginModal}
+            class="flex-1 px-6 py-3 border border-gray-300 text-gray-700 rounded-xl font-semibold hover:bg-gray-50 transition-colors duration-200"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={isLoading}
+            class="flex-1 px-6 py-3 bg-blue-600 text-white rounded-xl font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
+          >
+            {#if isLoading}
+              <div class="flex items-center justify-center">
+                <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Signing in...
+              </div>
+            {:else}
+              Sign In
+            {/if}
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+{/if}
