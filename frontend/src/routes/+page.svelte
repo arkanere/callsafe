@@ -2,29 +2,115 @@
   import { goto } from '$app/navigation';
   
   let showLoginModal = false;
+  let isSignUpMode = false;
   let email = '';
   let password = '';
+  let confirmPassword = '';
+  let fullName = '';
   let loginError = '';
   let isLoading = false;
   
-  const HARDCODED_EMAIL = 'aniruddhakanere7@gmail.com';
-  const HARDCODED_PASSWORD = '***REDACTED***';
+  // User session storage (in real app, this would be handled by session management)
+  let currentUser = null;
   
   function openLoginModal() {
     showLoginModal = true;
-    loginError = '';
-    email = '';
-    password = '';
+    resetForm();
   }
   
   function closeLoginModal() {
     showLoginModal = false;
+    resetForm();
+  }
+  
+  function resetForm() {
+    isSignUpMode = false;
     loginError = '';
     email = '';
     password = '';
+    confirmPassword = '';
+    fullName = '';
+    isLoading = false;
   }
   
-  async function handleLogin() {
+  function toggleMode() {
+    isSignUpMode = !isSignUpMode;
+    loginError = '';
+    password = '';
+    confirmPassword = '';
+    if (!isSignUpMode) {
+      fullName = '';
+    }
+  }
+  
+  function validateEmail(email: string): boolean {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  }
+  
+  function validatePassword(password: string): boolean {
+    return password.length >= 6;
+  }
+  
+  async function handleSignUp() {
+    // Validation
+    if (!fullName.trim()) {
+      loginError = 'Please enter your full name';
+      return;
+    }
+    
+    if (!validateEmail(email)) {
+      loginError = 'Please enter a valid email address';
+      return;
+    }
+    
+    if (!validatePassword(password)) {
+      loginError = 'Password must be at least 6 characters long';
+      return;
+    }
+    
+    if (password !== confirmPassword) {
+      loginError = 'Passwords do not match';
+      return;
+    }
+    
+    isLoading = true;
+    loginError = '';
+    
+    try {
+      const response = await fetch('/api/signup', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: email.trim(),
+          password,
+          name: fullName.trim()
+        })
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        // Store user session
+        currentUser = result.user;
+        
+        // Success - redirect to user page
+        closeLoginModal();
+        goto('/user');
+      } else {
+        loginError = result.error || 'Failed to create account';
+      }
+    } catch (error) {
+      console.error('Signup error:', error);
+      loginError = 'Failed to create account. Please try again.';
+    } finally {
+      isLoading = false;
+    }
+  }
+  
+  async function handleSignIn() {
     if (!email || !password) {
       loginError = 'Please enter both email and password';
       return;
@@ -33,23 +119,49 @@
     isLoading = true;
     loginError = '';
     
-    // Simulate loading delay
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    if (email === HARDCODED_EMAIL && password === HARDCODED_PASSWORD) {
-      // Success - redirect to user page
-      closeLoginModal();
-      goto('/user');
-    } else {
-      loginError = 'Invalid email or password';
+    try {
+      const response = await fetch('/api/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: email.trim(),
+          password
+        })
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        // Store user session
+        currentUser = result.user;
+        
+        // Success - redirect to user page
+        closeLoginModal();
+        goto('/user');
+      } else {
+        loginError = result.error || 'Invalid email or password';
+      }
+    } catch (error) {
+      console.error('Login error:', error);
+      loginError = 'Login failed. Please try again.';
+    } finally {
+      isLoading = false;
     }
-    
-    isLoading = false;
+  }
+  
+  async function handleSubmit() {
+    if (isSignUpMode) {
+      await handleSignUp();
+    } else {
+      await handleSignIn();
+    }
   }
   
   function handleKeydown(event: KeyboardEvent) {
     if (event.key === 'Enter') {
-      handleLogin();
+      handleSubmit();
     } else if (event.key === 'Escape') {
       closeLoginModal();
     }
@@ -293,16 +405,35 @@
   </section>
 </div>
 
-<!-- Login Modal -->
+<!-- Enhanced Login/Signup Modal -->
 {#if showLoginModal}
   <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50" on:click={closeLoginModal}>
     <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8" on:click|stopPropagation>
       <div class="text-center mb-6">
-        <h2 class="text-2xl font-bold text-gray-900 mb-2">Login to CallSafe</h2>
-        <p class="text-gray-600">Enter your credentials to access your account</p>
+        <h2 class="text-2xl font-bold text-gray-900 mb-2">
+          {isSignUpMode ? 'Create Your Account' : 'Login to CallSafe'}
+        </h2>
+        <p class="text-gray-600">
+          {isSignUpMode ? 'Join thousands of businesses increasing their conversions' : 'Enter your credentials to access your account'}
+        </p>
       </div>
       
-      <form on:submit|preventDefault={handleLogin}>
+      <form on:submit|preventDefault={handleSubmit}>
+        {#if isSignUpMode}
+          <div class="mb-4">
+            <label for="fullName" class="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
+            <input
+              type="text"
+              id="fullName"
+              bind:value={fullName}
+              on:keydown={handleKeydown}
+              class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="Enter your full name"
+              required
+            />
+          </div>
+        {/if}
+        
         <div class="mb-4">
           <label for="email" class="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
           <input
@@ -316,7 +447,7 @@
           />
         </div>
         
-        <div class="mb-6">
+        <div class="mb-4">
           <label for="password" class="block text-sm font-medium text-gray-700 mb-2">Password</label>
           <input
             type="password"
@@ -324,10 +455,27 @@
             bind:value={password}
             on:keydown={handleKeydown}
             class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            placeholder="Enter your password"
+            placeholder={isSignUpMode ? 'Create a password (min 6 characters)' : 'Enter your password'}
             required
           />
         </div>
+        
+        {#if isSignUpMode}
+          <div class="mb-6">
+            <label for="confirmPassword" class="block text-sm font-medium text-gray-700 mb-2">Confirm Password</label>
+            <input
+              type="password"
+              id="confirmPassword"
+              bind:value={confirmPassword}
+              on:keydown={handleKeydown}
+              class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="Confirm your password"
+              required
+            />
+          </div>
+        {:else}
+          <div class="mb-6"></div>
+        {/if}
         
         {#if loginError}
           <div class="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
@@ -335,7 +483,7 @@
           </div>
         {/if}
         
-        <div class="flex gap-3">
+        <div class="flex gap-3 mb-4">
           <button
             type="button"
             on:click={closeLoginModal}
@@ -354,12 +502,25 @@
                   <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                   <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
-                Signing in...
+                {isSignUpMode ? 'Creating Account...' : 'Signing In...'}
               </div>
             {:else}
-              Sign In
+              {isSignUpMode ? 'Create Account' : 'Sign In'}
             {/if}
           </button>
+        </div>
+        
+        <div class="text-center">
+          <p class="text-sm text-gray-600">
+            {isSignUpMode ? 'Already have an account?' : "Don't have an account?"}
+            <button
+              type="button"
+              on:click={toggleMode}
+              class="text-blue-600 hover:text-blue-700 font-semibold ml-1"
+            >
+              {isSignUpMode ? 'Sign In' : 'Sign Up'}
+            </button>
+          </p>
         </div>
       </form>
     </div>

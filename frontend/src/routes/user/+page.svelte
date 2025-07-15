@@ -1,5 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
+  import { onMount } from 'svelte';
   
   let hasCreatedLink = false;
   let hasEmbedded = false;
@@ -7,6 +8,11 @@
   let embedCode = '';
   let showEmbedCode = false;
   let copied = false;
+  let userLinks = [];
+  let isLoading = false;
+  
+  // Hardcoded user ID for MVP - in real app this would come from session
+  const userId = 1;
   
   // Simulate user progress - in real app this would come from backend
   let totalCalls = hasEmbedded ? 24 : 0;
@@ -26,16 +32,39 @@
     goto('/customer');
   }
   
-  function createCallSafeLink() {
-    // Generate a unique link for this user
-    const uniqueId = Math.random().toString(36).substring(2, 15);
-    callSafeLink = `https://callsafe.vercel.app/call/${uniqueId}`;
-    hasCreatedLink = true;
-    
-    // Generate embed code
+  onMount(() => {
+    loadUserLinks();
+  });
+  
+  async function loadUserLinks() {
+    try {
+      const response = await fetch(`/api/links?userId=${userId}`);
+      const data = await response.json();
+      
+      if (data.success) {
+        userLinks = data.links;
+        
+        // Check if user has created any links
+        if (userLinks.length > 0) {
+          hasCreatedLink = true;
+          // Use the first link for display
+          const firstLink = userLinks[0];
+          callSafeLink = firstLink.link_url;
+          hasEmbedded = firstLink.is_embedded;
+          
+          // Generate embed code
+          generateEmbedCode(firstLink.link_url);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading user links:', error);
+    }
+  }
+  
+  function generateEmbedCode(linkUrl) {
     embedCode = `<!-- CallSafe Anonymous Calling Widget -->
 <div id="callsafe-widget">
-  <a href="${callSafeLink}" 
+  <a href="${linkUrl}" 
      target="_blank" 
      style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600; font-family: system-ui, -apple-system, sans-serif;">
     📞 Call Us Anonymously
@@ -50,6 +79,42 @@ document.getElementById('callsafe-widget').addEventListener('click', function() 
 </scr` + `ipt>`;
   }
   
+  async function createCallSafeLink() {
+    if (isLoading) return;
+    
+    isLoading = true;
+    
+    try {
+      const response = await fetch('/api/links', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ userId })
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        const newLink = data.link;
+        userLinks = [newLink, ...userLinks];
+        callSafeLink = newLink.link_url;
+        hasCreatedLink = true;
+        hasEmbedded = newLink.is_embedded;
+        
+        // Generate embed code
+        generateEmbedCode(newLink.link_url);
+      } else {
+        alert('Failed to create link: ' + data.error);
+      }
+    } catch (error) {
+      console.error('Error creating link:', error);
+      alert('Failed to create link. Please try again.');
+    } finally {
+      isLoading = false;
+    }
+  }
+  
   function copyToClipboard(text: string) {
     navigator.clipboard.writeText(text).then(() => {
       copied = true;
@@ -57,12 +122,51 @@ document.getElementById('callsafe-widget').addEventListener('click', function() 
     });
   }
   
-  function markAsEmbedded() {
-    hasEmbedded = true;
-    // Update stats
-    totalCalls = 24;
-    totalTime = '2h 15m';
-    successfulCalls = 18;
+  async function markAsEmbedded() {
+    if (isLoading || !userLinks.length) return;
+    
+    isLoading = true;
+    
+    try {
+      const firstLink = userLinks[0];
+      const response = await fetch('/api/links', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          linkId: firstLink.link_id, 
+          isEmbedded: true 
+        })
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        hasEmbedded = true;
+        // Update the link in the array
+        userLinks = userLinks.map(link => 
+          link.link_id === firstLink.link_id 
+            ? { ...link, is_embedded: true }
+            : link
+        );
+        
+        // Update stats
+        totalCalls = 24;
+        totalTime = '2h 15m';
+        successfulCalls = 18;
+        
+        // Close the modal
+        showEmbedCode = false;
+      } else {
+        alert('Failed to update embed status: ' + data.error);
+      }
+    } catch (error) {
+      console.error('Error updating embed status:', error);
+      alert('Failed to update embed status. Please try again.');
+    } finally {
+      isLoading = false;
+    }
   }
 </script>
 
@@ -109,9 +213,10 @@ document.getElementById('callsafe-widget').addEventListener('click', function() 
             {#if !hasCreatedLink}
               <button
                 on:click={createCallSafeLink}
-                class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors duration-200"
+                disabled={isLoading}
+                class="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg transition-colors duration-200"
               >
-                Create Link
+                {isLoading ? 'Creating...' : 'Create Link'}
               </button>
             {:else}
               <span class="text-green-600 font-semibold">✓ Complete</span>
@@ -376,9 +481,10 @@ document.getElementById('callsafe-widget').addEventListener('click', function() 
           </button>
           <button
             on:click={markAsEmbedded}
-            class="flex-1 px-6 py-3 bg-green-600 text-white rounded-xl font-semibold hover:bg-green-700 transition-colors duration-200"
+            disabled={isLoading}
+            class="flex-1 px-6 py-3 bg-green-600 text-white rounded-xl font-semibold hover:bg-green-700 disabled:bg-green-400 disabled:cursor-not-allowed transition-colors duration-200"
           >
-            ✓ I've Embedded This Code
+            {isLoading ? 'Updating...' : '✓ I\'ve Embedded This Code'}
           </button>
         </div>
       </div>
