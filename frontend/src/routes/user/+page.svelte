@@ -64,6 +64,9 @@
   function generateEmbedCode(linkUrl) {
     const uniqueId = `callsafe-widget-${Date.now()}`;
     const modalId = `callsafe-modal-${Date.now()}`;
+    // Extract the base URL from the link to get the signaling server
+    const baseUrl = linkUrl.split('/customer')[0];
+    
     embedCode = `<!-- CallSafe Anonymous Calling Widget -->
 <div id="${uniqueId}">
   <button type="button" 
@@ -74,18 +77,34 @@
 
 <!-- CallSafe Modal -->
 <div id="${modalId}" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 10000; justify-content: center; align-items: center;">
-  <div style="background: white; border-radius: 12px; padding: 24px; max-width: 500px; width: 90%; margin: 20px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1);">
+  <div style="background: white; border-radius: 12px; padding: 24px; max-width: 400px; width: 90%; margin: 20px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1);">
     <div style="text-align: center; margin-bottom: 20px;">
-      <h3 style="margin: 0 0 8px 0; color: #1f2937; font-size: 20px; font-weight: 600;">Start Anonymous Call</h3>
-      <p style="margin: 0; color: #6b7280; font-size: 14px;">Click the button below to start your call</p>
+      <h3 style="margin: 0 0 8px 0; color: #1f2937; font-size: 20px; font-weight: 600;">Anonymous Call</h3>
+      <p id="${modalId}-status" style="margin: 0; color: #6b7280; font-size: 14px;">Ready to connect</p>
     </div>
     
     <div style="text-align: center; margin-bottom: 20px;">
-      <a href="${linkUrl}" 
-         target="_blank" 
-         style="display: inline-block; background: #10b981; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600; font-family: system-ui, -apple-system, sans-serif; transition: background-color 0.2s ease;">
-        🚀 Start Call
-      </a>
+      <div style="width: 60px; height: 60px; margin: 0 auto 16px; border-radius: 50%; background: #f3f4f6; display: flex; align-items: center; justify-content: center;">
+        <svg id="${modalId}-icon" style="width: 24px; height: 24px; color: #6b7280;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
+        </svg>
+      </div>
+      
+      <button id="${modalId}-call-btn" type="button" 
+              style="display: inline-block; background: #10b981; color: white; padding: 12px 24px; border: none; border-radius: 8px; font-weight: 600; font-family: system-ui, -apple-system, sans-serif; transition: background-color 0.2s ease; cursor: pointer; margin-bottom: 12px;">
+        Start Call
+      </button>
+      
+      <div id="${modalId}-call-controls" style="display: none; margin-top: 16px;">
+        <button id="${modalId}-mute-btn" type="button" 
+                style="background: #6b7280; color: white; padding: 8px 16px; border: none; border-radius: 6px; font-weight: 500; cursor: pointer; margin-right: 8px;">
+          Mute
+        </button>
+        <button id="${modalId}-end-btn" type="button" 
+                style="background: #dc2626; color: white; padding: 8px 16px; border: none; border-radius: 6px; font-weight: 500; cursor: pointer;">
+          End Call
+        </button>
+      </div>
     </div>
     
     <div style="text-align: center;">
@@ -104,17 +123,238 @@
     return;
   }
   
-  // Universal embed code that works on all websites
+  // CallSafe WebRTC and Socket functionality
+  class CallSafeClient {
+    constructor() {
+      this.socket = null;
+      this.peerConnection = null;
+      this.localStream = null;
+      this.isConnected = false;
+      this.callId = null;
+      this.isMuted = false;
+      this.callState = 'idle';
+      this.serverUrl = '${baseUrl}'.replace('http', 'ws');
+    }
+    
+    async connect() {
+      if (typeof io === 'undefined') {
+        // Load Socket.IO if not available
+        await this.loadSocketIO();
+      }
+      
+      return new Promise((resolve, reject) => {
+        this.socket = io(this.serverUrl, {
+          transports: ['websocket', 'polling']
+        });
+        
+        this.socket.on('connect', () => {
+          this.isConnected = true;
+          this.setupSocketHandlers();
+          resolve();
+        });
+        
+        this.socket.on('connect_error', (error) => {
+          reject(error);
+        });
+      });
+    }
+    
+    async loadSocketIO() {
+      return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://cdn.socket.io/4.7.2/socket.io.min.js';
+        script.onload = resolve;
+        script.onerror = reject;
+        document.head.appendChild(script);
+      });
+    }
+    
+    setupSocketHandlers() {
+      this.socket.on('call_accepted', async (data) => {
+        this.callId = data.callId;
+        this.updateStatus('Creating connection...', 'connecting');
+        
+        try {
+          const offer = await this.createOffer();
+          this.socket.emit('offer', { callId: this.callId, offer });
+        } catch (error) {
+          this.updateStatus('Connection failed', 'failed');
+        }
+      });
+      
+      this.socket.on('answer', async (data) => {
+        try {
+          await this.peerConnection.setRemoteDescription(data.answer);
+        } catch (error) {
+          this.updateStatus('Connection failed', 'failed');
+        }
+      });
+      
+      this.socket.on('ice_candidate', async (data) => {
+        try {
+          await this.peerConnection.addIceCandidate(data.candidate);
+        } catch (error) {
+          console.error('Failed to add ICE candidate:', error);
+        }
+      });
+      
+      this.socket.on('no_agents_available', () => {
+        this.updateStatus('No agents available', 'failed');
+      });
+      
+      this.socket.on('call_timeout', () => {
+        this.updateStatus('Call timeout', 'failed');
+      });
+    }
+    
+    async initializeMedia() {
+      try {
+        this.localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        return true;
+      } catch (error) {
+        throw new Error('Microphone access denied');
+      }
+    }
+    
+    async createOffer() {
+      this.peerConnection = new RTCPeerConnection({
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' }
+        ]
+      });
+      
+      this.peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+          this.socket.emit('ice_candidate', { callId: this.callId, candidate: event.candidate });
+        }
+      };
+      
+      this.peerConnection.ontrack = (event) => {
+        const remoteAudio = document.createElement('audio');
+        remoteAudio.srcObject = event.streams[0];
+        remoteAudio.autoplay = true;
+        remoteAudio.style.display = 'none';
+        document.body.appendChild(remoteAudio);
+      };
+      
+      this.peerConnection.onconnectionstatechange = () => {
+        if (this.peerConnection.connectionState === 'connected') {
+          this.updateStatus('Connected to agent', 'connected');
+        } else if (this.peerConnection.connectionState === 'failed') {
+          this.updateStatus('Connection failed', 'failed');
+        }
+      };
+      
+      this.localStream.getTracks().forEach(track => {
+        this.peerConnection.addTrack(track, this.localStream);
+      });
+      
+      const offer = await this.peerConnection.createOffer();
+      await this.peerConnection.setLocalDescription(offer);
+      
+      return offer;
+    }
+    
+    async startCall() {
+      try {
+        this.updateStatus('Requesting microphone...', 'connecting');
+        await this.initializeMedia();
+        
+        this.updateStatus('Connecting to service...', 'connecting');
+        await this.connect();
+        
+        this.updateStatus('Looking for agent...', 'connecting');
+        this.socket.emit('customer_connect');
+        
+        this.callState = 'connecting';
+        this.showCallControls();
+        
+      } catch (error) {
+        this.updateStatus('Connection failed: ' + error.message, 'failed');
+      }
+    }
+    
+    toggleMute() {
+      if (this.localStream) {
+        const audioTrack = this.localStream.getAudioTracks()[0];
+        if (audioTrack) {
+          audioTrack.enabled = !audioTrack.enabled;
+          this.isMuted = !audioTrack.enabled;
+          
+          const muteBtn = document.getElementById('${modalId}-mute-btn');
+          muteBtn.textContent = this.isMuted ? 'Unmute' : 'Mute';
+          muteBtn.style.backgroundColor = this.isMuted ? '#dc2626' : '#6b7280';
+        }
+      }
+    }
+    
+    endCall() {
+      if (this.socket) {
+        this.socket.emit('call_ended');
+        this.socket.disconnect();
+      }
+      
+      if (this.localStream) {
+        this.localStream.getTracks().forEach(track => track.stop());
+      }
+      
+      if (this.peerConnection) {
+        this.peerConnection.close();
+      }
+      
+      this.updateStatus('Call ended', 'ended');
+      this.hideCallControls();
+    }
+    
+    updateStatus(message, state) {
+      const statusEl = document.getElementById('${modalId}-status');
+      const iconEl = document.getElementById('${modalId}-icon');
+      const callBtn = document.getElementById('${modalId}-call-btn');
+      
+      if (statusEl) statusEl.textContent = message;
+      
+      if (state === 'connecting') {
+        iconEl.style.color = '#f59e0b';
+        callBtn.style.display = 'none';
+      } else if (state === 'connected') {
+        iconEl.style.color = '#10b981';
+        callBtn.style.display = 'none';
+      } else if (state === 'failed') {
+        iconEl.style.color = '#dc2626';
+        callBtn.style.display = 'inline-block';
+        callBtn.textContent = 'Try Again';
+      }
+    }
+    
+    showCallControls() {
+      const controls = document.getElementById('${modalId}-call-controls');
+      if (controls) controls.style.display = 'block';
+    }
+    
+    hideCallControls() {
+      const controls = document.getElementById('${modalId}-call-controls');
+      if (controls) controls.style.display = 'none';
+    }
+  }
+  
+  // Initialize CallSafe widget
   function initCallSafe() {
-    var widget = document.querySelector('#${uniqueId}');
-    var modal = document.querySelector('#${modalId}');
+    const widget = document.querySelector('#${uniqueId}');
+    const modal = document.querySelector('#${modalId}');
     
     if (!widget || !modal) return;
     
-    var button = widget.querySelector('button');
+    const button = widget.querySelector('button');
+    const callBtn = document.getElementById('${modalId}-call-btn');
+    const muteBtn = document.getElementById('${modalId}-mute-btn');
+    const endBtn = document.getElementById('${modalId}-end-btn');
+    
     if (!button) return;
     
-    // Add hover effect
+    const callSafe = new CallSafeClient();
+    
+    // Add hover effect to main button
     button.addEventListener('mouseenter', function() {
       this.style.backgroundColor = '#1d4ed8';
     });
@@ -127,11 +367,21 @@
     button.addEventListener('click', function(e) {
       e.preventDefault();
       modal.style.display = 'flex';
-      
-      // Track click event (optional)
-      if (typeof console !== 'undefined') {
-        console.log('CallSafe widget clicked');
-      }
+    });
+    
+    // Call button handler
+    callBtn.addEventListener('click', function() {
+      callSafe.startCall();
+    });
+    
+    // Mute button handler
+    muteBtn.addEventListener('click', function() {
+      callSafe.toggleMute();
+    });
+    
+    // End call button handler
+    endBtn.addEventListener('click', function() {
+      callSafe.endCall();
     });
     
     // Close modal when clicking outside
