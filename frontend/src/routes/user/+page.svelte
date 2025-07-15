@@ -63,19 +63,48 @@
   
   function generateEmbedCode(linkUrl) {
     embedCode = `<!-- CallSafe Anonymous Calling Widget -->
-<div id="callsafe-widget">
+<div id="callsafe-widget-${Date.now()}">
   <a href="${linkUrl}" 
      target="_blank" 
-     style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600; font-family: system-ui, -apple-system, sans-serif;">
+     style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600; font-family: system-ui, -apple-system, sans-serif; transition: background-color 0.2s ease;">
     📞 Call Us Anonymously
   </a>
 </div>
 <scr` + `ipt>
-// Optional: Add click tracking
-document.getElementById('callsafe-widget').addEventListener('click', function() {
-  // Track click event
-  console.log('CallSafe widget clicked');
-});
+(function() {
+  // Universal embed code that works on all websites
+  function initCallSafe() {
+    var widget = document.querySelector('#callsafe-widget-${Date.now()}');
+    if (!widget) return;
+    
+    var link = widget.querySelector('a');
+    if (!link) return;
+    
+    // Add hover effect
+    link.addEventListener('mouseenter', function() {
+      this.style.backgroundColor = '#1d4ed8';
+    });
+    
+    link.addEventListener('mouseleave', function() {
+      this.style.backgroundColor = '#2563eb';
+    });
+    
+    // Add click tracking
+    link.addEventListener('click', function() {
+      // Track click event (optional)
+      if (typeof console !== 'undefined') {
+        console.log('CallSafe widget clicked');
+      }
+    });
+  }
+  
+  // Initialize when DOM is ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initCallSafe);
+  } else {
+    initCallSafe();
+  }
+})();
 </scr` + `ipt>`;
   }
   
