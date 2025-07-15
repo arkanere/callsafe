@@ -63,14 +63,40 @@
   
   function generateEmbedCode(linkUrl) {
     const uniqueId = `callsafe-widget-${Date.now()}`;
+    const modalId = `callsafe-modal-${Date.now()}`;
     embedCode = `<!-- CallSafe Anonymous Calling Widget -->
 <div id="${uniqueId}">
-  <a href="${linkUrl}" 
-     target="_blank" 
-     style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600; font-family: system-ui, -apple-system, sans-serif; transition: background-color 0.2s ease;">
+  <button type="button" 
+     style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; border: none; border-radius: 8px; font-weight: 600; font-family: system-ui, -apple-system, sans-serif; transition: background-color 0.2s ease; cursor: pointer;">
     📞 Call Us Anonymously
-  </a>
+  </button>
 </div>
+
+<!-- CallSafe Modal -->
+<div id="${modalId}" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 10000; justify-content: center; align-items: center;">
+  <div style="background: white; border-radius: 12px; padding: 24px; max-width: 500px; width: 90%; margin: 20px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1);">
+    <div style="text-align: center; margin-bottom: 20px;">
+      <h3 style="margin: 0 0 8px 0; color: #1f2937; font-size: 20px; font-weight: 600;">Start Anonymous Call</h3>
+      <p style="margin: 0; color: #6b7280; font-size: 14px;">Click the button below to start your call</p>
+    </div>
+    
+    <div style="text-align: center; margin-bottom: 20px;">
+      <a href="${linkUrl}" 
+         target="_blank" 
+         style="display: inline-block; background: #10b981; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600; font-family: system-ui, -apple-system, sans-serif; transition: background-color 0.2s ease;">
+        🚀 Start Call
+      </a>
+    </div>
+    
+    <div style="text-align: center;">
+      <button type="button" onclick="document.getElementById('${modalId}').style.display='none'" 
+              style="background: #f3f4f6; color: #374151; padding: 8px 16px; border: none; border-radius: 6px; font-weight: 500; cursor: pointer; font-size: 14px;">
+        Cancel
+      </button>
+    </div>
+  </div>
+</div>
+
 <scr` + `ipt>
 (function() {
   // Check if we're in a browser environment
@@ -81,25 +107,44 @@
   // Universal embed code that works on all websites
   function initCallSafe() {
     var widget = document.querySelector('#${uniqueId}');
-    if (!widget) return;
+    var modal = document.querySelector('#${modalId}');
     
-    var link = widget.querySelector('a');
-    if (!link) return;
+    if (!widget || !modal) return;
+    
+    var button = widget.querySelector('button');
+    if (!button) return;
     
     // Add hover effect
-    link.addEventListener('mouseenter', function() {
+    button.addEventListener('mouseenter', function() {
       this.style.backgroundColor = '#1d4ed8';
     });
     
-    link.addEventListener('mouseleave', function() {
+    button.addEventListener('mouseleave', function() {
       this.style.backgroundColor = '#2563eb';
     });
     
-    // Add click tracking
-    link.addEventListener('click', function() {
+    // Show modal on click
+    button.addEventListener('click', function(e) {
+      e.preventDefault();
+      modal.style.display = 'flex';
+      
       // Track click event (optional)
       if (typeof console !== 'undefined') {
         console.log('CallSafe widget clicked');
+      }
+    });
+    
+    // Close modal when clicking outside
+    modal.addEventListener('click', function(e) {
+      if (e.target === modal) {
+        modal.style.display = 'none';
+      }
+    });
+    
+    // Close modal on escape key
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape' && modal.style.display === 'flex') {
+        modal.style.display = 'none';
       }
     });
   }
