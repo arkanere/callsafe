@@ -17,6 +17,7 @@
   let errorMessage = '';
   let connectionStatus = 'Disconnected';
   let remoteAudio: HTMLAudioElement;
+  let ringtoneAudio: HTMLAudioElement;
   let currentCallStartTime: number | null = null;
   let callDuration = 0;
   let durationInterval: number;
@@ -49,6 +50,8 @@
     if (durationInterval) {
       clearInterval(durationInterval);
     }
+    // Stop ringtone when component is destroyed
+    stopRingtone();
   });
 
   async function connectToServer() {
@@ -120,9 +123,16 @@
       console.log('📝 Created call object:', call);
       incomingCalls = [...incomingCalls, call];
       
+      // Play ringtone for incoming call
+      playRingtone();
+      
       // Auto-remove call after 30 seconds if not answered
       setTimeout(() => {
         incomingCalls = incomingCalls.filter(c => c.callId !== call.callId);
+        // Stop ringtone if no more incoming calls
+        if (incomingCalls.length === 0) {
+          stopRingtone();
+        }
       }, 30000);
     });
 
@@ -195,6 +205,8 @@
       socket.goOffline();
       isOnline = false;
       connectionStatus = 'Offline';
+      // Stop ringtone when going offline
+      stopRingtone();
     } else {
       socket.goOnline();
       isOnline = true;
@@ -220,6 +232,9 @@
     incomingCalls = incomingCalls.filter(call => call.callId !== callId);
     console.log('🗑️ Removed call from incoming calls list');
     
+    // Stop ringtone when accepting call
+    stopRingtone();
+    
     callState = { ...callState, callId, status: 'connecting' };
     console.log('📞 Agent call state updated:', callState);
   }
@@ -227,6 +242,11 @@
   function declineCall(callId: string) {
     socket.declineCall(callId);
     incomingCalls = incomingCalls.filter(call => call.callId !== callId);
+    
+    // Stop ringtone when declining call or if no more incoming calls
+    if (incomingCalls.length === 0) {
+      stopRingtone();
+    }
   }
 
   function endCall() {
@@ -269,6 +289,22 @@
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  }
+
+  function playRingtone() {
+    if (ringtoneAudio) {
+      ringtoneAudio.loop = true;
+      ringtoneAudio.play().catch(error => {
+        console.log('Could not play ringtone:', error);
+      });
+    }
+  }
+
+  function stopRingtone() {
+    if (ringtoneAudio) {
+      ringtoneAudio.pause();
+      ringtoneAudio.currentTime = 0;
+    }
   }
 
   function clearError() {
@@ -475,6 +511,14 @@
       hidden 
       playsinline
       muted={false}
+    ></audio>
+    
+    <!-- Hidden audio element for ringtone -->
+    <audio 
+      bind:this={ringtoneAudio} 
+      src="/ringtone.mp3"
+      preload="auto"
+      hidden
     ></audio>
   </div>
 </div>
