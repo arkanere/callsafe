@@ -62,8 +62,9 @@
   }
   
   function generateEmbedCode(linkUrl) {
+    const uniqueId = `callsafe-widget-${Date.now()}`;
     embedCode = `<!-- CallSafe Anonymous Calling Widget -->
-<div id="callsafe-widget-${Date.now()}">
+<div id="${uniqueId}">
   <a href="${linkUrl}" 
      target="_blank" 
      style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600; font-family: system-ui, -apple-system, sans-serif; transition: background-color 0.2s ease;">
@@ -72,9 +73,14 @@
 </div>
 <scr` + `ipt>
 (function() {
+  // Check if we're in a browser environment
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    return;
+  }
+  
   // Universal embed code that works on all websites
   function initCallSafe() {
-    var widget = document.querySelector('#callsafe-widget-${Date.now()}');
+    var widget = document.querySelector('#${uniqueId}');
     if (!widget) return;
     
     var link = widget.querySelector('a');
