@@ -369,9 +369,13 @@
         this.socket.emit('call_ended');
         console.log('✅ EMBED: call_ended event emitted');
         
-        console.log('📤 EMBED: Disconnecting socket...');
-        this.socket.disconnect();
-        console.log('✅ EMBED: Socket disconnected');
+        // Add a small delay to ensure the event is processed before disconnect
+        console.log('📤 EMBED: Waiting 100ms before disconnecting...');
+        setTimeout(() => {
+          console.log('📤 EMBED: Disconnecting socket...');
+          this.socket.disconnect();
+          console.log('✅ EMBED: Socket disconnected');
+        }, 100);
       } else {
         console.log('❌ EMBED: No socket available for endCall');
       }
