@@ -177,10 +177,10 @@
       console.log('✅ Connected to signaling server');
       
       // Register as customer
-      console.log('👤 Registering as customer...');
+      console.log('👤 Registering as customer (no handle)...');
       connectionStatus = 'Looking for available agent...';
       socket.connectAsCustomer();
-      console.log('✅ Customer registration sent');
+      console.log('✅ Customer registration sent (no handle)');
       
       callState = { ...callState, status: 'connecting' };
       console.log('📞 Call state updated to connecting');

@@ -31,11 +31,19 @@
   }
   
   function goToAgent() {
-    goto('/user/agent');
+    if (callSafeHandle) {
+      goto(`/agent/${callSafeHandle}`);
+    } else {
+      goto('/agent');
+    }
   }
   
   function goToCustomer() {
-    goto('/user/customer');
+    if (callSafeHandle) {
+      goto(`/call/${callSafeHandle}`);
+    } else {
+      goto('/customer');
+    }
   }
   
   onMount(() => {

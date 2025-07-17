@@ -176,7 +176,7 @@ export class SocketManager {
 
   // Customer methods
   connectAsCustomer(): void {
-    console.log('📤 Emitting customer_connect');
+    console.log('📤 Emitting customer_connect (no handle)');
     this.emit('customer_connect');
   }
 
@@ -197,8 +197,13 @@ export class SocketManager {
   }
 
   goOnlineWithUser(userId: number): void {
-    console.log('📤 Emitting agent_online_with_user for user:', userId);
+    console.log('📤 Emitting agent_online_with_user for user ID:', userId);
     this.emit('agent_online_with_user', { userId });
+  }
+
+  goOnlineWithHandle(handle: string): void {
+    console.log('📤 Emitting agent_online_with_handle for handle:', handle);
+    this.emit('agent_online_with_handle', { handle });
   }
 
   goOffline(): void {

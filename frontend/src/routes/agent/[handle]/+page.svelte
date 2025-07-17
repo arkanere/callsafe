@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { WebRTCManager } from '$lib/webrtc.js';
   import { SocketManager } from '$lib/socket.js';
@@ -23,9 +24,13 @@
   let callDuration = 0;
   let durationInterval: number;
   let socketConnected = false;
+  let handle = '';
   
   // Hardcoded user ID for MVP - in real app this would come from session
   const userId = 1;
+  
+  // Extract handle from URL parameters
+  $: handle = $page.params.handle || '';
   
   // Reactive statement to update connection status
   $: {
@@ -116,7 +121,8 @@
   }
 
   function setupSocketHandlers() {
-    console.log('=== SETTING UP SOCKET HANDLERS (Agent) ===');
+    console.log('=== SETTING UP SOCKET HANDLERS (Agent with handle) ===');
+    console.log('Handle:', handle);
     
     socket.on('new_incoming_call', (data) => {
       console.log('📞 New incoming call received:', data);
@@ -212,8 +218,13 @@
       // Stop ringtone when going offline
       stopRingtone();
     } else {
-      console.log('👤 Agent going online with user ID:', userId);
-      socket.goOnlineWithUser(userId);
+      if (handle) {
+        console.log('👤 Agent going online with handle:', handle);
+        socket.goOnlineWithHandle(handle);
+      } else {
+        console.log('👤 Agent going online with user ID:', userId);
+        socket.goOnlineWithUser(userId);
+      }
       isOnline = true;
       connectionStatus = 'Online - Waiting for calls';
       errorMessage = '';
@@ -348,6 +359,9 @@
           <div>
             <h1 class="text-3xl font-bold text-gray-800">Agent Dashboard</h1>
             <p class="text-gray-600">CallSafe Business Portal</p>
+            {#if handle}
+              <p class="text-sm text-gray-500 mt-1">Handle: <code class="bg-gray-100 px-2 py-1 rounded">{handle}</code></p>
+            {/if}
           </div>
         </div>
         

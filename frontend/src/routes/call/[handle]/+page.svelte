@@ -198,7 +198,7 @@
       console.log('👤 Registering as customer with handle:', handle);
       connectionStatus = 'Looking for available agent...';
       socket.connectAsCustomerWithHandle(handle);
-      console.log('✅ Customer registration sent with handle');
+      console.log('✅ Customer registration sent with handle:', handle);
       
       callState = { ...callState, status: 'connecting' };
       console.log('📞 Call state updated to connecting');
