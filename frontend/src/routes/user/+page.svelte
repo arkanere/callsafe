@@ -83,7 +83,7 @@
     embedCode = '<!-- CallSafe Anonymous Calling Widget -->\n' +
       '<div id="' + uniqueId + '" data-callsafe-widget data-handle="' + handle + '" data-server="' + serverUrl + '"></div>\n' +
       '<link rel="stylesheet" href="https://callsafe.tech/static/embed.css">\n' +
-      '<script src="https://callsafe.tech/static/embed.js"></script>';
+      '<scr' + 'ipt src="https://callsafe.tech/static/embed.js"></scr' + 'ipt>';
   }
   
   async function createCallSafeHandle() {
