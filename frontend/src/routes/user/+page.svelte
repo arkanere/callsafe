@@ -106,10 +106,6 @@
         </svg>
       </div>
       
-      <button id="${modalId}-call-btn" type="button" 
-              style="display: inline-block; background: #10b981; color: white; padding: 12px 24px; border: none; border-radius: 8px; font-weight: 600; font-family: system-ui, -apple-system, sans-serif; transition: background-color 0.2s ease; cursor: pointer; margin-bottom: 12px;">
-        Start Call
-      </button>
       
       <div id="${modalId}-call-controls" style="display: none; margin-top: 16px;">
         <button id="${modalId}-mute-btn" type="button" 
@@ -327,20 +323,15 @@
     updateStatus(message, state) {
       const statusEl = document.getElementById('${modalId}-status');
       const iconEl = document.getElementById('${modalId}-icon');
-      const callBtn = document.getElementById('${modalId}-call-btn');
       
       if (statusEl) statusEl.textContent = message;
       
       if (state === 'connecting') {
         iconEl.style.color = '#f59e0b';
-        callBtn.style.display = 'none';
       } else if (state === 'connected') {
         iconEl.style.color = '#10b981';
-        callBtn.style.display = 'none';
       } else if (state === 'failed') {
         iconEl.style.color = '#dc2626';
-        callBtn.style.display = 'inline-block';
-        callBtn.textContent = 'Try Again';
       }
     }
     
@@ -363,7 +354,6 @@
     if (!widget || !modal) return;
     
     const button = widget.querySelector('button');
-    const callBtn = document.getElementById('${modalId}-call-btn');
     const muteBtn = document.getElementById('${modalId}-mute-btn');
     const endBtn = document.getElementById('${modalId}-end-btn');
     
@@ -380,16 +370,13 @@
       this.style.backgroundColor = '#2563eb';
     });
     
-    // Show modal on click
+    // Show modal and start call immediately
     button.addEventListener('click', function(e) {
       e.preventDefault();
       modal.style.display = 'flex';
-    });
-    
-    // Call button handler
-    callBtn.addEventListener('click', function() {
       callSafe.startCall();
     });
+    
     
     // Mute button handler
     muteBtn.addEventListener('click', function() {

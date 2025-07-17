@@ -273,6 +273,7 @@
       webrtc.endCall();
     }
     
+    stopRingtone();
     callState = { ...callState, status: 'idle', callId: undefined };
     stopCallTimer();
   }
