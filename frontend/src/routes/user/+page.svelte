@@ -80,10 +80,10 @@
     const handle = handleUrl.split('/').pop();
     const serverUrl = 'https://tunnel.callsafe.tech';
     
-    embedCode = `<!-- CallSafe Anonymous Calling Widget -->
-<div id="${uniqueId}" data-callsafe-widget data-handle="${handle}" data-server="${serverUrl}"></div>
-<link rel="stylesheet" href="https://callsafe.tech/static/embed.css">
-<script src="https://callsafe.tech/static/embed.js"></script>`;
+    embedCode = '<!-- CallSafe Anonymous Calling Widget -->\n' +
+      '<div id="' + uniqueId + '" data-callsafe-widget data-handle="' + handle + '" data-server="' + serverUrl + '"></div>\n' +
+      '<link rel="stylesheet" href="https://callsafe.tech/static/embed.css">\n' +
+      '<script src="https://callsafe.tech/static/embed.js"></script>';
   }
   
   async function createCallSafeHandle() {
