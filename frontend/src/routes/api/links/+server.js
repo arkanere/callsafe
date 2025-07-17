@@ -1,4 +1,4 @@
-// API endpoint for CallSafe links management
+// API endpoint for CallSafe handles management
 import { createPool } from '@vercel/postgres';
 import { POSTGRES_URL } from '$env/static/private';
 import { json } from '@sveltejs/kit';
@@ -8,7 +8,7 @@ function createDbPool() {
     return createPool({ connectionString: POSTGRES_URL });
 }
 
-// GET - Fetch user's CallSafe links
+// GET - Fetch user's CallSafe handles
 export async function GET({ url }) {
     const pool = createDbPool();
     
@@ -26,17 +26,17 @@ export async function GET({ url }) {
 
         return json({
             success: true,
-            links: result.rows
+            handles: result.rows
         });
     } catch (error) {
-        console.error('Error fetching links:', error);
-        return json({ success: false, error: 'Failed to fetch links' }, { status: 500 });
+        console.error('Error fetching handles:', error);
+        return json({ success: false, error: 'Failed to fetch handles' }, { status: 500 });
     } finally {
         await pool.end();
     }
 }
 
-// POST - Create new CallSafe link
+// POST - Create new CallSafe handle
 export async function POST({ request }) {
     const pool = createDbPool();
     
@@ -48,60 +48,60 @@ export async function POST({ request }) {
             return json({ success: false, error: 'User ID is required' }, { status: 400 });
         }
 
-        // Generate unique link ID
-        const linkId = randomBytes(8).toString('hex');
-        const linkUrl = `https://callsafe.vercel.app/call/${linkId}`;
+        // Generate unique handle (just the identifier)
+        const handleId = randomBytes(8).toString('hex');
+        const handle = handleId; // Store just the identifier, not the full URL
 
         const result = await pool.query(
-            `INSERT INTO callsafelinks (user_id, link_id, link_url, is_embedded) 
+            `INSERT INTO callsafelinks (user_id, handle_id, handle, is_embedded) 
              VALUES ($1, $2, $3, $4) 
              RETURNING *`,
-            [userId, linkId, linkUrl, false]
+            [userId, handleId, handle, false]
         );
 
         return json({
             success: true,
-            link: result.rows[0]
+            handle: result.rows[0]
         });
     } catch (error) {
-        console.error('Error creating link:', error);
-        return json({ success: false, error: 'Failed to create link' }, { status: 500 });
+        console.error('Error creating handle:', error);
+        return json({ success: false, error: 'Failed to create handle' }, { status: 500 });
     } finally {
         await pool.end();
     }
 }
 
-// PUT - Update link embed status
+// PUT - Update handle embed status
 export async function PUT({ request }) {
     const pool = createDbPool();
     
     try {
         const data = await request.json();
-        const { linkId, isEmbedded } = data;
+        const { handleId, isEmbedded } = data;
 
-        if (!linkId || typeof isEmbedded !== 'boolean') {
-            return json({ success: false, error: 'Link ID and embed status are required' }, { status: 400 });
+        if (!handleId || typeof isEmbedded !== 'boolean') {
+            return json({ success: false, error: 'Handle ID and embed status are required' }, { status: 400 });
         }
 
         const result = await pool.query(
             `UPDATE callsafelinks 
              SET is_embedded = $1, updated_at = CURRENT_TIMESTAMP 
-             WHERE link_id = $2 
+             WHERE handle_id = $2 
              RETURNING *`,
-            [isEmbedded, linkId]
+            [isEmbedded, handleId]
         );
 
         if (result.rows.length === 0) {
-            return json({ success: false, error: 'Link not found' }, { status: 404 });
+            return json({ success: false, error: 'Handle not found' }, { status: 404 });
         }
 
         return json({
             success: true,
-            link: result.rows[0]
+            handle: result.rows[0]
         });
     } catch (error) {
-        console.error('Error updating link:', error);
-        return json({ success: false, error: 'Failed to update link' }, { status: 500 });
+        console.error('Error updating handle:', error);
+        return json({ success: false, error: 'Failed to update handle' }, { status: 500 });
     } finally {
         await pool.end();
     }

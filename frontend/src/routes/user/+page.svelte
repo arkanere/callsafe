@@ -2,14 +2,20 @@
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
   
-  let hasCreatedLink = false;
+  let hasCreatedHandle = false;
   let hasEmbedded = false;
-  let callSafeLink = '';
+  let callSafeHandle = '';
   let embedCode = '';
   let showEmbedCode = false;
+  let showInlineEmbedCode = false;
   let copied = false;
-  let userLinks = [];
+  let userHandles = [];
   let isLoading = false;
+  
+  // Helper function to construct full URL from handle
+  function getFullUrl(handle) {
+    return `https://callsafe.vercel.app/call/${handle}`;
+  }
   
   // Hardcoded user ID for MVP - in real app this would come from session
   const userId = 1;
@@ -25,47 +31,47 @@
   }
   
   function goToAgent() {
-    goto('/agent');
+    goto('/user/agent');
   }
   
   function goToCustomer() {
-    goto('/customer');
+    goto('/user/customer');
   }
   
   onMount(() => {
-    loadUserLinks();
+    loadUserHandles();
   });
   
-  async function loadUserLinks() {
+  async function loadUserHandles() {
     try {
       const response = await fetch(`/api/links?userId=${userId}`);
       const data = await response.json();
       
       if (data.success) {
-        userLinks = data.links;
+        userHandles = data.handles;
         
-        // Check if user has created any links
-        if (userLinks.length > 0) {
-          hasCreatedLink = true;
-          // Use the first link for display
-          const firstLink = userLinks[0];
-          callSafeLink = firstLink.link_url;
-          hasEmbedded = firstLink.is_embedded;
+        // Check if user has created any handles
+        if (userHandles.length > 0) {
+          hasCreatedHandle = true;
+          // Use the first handle for display
+          const firstHandle = userHandles[0];
+          callSafeHandle = firstHandle.handle;
+          hasEmbedded = firstHandle.is_embedded;
           
-          // Generate embed code
-          generateEmbedCode(firstLink.link_url);
+          // Generate embed code using full URL
+          generateEmbedCode(getFullUrl(firstHandle.handle));
         }
       }
     } catch (error) {
-      console.error('Error loading user links:', error);
+      console.error('Error loading user handles:', error);
     }
   }
   
-  function generateEmbedCode(linkUrl) {
+  function generateEmbedCode(handleUrl) {
     const uniqueId = `callsafe-widget-${Date.now()}`;
     const modalId = `callsafe-modal-${Date.now()}`;
-    // Extract the base URL from the link to get the signaling server
-    const baseUrl = linkUrl.split('/customer')[0];
+    // Extract the base URL from the handle to get the signaling server
+    const baseUrl = handleUrl.split('/customer')[0];
     
     embedCode = `<!-- CallSafe Anonymous Calling Widget -->
 <div id="${uniqueId}">
@@ -409,7 +415,7 @@
 </scr` + `ipt>`;
   }
   
-  async function createCallSafeLink() {
+  async function createCallSafeHandle() {
     if (isLoading) return;
     
     isLoading = true;
@@ -426,20 +432,20 @@
       const data = await response.json();
       
       if (data.success) {
-        const newLink = data.link;
-        userLinks = [newLink, ...userLinks];
-        callSafeLink = newLink.link_url;
-        hasCreatedLink = true;
-        hasEmbedded = newLink.is_embedded;
+        const newHandle = data.handle;
+        userHandles = [newHandle, ...userHandles];
+        callSafeHandle = newHandle.handle;
+        hasCreatedHandle = true;
+        hasEmbedded = newHandle.is_embedded;
         
-        // Generate embed code
-        generateEmbedCode(newLink.link_url);
+        // Generate embed code using full URL
+        generateEmbedCode(getFullUrl(newHandle.handle));
       } else {
-        alert('Failed to create link: ' + data.error);
+        alert('Failed to create handle: ' + data.error);
       }
     } catch (error) {
-      console.error('Error creating link:', error);
-      alert('Failed to create link. Please try again.');
+      console.error('Error creating handle:', error);
+      alert('Failed to create handle. Please try again.');
     } finally {
       isLoading = false;
     }
@@ -453,19 +459,19 @@
   }
   
   async function markAsEmbedded() {
-    if (isLoading || !userLinks.length) return;
+    if (isLoading || !userHandles.length) return;
     
     isLoading = true;
     
     try {
-      const firstLink = userLinks[0];
+      const firstHandle = userHandles[0];
       const response = await fetch('/api/links', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ 
-          linkId: firstLink.link_id, 
+          handleId: firstHandle.handle_id, 
           isEmbedded: true 
         })
       });
@@ -474,11 +480,11 @@
       
       if (data.success) {
         hasEmbedded = true;
-        // Update the link in the array
-        userLinks = userLinks.map(link => 
-          link.link_id === firstLink.link_id 
-            ? { ...link, is_embedded: true }
-            : link
+        // Update the handle in the array
+        userHandles = userHandles.map(handle => 
+          handle.handle_id === firstHandle.handle_id 
+            ? { ...handle, is_embedded: true }
+            : handle
         );
         
         // Update stats
@@ -525,10 +531,10 @@
         <p class="text-gray-600 mb-6">Follow these steps to start receiving anonymous calls from your customers</p>
         
         <div class="space-y-4">
-          <!-- Step 1: Create Link -->
+          <!-- Step 1: Create Handle -->
           <div class="flex items-center p-4 bg-gray-50 rounded-xl">
-            <div class="w-8 h-8 rounded-full flex items-center justify-center mr-4 {hasCreatedLink ? 'bg-green-100 text-green-600' : 'bg-blue-100 text-blue-600'}">
-              {#if hasCreatedLink}
+            <div class="w-8 h-8 rounded-full flex items-center justify-center mr-4 {hasCreatedHandle ? 'bg-green-100 text-green-600' : 'bg-blue-100 text-blue-600'}">
+              {#if hasCreatedHandle}
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
                 </svg>
@@ -537,16 +543,16 @@
               {/if}
             </div>
             <div class="flex-1">
-              <h3 class="font-semibold text-gray-900">Create Your CallSafe Link</h3>
-              <p class="text-sm text-gray-600">Generate a unique link for your website</p>
+              <h3 class="font-semibold text-gray-900">Create Your CallSafe Handle</h3>
+              <p class="text-sm text-gray-600">Generate a unique handle for your website</p>
             </div>
-            {#if !hasCreatedLink}
+            {#if !hasCreatedHandle}
               <button
-                on:click={createCallSafeLink}
+                on:click={createCallSafeHandle}
                 disabled={isLoading}
                 class="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg transition-colors duration-200"
               >
-                {isLoading ? 'Creating...' : 'Create Link'}
+                {isLoading ? 'Creating...' : 'Create Handle'}
               </button>
             {:else}
               <span class="text-green-600 font-semibold">✓ Complete</span>
@@ -568,7 +574,7 @@
               <h3 class="font-semibold text-gray-900">Embed on Your Website</h3>
               <p class="text-sm text-gray-600">Add the CallSafe widget to your website</p>
             </div>
-            {#if hasCreatedLink && !hasEmbedded}
+            {#if hasCreatedHandle && !hasEmbedded}
               <button
                 on:click={() => showEmbedCode = true}
                 class="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors duration-200"
@@ -582,6 +588,69 @@
             {/if}
           </div>
         </div>
+      </div>
+    {/if}
+
+    <!-- Created Handle Display - Only show after embedding -->
+    {#if hasEmbedded && callSafeHandle}
+      <div class="bg-white rounded-2xl shadow-xl p-6 mb-8">
+        <h2 class="text-xl font-bold text-gray-900 mb-4">Your CallSafe Handle</h2>
+        
+        <!-- Handle Identifier -->
+        <div class="mb-4">
+          <h3 class="text-sm font-medium text-gray-700 mb-2">Handle:</h3>
+          <div class="bg-gray-50 p-3 rounded-lg">
+            <div class="flex items-center justify-between">
+              <code class="text-lg font-mono text-blue-600 font-semibold">{callSafeHandle}</code>
+              <button
+                on:click={() => copyToClipboard(callSafeHandle)}
+                class="ml-4 bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm font-semibold transition-colors duration-200"
+              >
+                {copied ? 'Copied!' : 'Copy'}
+              </button>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Full URL -->
+        <div class="mb-6">
+          <h3 class="text-sm font-medium text-gray-700 mb-2">Full URL:</h3>
+          <div class="bg-gray-50 p-3 rounded-lg">
+            <div class="flex items-center justify-between">
+              <code class="text-sm text-gray-700 break-all">{getFullUrl(callSafeHandle)}</code>
+              <button
+                on:click={() => copyToClipboard(getFullUrl(callSafeHandle))}
+                class="ml-4 bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-sm font-semibold transition-colors duration-200"
+              >
+                {copied ? 'Copied!' : 'Copy'}
+              </button>
+            </div>
+          </div>
+        </div>
+        
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-lg font-semibold text-gray-900">Embed Code</h3>
+          <button
+            on:click={() => showInlineEmbedCode = !showInlineEmbedCode}
+            class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors duration-200"
+          >
+            {showInlineEmbedCode ? 'Hide Code' : 'Get Code'}
+          </button>
+        </div>
+        
+        {#if showInlineEmbedCode}
+          <div class="bg-gray-900 p-4 rounded-xl">
+            <div class="flex items-start justify-between">
+              <pre class="text-sm text-green-400 overflow-x-auto flex-1"><code>{embedCode}</code></pre>
+              <button
+                on:click={() => copyToClipboard(embedCode)}
+                class="ml-4 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors duration-200"
+              >
+                {copied ? 'Copied!' : 'Copy'}
+              </button>
+            </div>
+          </div>
+        {/if}
       </div>
     {/if}
 
@@ -629,6 +698,7 @@
             </div>
           </div>
         </div>
+        
       </div>
     {/if}
 
@@ -754,19 +824,40 @@
           </button>
         </div>
         
-        <!-- Step 1: Your CallSafe Link -->
+        <!-- Step 1: Your CallSafe Handle -->
         <div class="mb-8">
-          <h3 class="text-lg font-semibold text-gray-900 mb-3">Step 1: Your CallSafe Link</h3>
-          <p class="text-gray-600 mb-4">This is your unique CallSafe link that customers will use to call you:</p>
-          <div class="bg-gray-50 p-4 rounded-xl">
-            <div class="flex items-center justify-between">
-              <code class="text-sm text-gray-700 break-all">{callSafeLink}</code>
-              <button
-                on:click={() => copyToClipboard(callSafeLink)}
-                class="ml-4 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors duration-200"
-              >
-                {copied ? 'Copied!' : 'Copy'}
-              </button>
+          <h3 class="text-lg font-semibold text-gray-900 mb-3">Step 1: Your CallSafe Handle</h3>
+          <p class="text-gray-600 mb-4">Your unique CallSafe handle:</p>
+          
+          <!-- Handle Identifier -->
+          <div class="mb-4">
+            <h4 class="text-sm font-medium text-gray-700 mb-2">Handle:</h4>
+            <div class="bg-blue-50 p-3 rounded-lg">
+              <div class="flex items-center justify-between">
+                <code class="text-lg font-mono text-blue-600 font-semibold">{callSafeHandle}</code>
+                <button
+                  on:click={() => copyToClipboard(callSafeHandle)}
+                  class="ml-4 bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm font-semibold transition-colors duration-200"
+                >
+                  {copied ? 'Copied!' : 'Copy'}
+                </button>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Full URL -->
+          <div>
+            <h4 class="text-sm font-medium text-gray-700 mb-2">Full URL:</h4>
+            <div class="bg-gray-50 p-3 rounded-lg">
+              <div class="flex items-center justify-between">
+                <code class="text-sm text-gray-700 break-all">{getFullUrl(callSafeHandle)}</code>
+                <button
+                  on:click={() => copyToClipboard(getFullUrl(callSafeHandle))}
+                  class="ml-4 bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-sm font-semibold transition-colors duration-200"
+                >
+                  {copied ? 'Copied!' : 'Copy'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -793,7 +884,7 @@
           <h3 class="text-lg font-semibold text-gray-900 mb-3">Step 3: Preview</h3>
           <p class="text-gray-600 mb-4">This is how the CallSafe button will look on your website:</p>
           <div class="bg-gray-50 p-6 rounded-xl text-center">
-            <a href={callSafeLink} 
+            <a href={getFullUrl(callSafeHandle)} 
                target="_blank" 
                class="inline-block bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-semibold transition-colors duration-200">
               📞 Call Us Anonymously
