@@ -4,7 +4,7 @@
   }
   
   class CallSafeClient {
-    constructor(serverUrl, handle) {
+    constructor(serverUrl, handle, widgetId) {
       this.socket = null;
       this.peerConnection = null;
       this.localStream = null;
@@ -14,11 +14,8 @@
       this.callState = 'idle';
       this.serverUrl = serverUrl;
       this.handle = handle;
-      this.modalId = null;
-    }
-    
-    setModalId(modalId) {
-      this.modalId = modalId;
+      this.widgetId = widgetId;
+      this.modalId = widgetId + '-modal';
     }
     
     async connect() {
@@ -207,13 +204,7 @@
       if (statusEl) statusEl.textContent = message;
       
       if (iconEl) {
-        if (state === 'connecting') {
-          iconEl.style.color = '#f59e0b';
-        } else if (state === 'connected') {
-          iconEl.style.color = '#10b981';
-        } else if (state === 'failed') {
-          iconEl.style.color = '#dc2626';
-        }
+        iconEl.className = 'callsafe-icon ' + (state || '');
       }
     }
     
@@ -230,28 +221,57 @@
   
   window.CallSafeClient = CallSafeClient;
   
-  window.initCallSafeWidget = function(config) {
-    const widget = document.querySelector('#' + config.uniqueId);
-    const modal = document.querySelector('#' + config.modalId);
+  function createWidgetHTML(widgetId, modalId) {
+    return `
+      <button type="button" class="callsafe-widget-button">
+        📞 Call Us Anonymously
+      </button>
+      <div id="${modalId}" class="callsafe-modal">
+        <div class="callsafe-modal-content">
+          <div class="callsafe-modal-header">
+            <h3 class="callsafe-modal-title">Anonymous Call</h3>
+            <p id="${modalId}-status" class="callsafe-modal-status">Ready to connect</p>
+          </div>
+          
+          <div class="callsafe-modal-body">
+            <div class="callsafe-icon-container">
+              <svg id="${modalId}-icon" class="callsafe-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
+              </svg>
+            </div>
+            
+            <div id="${modalId}-call-controls" class="callsafe-call-controls">
+              <button id="${modalId}-mute-btn" type="button" class="callsafe-mute-btn">
+                Mute
+              </button>
+              <button id="${modalId}-end-btn" type="button" class="callsafe-end-btn">
+                End Call
+              </button>
+            </div>
+          </div>
+          
+          <div class="callsafe-modal-footer">
+            <button type="button" class="callsafe-cancel-btn" onclick="document.getElementById('${modalId}').style.display='none'">
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+  
+  function initializeWidget(widget, serverUrl, handle) {
+    const widgetId = widget.id;
+    const modalId = widgetId + '-modal';
     
-    if (!widget || !modal) return;
+    widget.innerHTML = createWidgetHTML(widgetId, modalId);
     
-    const button = widget.querySelector('button');
-    const muteBtn = document.getElementById(config.modalId + '-mute-btn');
-    const endBtn = document.getElementById(config.modalId + '-end-btn');
+    const button = widget.querySelector('.callsafe-widget-button');
+    const modal = document.getElementById(modalId);
+    const muteBtn = document.getElementById(modalId + '-mute-btn');
+    const endBtn = document.getElementById(modalId + '-end-btn');
     
-    if (!button) return;
-    
-    const callSafe = new CallSafeClient(config.serverUrl, config.handle);
-    callSafe.setModalId(config.modalId);
-    
-    button.addEventListener('mouseenter', function() {
-      this.style.backgroundColor = '#1d4ed8';
-    });
-    
-    button.addEventListener('mouseleave', function() {
-      this.style.backgroundColor = '#2563eb';
-    });
+    const callSafe = new CallSafeClient(serverUrl, handle, widgetId);
     
     button.addEventListener('click', function(e) {
       e.preventDefault();
@@ -259,17 +279,13 @@
       callSafe.startCall();
     });
     
-    if (muteBtn) {
-      muteBtn.addEventListener('click', function() {
-        callSafe.toggleMute();
-      });
-    }
+    muteBtn.addEventListener('click', function() {
+      callSafe.toggleMute();
+    });
     
-    if (endBtn) {
-      endBtn.addEventListener('click', function() {
-        callSafe.endCall();
-      });
-    }
+    endBtn.addEventListener('click', function() {
+      callSafe.endCall();
+    });
     
     modal.addEventListener('click', function(e) {
       if (e.target === modal) {
@@ -282,5 +298,23 @@
         modal.style.display = 'none';
       }
     });
-  };
+  }
+  
+  function autoInit() {
+    const widgets = document.querySelectorAll('[data-callsafe-widget]');
+    widgets.forEach(widget => {
+      const handle = widget.dataset.handle;
+      const serverUrl = widget.dataset.server || 'https://tunnel.callsafe.tech';
+      
+      if (handle) {
+        initializeWidget(widget, serverUrl, handle);
+      }
+    });
+  }
+  
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', autoInit);
+  } else {
+    autoInit();
+  }
 })();

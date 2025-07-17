@@ -77,80 +77,13 @@
   
   function generateEmbedCode(handleUrl) {
     const uniqueId = `callsafe-widget-${Date.now()}`;
-    const modalId = `callsafe-modal-${Date.now()}`;
     const handle = handleUrl.split('/').pop();
     const serverUrl = 'https://tunnel.callsafe.tech';
     
     embedCode = `<!-- CallSafe Anonymous Calling Widget -->
-<div id="${uniqueId}">
-  <button type="button" 
-     style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; border: none; border-radius: 8px; font-weight: 600; font-family: system-ui, -apple-system, sans-serif; transition: background-color 0.2s ease; cursor: pointer;">
-    📞 Call Us Anonymously
-  </button>
-</div>
-
-<!-- CallSafe Modal -->
-<div id="${modalId}" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 10000; justify-content: center; align-items: center;">
-  <div style="background: white; border-radius: 12px; padding: 24px; max-width: 400px; width: 90%; margin: 20px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1);">
-    <div style="text-align: center; margin-bottom: 20px;">
-      <h3 style="margin: 0 0 8px 0; color: #1f2937; font-size: 20px; font-weight: 600;">Anonymous Call</h3>
-      <p id="${modalId}-status" style="margin: 0; color: #6b7280; font-size: 14px;">Ready to connect</p>
-    </div>
-    
-    <div style="text-align: center; margin-bottom: 20px;">
-      <div style="width: 60px; height: 60px; margin: 0 auto 16px; border-radius: 50%; background: #f3f4f6; display: flex; align-items: center; justify-content: center;">
-        <svg id="${modalId}-icon" style="width: 24px; height: 24px; color: #6b7280;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
-        </svg>
-      </div>
-      
-      <div id="${modalId}-call-controls" style="display: none; margin-top: 16px;">
-        <button id="${modalId}-mute-btn" type="button" 
-                style="background: #6b7280; color: white; padding: 8px 16px; border: none; border-radius: 6px; font-weight: 500; cursor: pointer; margin-right: 8px;">
-          Mute
-        </button>
-        <button id="${modalId}-end-btn" type="button" 
-                style="background: #dc2626; color: white; padding: 8px 16px; border: none; border-radius: 6px; font-weight: 500; cursor: pointer;">
-          End Call
-        </button>
-      </div>
-    </div>
-    
-    <div style="text-align: center;">
-      <button type="button" onclick="document.getElementById('${modalId}').style.display='none'" 
-              style="background: #f3f4f6; color: #374151; padding: 8px 16px; border: none; border-radius: 6px; font-weight: 500; cursor: pointer; font-size: 14px;">
-        Cancel
-      </button>
-    </div>
-  </div>
-</div>
-
-<scr` + `ipt src="https://callsafe.tech/static/embed.js"></scr` + `ipt>
-<scr` + `ipt>
-(function() {
-  if (typeof window === 'undefined' || typeof document === 'undefined') {
-    return;
-  }
-  
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', function() {
-      initCallSafeWidget({
-        uniqueId: '${uniqueId}',
-        modalId: '${modalId}',
-        serverUrl: '${serverUrl}',
-        handle: '${handle}'
-      });
-    });
-  } else {
-    initCallSafeWidget({
-      uniqueId: '${uniqueId}',
-      modalId: '${modalId}',
-      serverUrl: '${serverUrl}',
-      handle: '${handle}'
-    });
-  }
-})();
-</scr` + `ipt>`;
+<div id="${uniqueId}" data-callsafe-widget data-handle="${handle}" data-server="${serverUrl}"></div>
+<link rel="stylesheet" href="https://callsafe.tech/static/embed.css">
+<script src="https://callsafe.tech/static/embed.js"></script>`;
   }
   
   async function createCallSafeHandle() {

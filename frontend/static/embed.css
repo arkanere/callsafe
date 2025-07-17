@@ -1,0 +1,137 @@
+/* CallSafe Widget Styles */
+.callsafe-widget-button {
+  display: inline-block;
+  background: #2563eb;
+  color: white;
+  padding: 12px 24px;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  font-family: system-ui, -apple-system, sans-serif;
+  transition: background-color 0.2s ease;
+  cursor: pointer;
+}
+
+.callsafe-widget-button:hover {
+  background-color: #1d4ed8;
+}
+
+.callsafe-modal {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0,0,0,0.5);
+  z-index: 10000;
+  justify-content: center;
+  align-items: center;
+}
+
+.callsafe-modal-content {
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  max-width: 400px;
+  width: 90%;
+  margin: 20px;
+  box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1);
+}
+
+.callsafe-modal-header {
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.callsafe-modal-title {
+  margin: 0 0 8px 0;
+  color: #1f2937;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.callsafe-modal-status {
+  margin: 0;
+  color: #6b7280;
+  font-size: 14px;
+}
+
+.callsafe-modal-body {
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.callsafe-icon-container {
+  width: 60px;
+  height: 60px;
+  margin: 0 auto 16px;
+  border-radius: 50%;
+  background: #f3f4f6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.callsafe-icon {
+  width: 24px;
+  height: 24px;
+  color: #6b7280;
+}
+
+.callsafe-icon.connecting {
+  color: #f59e0b;
+}
+
+.callsafe-icon.connected {
+  color: #10b981;
+}
+
+.callsafe-icon.failed {
+  color: #dc2626;
+}
+
+.callsafe-call-controls {
+  display: none;
+  margin-top: 16px;
+}
+
+.callsafe-mute-btn {
+  background: #6b7280;
+  color: white;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  font-weight: 500;
+  cursor: pointer;
+  margin-right: 8px;
+}
+
+.callsafe-mute-btn.muted {
+  background: #dc2626;
+}
+
+.callsafe-end-btn {
+  background: #dc2626;
+  color: white;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.callsafe-modal-footer {
+  text-align: center;
+}
+
+.callsafe-cancel-btn {
+  background: #f3f4f6;
+  color: #374151;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  font-weight: 500;
+  cursor: pointer;
+  font-size: 14px;
+}
