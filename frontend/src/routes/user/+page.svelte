@@ -184,39 +184,59 @@
     
     setupSocketHandlers() {
       this.socket.on('call_accepted', async (data) => {
+        console.log('🎉 EMBED: Call accepted by agent:', data);
         this.callId = data.callId;
         this.updateStatus('Creating connection...', 'connecting');
         
         try {
+          console.log('📞 EMBED: Creating WebRTC offer...');
           const offer = await this.createOffer();
+          console.log('📤 EMBED: Sending offer to agent:', offer);
           this.socket.emit('offer', { callId: this.callId, offer });
+          console.log('✅ EMBED: Offer sent successfully');
         } catch (error) {
+          console.error('❌ EMBED: Failed to create offer:', error);
           this.updateStatus('Connection failed', 'failed');
         }
       });
       
       this.socket.on('answer', async (data) => {
+        console.log('📥 EMBED: Received answer from agent:', data);
         try {
+          console.log('📤 EMBED: Setting remote description...');
           await this.peerConnection.setRemoteDescription(data.answer);
+          console.log('✅ EMBED: Remote description set successfully');
         } catch (error) {
+          console.error('❌ EMBED: Failed to set remote description:', error);
           this.updateStatus('Connection failed', 'failed');
         }
       });
       
       this.socket.on('ice_candidate', async (data) => {
+        console.log('🧊 EMBED: Received ICE candidate:', data);
         try {
+          console.log('📤 EMBED: Adding ICE candidate...');
           await this.peerConnection.addIceCandidate(data.candidate);
+          console.log('✅ EMBED: ICE candidate added successfully');
         } catch (error) {
-          console.error('Failed to add ICE candidate:', error);
+          console.error('❌ EMBED: Failed to add ICE candidate:', error);
         }
       });
       
       this.socket.on('no_agents_available', () => {
+        console.log('❌ EMBED: No agents available');
         this.updateStatus('No agents available', 'failed');
       });
       
       this.socket.on('call_timeout', () => {
+        console.log('⏰ EMBED: Call timeout');
         this.updateStatus('Call timeout', 'failed');
+      });
+      
+      this.socket.on('call_ended', () => {
+        console.log('📞 EMBED: Call ended by agent');
+        this.updateStatus('Call ended', 'ended');
+        this.hideCallControls();
       });
     }
     
@@ -239,51 +259,84 @@
       
       this.peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
+          console.log('🧊 EMBED: Sending ICE candidate:', event.candidate);
           this.socket.emit('ice_candidate', { callId: this.callId, candidate: event.candidate });
+          console.log('✅ EMBED: ICE candidate sent');
+        } else {
+          console.log('✅ EMBED: ICE candidate gathering complete');
         }
       };
       
       this.peerConnection.ontrack = (event) => {
+        console.log('🎵 EMBED: Received remote track:', event);
         const remoteAudio = document.createElement('audio');
         remoteAudio.srcObject = event.streams[0];
         remoteAudio.autoplay = true;
         remoteAudio.style.display = 'none';
         document.body.appendChild(remoteAudio);
+        console.log('✅ EMBED: Remote audio element created and added to DOM');
       };
       
       this.peerConnection.onconnectionstatechange = () => {
+        console.log('🔄 EMBED: Connection state changed to:', this.peerConnection.connectionState);
         if (this.peerConnection.connectionState === 'connected') {
+          console.log('✅ EMBED: WebRTC connection established');
           this.updateStatus('Connected to agent', 'connected');
         } else if (this.peerConnection.connectionState === 'failed') {
+          console.log('❌ EMBED: WebRTC connection failed');
           this.updateStatus('Connection failed', 'failed');
+        } else if (this.peerConnection.connectionState === 'disconnected') {
+          console.log('⚠️ EMBED: WebRTC connection disconnected');
+        } else if (this.peerConnection.connectionState === 'connecting') {
+          console.log('🔄 EMBED: WebRTC connection is connecting');
         }
       };
       
+      console.log('📤 EMBED: Adding local stream tracks to peer connection...');
       this.localStream.getTracks().forEach(track => {
+        console.log('📤 EMBED: Adding track:', track.kind, track.enabled);
         this.peerConnection.addTrack(track, this.localStream);
       });
+      console.log('✅ EMBED: Local stream tracks added');
       
+      console.log('📤 EMBED: Creating offer...');
       const offer = await this.peerConnection.createOffer();
+      console.log('📤 EMBED: Setting local description...');
       await this.peerConnection.setLocalDescription(offer);
+      console.log('✅ EMBED: Offer created and local description set');
       
       return offer;
     }
     
     async startCall() {
+      console.log('=== EMBED CODE START CALL ===');
+      console.log('Handle:', this.handle);
+      console.log('Server URL:', this.serverUrl);
+      console.log('Call State:', this.callState);
+      
       try {
+        console.log('📤 EMBED: Requesting microphone...');
         this.updateStatus('Requesting microphone...', 'connecting');
         await this.initializeMedia();
+        console.log('✅ EMBED: Microphone access granted');
         
+        console.log('📤 EMBED: Connecting to service...');
         this.updateStatus('Connecting to service...', 'connecting');
         await this.connect();
+        console.log('✅ EMBED: Connected to service');
         
+        console.log('📤 EMBED: Looking for agent...');
         this.updateStatus('Looking for agent...', 'connecting');
+        console.log('📤 EMBED: Emitting customer_connect_with_handle with handle:', this.handle);
         this.socket.emit('customer_connect_with_handle', { handle: this.handle });
+        console.log('✅ EMBED: customer_connect_with_handle emitted');
         
         this.callState = 'connecting';
         this.showCallControls();
+        console.log('✅ EMBED: Call controls shown, state set to connecting');
         
       } catch (error) {
+        console.error('❌ EMBED: Start call failed:', error);
         this.updateStatus('Connection failed: ' + error.message, 'failed');
       }
     }
@@ -303,21 +356,42 @@
     }
     
     endCall() {
+      console.log('=== EMBED CODE END CALL CLICKED ===');
+      console.log('Socket exists:', !!this.socket);
+      console.log('Socket connected:', this.socket?.connected);
+      console.log('Call ID:', this.callId);
+      console.log('Call state:', this.callState);
+      console.log('Local stream exists:', !!this.localStream);
+      console.log('Peer connection exists:', !!this.peerConnection);
+      
       if (this.socket) {
+        console.log('📤 EMBED: Emitting call_ended event...');
         this.socket.emit('call_ended');
+        console.log('✅ EMBED: call_ended event emitted');
+        
+        console.log('📤 EMBED: Disconnecting socket...');
         this.socket.disconnect();
+        console.log('✅ EMBED: Socket disconnected');
+      } else {
+        console.log('❌ EMBED: No socket available for endCall');
       }
       
       if (this.localStream) {
+        console.log('📤 EMBED: Stopping local stream tracks...');
         this.localStream.getTracks().forEach(track => track.stop());
+        console.log('✅ EMBED: Local stream tracks stopped');
       }
       
       if (this.peerConnection) {
+        console.log('📤 EMBED: Closing peer connection...');
         this.peerConnection.close();
+        console.log('✅ EMBED: Peer connection closed');
       }
       
+      console.log('📤 EMBED: Updating status to ended...');
       this.updateStatus('Call ended', 'ended');
       this.hideCallControls();
+      console.log('✅ EMBED: End call process completed');
     }
     
     updateStatus(message, state) {
