@@ -24,6 +24,9 @@
   let durationInterval: number;
   let socketConnected = false;
   
+  // Hardcoded user ID for MVP - in real app this would come from session
+  const userId = 1;
+  
   // Reactive statement to update connection status
   $: {
     if (socket) {
@@ -209,7 +212,7 @@
       // Stop ringtone when going offline
       stopRingtone();
     } else {
-      socket.goOnline();
+      socket.goOnlineWithUser(userId);
       isOnline = true;
       connectionStatus = 'Online - Waiting for calls';
       errorMessage = '';

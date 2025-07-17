@@ -105,6 +105,10 @@ export class SocketManager {
       this.triggerCallback('call_timeout', callId);
     });
 
+    this.socket.on('handle_not_found', () => {
+      this.triggerCallback('handle_not_found');
+    });
+
     // Handle WebRTC signaling events
     this.socket.on('offer', (data) => {
       this.triggerCallback('offer', data);
@@ -176,6 +180,11 @@ export class SocketManager {
     this.emit('customer_connect');
   }
 
+  connectAsCustomerWithHandle(handle: string): void {
+    console.log('📤 Emitting customer_connect_with_handle for handle:', handle);
+    this.emit('customer_connect_with_handle', { handle });
+  }
+
   endCall(): void {
     console.log('📤 Emitting call_ended');
     this.emit('call_ended');
@@ -185,6 +194,11 @@ export class SocketManager {
   goOnline(): void {
     console.log('📤 Emitting agent_online');
     this.emit('agent_online');
+  }
+
+  goOnlineWithUser(userId: number): void {
+    console.log('📤 Emitting agent_online_with_user for user:', userId);
+    this.emit('agent_online_with_user', { userId });
   }
 
   goOffline(): void {
