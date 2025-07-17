@@ -125,12 +125,14 @@
       errorMessage = 'Sorry, all our representatives are currently busy. Please try again in a few minutes.';
       callState = { ...callState, status: 'failed' };
       isConnecting = false;
+      connectionStatus = 'Call failed - No agents available';
     });
 
     socket.on('call_timeout', () => {
       errorMessage = 'No agent is available right now. Please try calling back later.';
       callState = { ...callState, status: 'failed' };
       isConnecting = false;
+      connectionStatus = 'Call timeout - No response from agents';
     });
 
     socket.on('call_disconnected', (reason) => {

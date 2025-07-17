@@ -78,8 +78,10 @@
   function generateEmbedCode(handleUrl) {
     const uniqueId = `callsafe-widget-${Date.now()}`;
     const modalId = `callsafe-modal-${Date.now()}`;
-    // Extract the base URL from the handle to get the signaling server
-    const baseUrl = handleUrl.split('/customer')[0];
+    // Extract the handle from the URL
+    const handle = handleUrl.split('/').pop();
+    // Use the signaling server URL directly
+    const serverUrl = 'https://tunnel.callsafe.tech';
     
     embedCode = `<!-- CallSafe Anonymous Calling Widget -->
 <div id="${uniqueId}">
@@ -147,7 +149,8 @@
       this.callId = null;
       this.isMuted = false;
       this.callState = 'idle';
-      this.serverUrl = '${baseUrl}'.replace('http', 'ws');
+      this.serverUrl = '${serverUrl}';
+      this.handle = '${handle}';
     }
     
     async connect() {
@@ -279,7 +282,7 @@
         await this.connect();
         
         this.updateStatus('Looking for agent...', 'connecting');
-        this.socket.emit('customer_connect');
+        this.socket.emit('customer_connect_with_handle', { handle: this.handle });
         
         this.callState = 'connecting';
         this.showCallControls();
