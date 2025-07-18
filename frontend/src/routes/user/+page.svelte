@@ -76,14 +76,22 @@
   }
   
   function generateEmbedCode(handleUrl) {
-    const uniqueId = `callsafe-widget-${Date.now()}`;
     const handle = handleUrl.split('/').pop();
-    const serverUrl = 'https://tunnel.callsafe.tech';
     
-    embedCode = '<!-- CallSafe Anonymous Calling Widget -->\n' +
-      '<div id="' + uniqueId + '" data-callsafe-widget data-handle="' + handle + '" data-server="' + serverUrl + '"></div>\n' +
-      '<link rel="stylesheet" href="https://callsafe.tech/static/embed.css">\n' +
-      '<scr' + 'ipt src="https://callsafe.tech/static/embed.js"></scr' + 'ipt>';
+    embedCode = `<script>
+(function() {
+  window.CallWidgetConfig = {
+    buttonText: 'Call Us',
+    position: 'bottom-right',
+    theme: 'light',
+    handle: '${handle}'
+  };
+  var s = document.createElement('script');
+  s.src = 'https://www.callsafe.tech/embed.js';
+  s.async = true;
+  document.head.appendChild(s);
+})();
+</script>`;
   }
   
   async function createCallSafeHandle() {
