@@ -42,7 +42,8 @@
   function setupWebRTCHandlers() {
     webrtc.setStateChangeHandler((state) => {
       const previousStatus = callState.status;
-      callState = state;
+      callState = { ...callState, ...state };
+      console.log('📱 Call state updated:', callState);
       
       if (state.status === 'connected') {
         connectionMonitor.recordConnectionSuccess();
@@ -182,6 +183,9 @@
     errorMessage = '';
     connectionStatus = 'Connecting to service...';
     connectionMonitor.startConnectionAttempt();
+    
+    // Reset mute state for new call
+    callState = { ...callState, isMuted: false };
 
     try {
       console.log('🎤 Requesting microphone permission...');
@@ -237,12 +241,13 @@
     if (webrtc) {
       const isMuted = webrtc.toggleMute();
       callState = { ...callState, isMuted };
+      console.log('🔇 UI mute state updated:', isMuted ? 'muted' : 'unmuted');
     }
   }
 
   function retryCall() {
     errorMessage = '';
-    callState = { ...callState, status: 'idle' };
+    callState = { ...callState, status: 'idle', isMuted: false };
     isConnecting = false;
     connectionStatus = 'Disconnected';
   }

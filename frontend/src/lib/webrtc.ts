@@ -203,6 +203,14 @@ export class WebRTCManager {
     
     try {
       this.localStream = await navigator.mediaDevices.getUserMedia(constraints);
+      
+      // Reset mute state when initializing media
+      this.callState.isMuted = false;
+      const audioTrack = this.localStream.getAudioTracks()[0];
+      if (audioTrack) {
+        audioTrack.enabled = true;
+      }
+      
       return Promise.resolve();
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to access media devices';
@@ -314,12 +322,22 @@ export class WebRTCManager {
   toggleMute(): boolean {
     if (!this.localStream) return false;
     
-    const audioTrack = this.localStream.getAudioTracks()[0];
-    if (audioTrack) {
-      audioTrack.enabled = !audioTrack.enabled;
-      this.callState.isMuted = !audioTrack.enabled;
-      this.updateCallState({ isMuted: this.callState.isMuted });
-      return this.callState.isMuted;
+    try {
+      const audioTrack = this.localStream.getAudioTracks()[0];
+      if (audioTrack) {
+        audioTrack.enabled = !audioTrack.enabled;
+        this.callState.isMuted = !audioTrack.enabled;
+        console.log('🔇 Mute toggled:', this.callState.isMuted ? 'muted' : 'unmuted');
+        
+        // Only pass the mute state change, don't affect other state
+        if (this.onStateChange) {
+          this.onStateChange({ isMuted: this.callState.isMuted });
+        }
+        
+        return this.callState.isMuted;
+      }
+    } catch (error) {
+      console.error('❌ Error toggling mute:', error);
     }
     
     return false;
