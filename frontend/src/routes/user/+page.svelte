@@ -78,20 +78,20 @@
   function generateEmbedCode(handleUrl) {
     const handle = handleUrl.split('/').pop();
     
-    embedCode = `<script>
-(function() {
-  window.CallWidgetConfig = {
-    buttonText: 'Call Us',
-    position: 'bottom-right',
-    theme: 'light',
-    handle: '${handle}'
-  };
-  var s = document.createElement('script');
-  s.src = 'https://www.callsafe.tech/embed.js';
-  s.async = true;
-  document.head.appendChild(s);
-})();
-</script>`;
+    embedCode = '<scr' + 'ipt>\n' +
+      '(function() {\n' +
+      '  window.CallWidgetConfig = {\n' +
+      '    buttonText: \'Call Us\',\n' +
+      '    position: \'bottom-right\',\n' +
+      '    theme: \'light\',\n' +
+      '    handle: \'' + handle + '\'\n' +
+      '  };\n' +
+      '  var s = document.createElement(\'script\');\n' +
+      '  s.src = \'https://www.callsafe.tech/embed.js\';\n' +
+      '  s.async = true;\n' +
+      '  document.head.appendChild(s);\n' +
+      '})();\n' +
+      '</scr' + 'ipt>';
   }
   
   async function createCallSafeHandle() {
