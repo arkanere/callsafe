@@ -185,9 +185,9 @@ export class SocketManager {
     this.emit('customer_connect_with_handle', { handle });
   }
 
-  endCall(): void {
-    console.log('📤 Emitting call_ended');
-    this.emit('call_ended');
+  endCall(data?: { callId?: string; handle?: string }): void {
+    console.log('📤 Emitting call_ended with data:', data);
+    this.emit('call_ended', data || {});
   }
 
   cancelCallRequest(handle: string): void {
@@ -216,30 +216,30 @@ export class SocketManager {
     this.emit('agent_offline');
   }
 
-  acceptCall(callId: string): void {
-    console.log('📤 Emitting accept_call for:', callId);
-    this.emit('accept_call', callId);
+  acceptCall(callId: string, handle?: string): void {
+    console.log('📤 Emitting accept_call for:', callId, 'handle:', handle);
+    this.emit('accept_call', { callId, handle });
   }
 
-  declineCall(callId: string): void {
-    console.log('📤 Emitting decline_call for:', callId);
-    this.emit('decline_call', callId);
+  declineCall(callId: string, handle?: string): void {
+    console.log('📤 Emitting decline_call for:', callId, 'handle:', handle);
+    this.emit('decline_call', { callId, handle });
   }
 
   // WebRTC signaling methods
-  sendOffer(callId: string, offer: RTCSessionDescriptionInit): void {
-    console.log('📤 Emitting offer for:', callId, offer);
-    this.emit('offer', { callId, offer });
+  sendOffer(callId: string, offer: RTCSessionDescriptionInit, handle?: string): void {
+    console.log('📤 Emitting offer for:', callId, offer, 'handle:', handle);
+    this.emit('offer', { callId, offer, handle });
   }
 
-  sendAnswer(callId: string, answer: RTCSessionDescriptionInit): void {
-    console.log('📤 Emitting answer for:', callId, answer);
-    this.emit('answer', { callId, answer });
+  sendAnswer(callId: string, answer: RTCSessionDescriptionInit, handle?: string): void {
+    console.log('📤 Emitting answer for:', callId, answer, 'handle:', handle);
+    this.emit('answer', { callId, answer, handle });
   }
 
-  sendIceCandidate(callId: string, candidate: RTCIceCandidateInit): void {
-    console.log('📤 Emitting ice_candidate for:', callId, candidate);
-    this.emit('ice_candidate', { callId, candidate });
+  sendIceCandidate(callId: string, candidate: RTCIceCandidateInit, handle?: string): void {
+    console.log('📤 Emitting ice_candidate for:', callId, candidate, 'handle:', handle);
+    this.emit('ice_candidate', { callId, candidate, handle });
   }
 
   // Generic emit method

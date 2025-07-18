@@ -67,7 +67,7 @@
 
     webrtc.setIceCandidateHandler((candidate) => {
       if (callState.callId) {
-        socket.sendIceCandidate(callState.callId, candidate);
+        socket.sendIceCandidate(callState.callId, candidate, handle);
       }
     });
   }
@@ -93,7 +93,7 @@
         console.log('📞 Creating WebRTC offer for call:', callState.callId);
         const offer = await webrtc.createOffer(callState.callId);
         console.log('📤 Sending offer to agent:', offer);
-        socket.sendOffer(callState.callId, offer);
+        socket.sendOffer(callState.callId, offer, handle);
       } catch (error) {
         console.error('❌ Failed to create offer:', error);
         errorMessage = 'Failed to create call offer';
@@ -226,14 +226,11 @@
 
   function endCall() {
     if (socket) {
-      // If we have a call ID, send call_ended, otherwise send cancel
-      if (callState.callId) {
-        socket.endCall();
-      } else {
-        // Cancel the call request during waiting phase
-        socket.cancelCallRequest(handle);
-        console.log('📤 Sent cancel_call_request, waiting for server processing...');
-      }
+      // Always send both callId and handle - server will handle based on what's available
+      socket.endCall({ 
+        callId: callState.callId, 
+        handle: handle 
+      });
     }
     if (webrtc) {
       webrtc.endCall();

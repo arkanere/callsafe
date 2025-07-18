@@ -115,7 +115,7 @@
 
     webrtc.setIceCandidateHandler((candidate) => {
       if (callState.callId) {
-        socket.sendIceCandidate(callState.callId, candidate);
+        socket.sendIceCandidate(callState.callId, candidate, handle);
       }
     });
   }
@@ -160,7 +160,7 @@
           console.log('✅ Call ID matches, creating answer...');
           const answer = await webrtc.createAnswer(data.callId, data.offer);
           console.log('📤 Sending answer to customer:', answer);
-          socket.sendAnswer(data.callId, answer);
+          socket.sendAnswer(data.callId, answer, handle);
         } else {
           console.log('❌ Call ID mismatch - expected:', callState.callId, 'received:', data.callId);
         }
@@ -283,7 +283,7 @@
     }
     
     console.log('✅ Accepting call...');
-    socket.acceptCall(callId);
+    socket.acceptCall(callId, handle);
     console.log('📤 Accept call message sent to server');
     
     incomingCalls = incomingCalls.filter(call => call.callId !== callId);
@@ -297,7 +297,7 @@
   }
 
   function declineCall(callId: string) {
-    socket.declineCall(callId);
+    socket.declineCall(callId, handle);
     incomingCalls = incomingCalls.filter(call => call.callId !== callId);
     
     // Stop ringtone when declining call or if no more incoming calls
@@ -308,7 +308,7 @@
 
   function endCall() {
     if (callState.callId) {
-      socket.endCall();
+      socket.endCall({ callId: callState.callId, handle: handle });
     }
     if (webrtc) {
       webrtc.endCall();
