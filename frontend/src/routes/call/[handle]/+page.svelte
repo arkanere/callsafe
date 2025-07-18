@@ -226,7 +226,13 @@
 
   function endCall() {
     if (socket) {
-      socket.endCall();
+      // If we have a call ID, send call_ended, otherwise send cancel
+      if (callState.callId) {
+        socket.endCall();
+      } else {
+        // Cancel the call request during waiting phase
+        socket.cancelCallRequest(handle);
+      }
     }
     if (webrtc) {
       webrtc.endCall();

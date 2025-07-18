@@ -190,6 +190,11 @@ export class SocketManager {
     this.emit('call_ended');
   }
 
+  cancelCallRequest(handle: string): void {
+    console.log('📤 Emitting cancel_call_request for handle:', handle);
+    this.emit('cancel_call_request', { handle });
+  }
+
   // Agent methods
   goOnline(): void {
     console.log('📤 Emitting agent_online');

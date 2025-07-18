@@ -190,6 +190,47 @@
       endCall();
     });
 
+    socket.on('call_cancelled', (data) => {
+      console.log('📞 Call cancelled by customer:', data);
+      // Remove the cancelled call from incoming calls
+      if (data && data.callId) {
+        incomingCalls = incomingCalls.filter(call => call.callId !== data.callId);
+        // Stop ringtone if no more incoming calls
+        if (incomingCalls.length === 0) {
+          stopRingtone();
+        }
+      }
+    });
+
+    socket.on('call_request_cancelled', (data) => {
+      console.log('📞 Call request cancelled by customer:', data);
+      // Remove all incoming calls for this handle (since customer cancelled during waiting)
+      const previousLength = incomingCalls.length;
+      incomingCalls = incomingCalls.filter(call => {
+        // Remove the most recent call (last one added)
+        return call.timestamp !== Math.max(...incomingCalls.map(c => c.timestamp));
+      });
+      
+      // Stop ringtone if no more incoming calls
+      if (incomingCalls.length === 0) {
+        stopRingtone();
+      }
+      
+      console.log(`📞 Removed ${previousLength - incomingCalls.length} calls from incoming list`);
+    });
+
+    socket.on('customer_disconnected', (data) => {
+      console.log('📞 Customer disconnected during waiting:', data);
+      // Remove the latest incoming call
+      if (incomingCalls.length > 0) {
+        incomingCalls = incomingCalls.slice(0, -1);
+        // Stop ringtone if no more incoming calls
+        if (incomingCalls.length === 0) {
+          stopRingtone();
+        }
+      }
+    });
+
     socket.on('network_error', (error) => {
       errorMessage = `Network error: ${error}`;
     });
