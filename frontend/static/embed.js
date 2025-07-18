@@ -204,7 +204,7 @@
       if (statusEl) statusEl.textContent = message;
       
       if (iconEl) {
-        iconEl.className = 'callsafe-icon ' + (state || '');
+        iconEl.setAttribute('class', 'callsafe-icon ' + (state || ''));
       }
     }
     
