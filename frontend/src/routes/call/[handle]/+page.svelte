@@ -11,20 +11,27 @@
   let callState: CallState = {
     status: 'idle',
     isCustomer: true,
-    isMuted: false
+    isMuted: false,
+    sourceId: ''
   };
   let errorMessage = '';
   let isConnecting = false;
   let remoteAudio: HTMLAudioElement;
   let connectionStatus = 'Disconnected';
   let handle = '';
+  let sourceId = '';
 
   // Extract handle from URL parameters
   $: handle = $page.params.handle || '';
+  // Extract sourceId from URL query parameters
+  $: sourceId = $page.url.searchParams.get('sourceId') || '';
 
   onMount(() => {
     webrtc = new WebRTCManager(true);
     socket = new SocketManager();
+    
+    // Update callState with sourceId
+    callState = { ...callState, sourceId };
     
     setupWebRTCHandlers();
     setupSocketHandlers();
@@ -67,7 +74,7 @@
 
     webrtc.setIceCandidateHandler((candidate) => {
       if (callState.callId) {
-        socket.sendIceCandidate(callState.callId, candidate, handle);
+        socket.sendIceCandidate(callState.callId, candidate, handle, sourceId);
       }
     });
   }
@@ -75,6 +82,7 @@
   function setupSocketHandlers() {
     console.log('=== SETTING UP SOCKET HANDLERS (Customer with handle) ===');
     console.log('Handle:', handle);
+    console.log('SourceId:', sourceId);
     
     socket.on('call_accepted', async (data) => {
       console.log('🎉 Call accepted by agent:', data);
@@ -93,7 +101,7 @@
         console.log('📞 Creating WebRTC offer for call:', callState.callId);
         const offer = await webrtc.createOffer(callState.callId);
         console.log('📤 Sending offer to agent:', offer);
-        socket.sendOffer(callState.callId, offer, handle);
+        socket.sendOffer(callState.callId, offer, handle, sourceId);
       } catch (error) {
         console.error('❌ Failed to create offer:', error);
         errorMessage = 'Failed to create call offer';
@@ -166,6 +174,7 @@
   async function startCall() {
     console.log('=== START CALL CLICKED ===');
     console.log('Handle:', handle);
+    console.log('SourceId:', sourceId);
     console.log('Current state - isConnecting:', isConnecting, 'callState.status:', callState.status);
     
     if (isConnecting || callState.status === 'connecting') {
@@ -201,10 +210,10 @@
       console.log('✅ Connected to signaling server');
       
       // Register as customer with handle
-      console.log('👤 Registering as customer with handle:', handle);
+      console.log('👤 Registering as customer with handle:', handle, 'sourceId:', sourceId);
       connectionStatus = 'Looking for available agent...';
-      socket.connectAsCustomerWithHandle(handle);
-      console.log('✅ Customer registration sent with handle:', handle);
+      socket.connectAsCustomerWithHandle(handle, sourceId);
+      console.log('✅ Customer registration sent with handle:', handle, 'sourceId:', sourceId);
       
       callState = { ...callState, status: 'connecting' };
       console.log('📞 Call state updated to connecting');
@@ -226,10 +235,11 @@
 
   function endCall() {
     if (socket) {
-      // Always send both callId and handle - server will handle based on what's available
+      // Always send both callId, handle, and sourceId - server will handle based on what's available
       socket.endCall({ 
         callId: callState.callId, 
-        handle: handle 
+        handle: handle,
+        sourceId: sourceId
       });
     }
     if (webrtc) {
@@ -274,6 +284,9 @@
       <p class="text-gray-600">Anonymous Business Calling</p>
       {#if handle}
         <p class="text-sm text-gray-500 mt-2">Handle: <code class="bg-gray-100 px-2 py-1 rounded">{handle}</code></p>
+      {/if}
+      {#if sourceId}
+        <p class="text-sm text-gray-500 mt-1">Source: <code class="bg-blue-100 px-2 py-1 rounded">{sourceId}</code></p>
       {/if}
     </div>
 

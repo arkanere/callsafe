@@ -12,10 +12,11 @@
   let callState: CallState = {
     status: 'idle',
     isCustomer: false,
-    isMuted: false
+    isMuted: false,
+    sourceId: ''
   };
   let isOnline = false;
-  let incomingCalls: Array<{ callId: string; timestamp: number }> = [];
+  let incomingCalls: Array<{ callId: string; timestamp: number; sourceId?: string }> = [];
   let errorMessage = '';
   let connectionStatus = 'Disconnected';
   let remoteAudio: HTMLAudioElement;
@@ -25,12 +26,15 @@
   let durationInterval: number;
   let socketConnected = false;
   let handle = '';
+  let sourceId = '';
   
   // Hardcoded user ID for MVP - in real app this would come from session
   const userId = 1;
   
   // Extract handle from URL parameters
   $: handle = $page.params.handle || '';
+  // Extract sourceId from URL query parameters (optional for agents)
+  $: sourceId = $page.url.searchParams.get('sourceId') || '';
   
   // Reactive statement to update connection status
   $: {
@@ -42,6 +46,9 @@
   onMount(() => {
     webrtc = new WebRTCManager(false);
     socket = new SocketManager();
+    
+    // Update callState with sourceId
+    callState = { ...callState, sourceId };
     
     setupWebRTCHandlers();
     setupSocketHandlers();
@@ -115,7 +122,7 @@
 
     webrtc.setIceCandidateHandler((candidate) => {
       if (callState.callId) {
-        socket.sendIceCandidate(callState.callId, candidate, handle);
+        socket.sendIceCandidate(callState.callId, candidate, handle, sourceId);
       }
     });
   }
@@ -123,12 +130,14 @@
   function setupSocketHandlers() {
     console.log('=== SETTING UP SOCKET HANDLERS (Agent with handle) ===');
     console.log('Handle:', handle);
+    console.log('SourceId:', sourceId);
     
     socket.on('new_incoming_call', (data) => {
       console.log('📞 New incoming call received:', data);
       const call = {
         callId: data.callId,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        sourceId: data.sourceId
       };
       console.log('📝 Created call object:', call);
       incomingCalls = [...incomingCalls, call];
@@ -160,7 +169,7 @@
           console.log('✅ Call ID matches, creating answer...');
           const answer = await webrtc.createAnswer(data.callId, data.offer);
           console.log('📤 Sending answer to customer:', answer);
-          socket.sendAnswer(data.callId, answer, handle);
+          socket.sendAnswer(data.callId, answer, handle, sourceId);
         } else {
           console.log('❌ Call ID mismatch - expected:', callState.callId, 'received:', data.callId);
         }
@@ -260,8 +269,8 @@
       stopRingtone();
     } else {
       if (handle) {
-        console.log('👤 Agent going online with handle:', handle);
-        socket.goOnlineWithHandle(handle);
+        console.log('👤 Agent going online with handle:', handle, 'sourceId:', sourceId);
+        socket.goOnlineWithHandle(handle, sourceId);
       } else {
         console.log('👤 Agent going online with user ID:', userId);
         socket.goOnlineWithUser(userId);
@@ -283,7 +292,9 @@
     }
     
     console.log('✅ Accepting call...');
-    socket.acceptCall(callId, handle);
+    // Get the sourceId from the specific call being accepted
+    const acceptedCall = incomingCalls.find(call => call.callId === callId);
+    socket.acceptCall(callId, handle, acceptedCall?.sourceId);
     console.log('📤 Accept call message sent to server');
     
     incomingCalls = incomingCalls.filter(call => call.callId !== callId);
@@ -297,7 +308,8 @@
   }
 
   function declineCall(callId: string) {
-    socket.declineCall(callId, handle);
+    const declinedCall = incomingCalls.find(call => call.callId === callId);
+    socket.declineCall(callId, handle, declinedCall?.sourceId);
     incomingCalls = incomingCalls.filter(call => call.callId !== callId);
     
     // Stop ringtone when declining call or if no more incoming calls
@@ -308,7 +320,7 @@
 
   function endCall() {
     if (callState.callId) {
-      socket.endCall({ callId: callState.callId, handle: handle });
+      socket.endCall({ callId: callState.callId, handle: handle, sourceId: callState.sourceId });
     }
     if (webrtc) {
       webrtc.endCall();
@@ -403,6 +415,9 @@
             <p class="text-gray-600">CallSafe Business Portal</p>
             {#if handle}
               <p class="text-sm text-gray-500 mt-1">Handle: <code class="bg-gray-100 px-2 py-1 rounded">{handle}</code></p>
+            {/if}
+            {#if sourceId}
+              <p class="text-sm text-gray-500 mt-1">Source: <code class="bg-blue-100 px-2 py-1 rounded">{sourceId}</code></p>
             {/if}
           </div>
         </div>
@@ -552,6 +567,9 @@
                   <div>
                     <p class="font-semibold text-gray-800">New Customer Call</p>
                     <p class="text-sm text-gray-600">Call ID: {call.callId}</p>
+                    {#if call.sourceId}
+                      <p class="text-xs text-blue-600">Source: {call.sourceId}</p>
+                    {/if}
                     <p class="text-xs text-gray-500">
                       {new Date(call.timestamp).toLocaleTimeString()}
                     </p>

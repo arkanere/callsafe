@@ -180,19 +180,19 @@ export class SocketManager {
     this.emit('customer_connect');
   }
 
-  connectAsCustomerWithHandle(handle: string): void {
-    console.log('📤 Emitting customer_connect_with_handle for handle:', handle);
-    this.emit('customer_connect_with_handle', { handle });
+  connectAsCustomerWithHandle(handle: string, sourceId?: string): void {
+    console.log('📤 Emitting customer_connect_with_handle for handle:', handle, 'sourceId:', sourceId);
+    this.emit('customer_connect_with_handle', { handle, sourceId });
   }
 
-  endCall(data?: { callId?: string; handle?: string }): void {
+  endCall(data?: { callId?: string; handle?: string; sourceId?: string }): void {
     console.log('📤 Emitting call_ended with data:', data);
     this.emit('call_ended', data || {});
   }
 
-  cancelCallRequest(handle: string): void {
-    console.log('📤 Emitting cancel_call_request for handle:', handle);
-    this.emit('cancel_call_request', { handle });
+  cancelCallRequest(handle: string, sourceId?: string): void {
+    console.log('📤 Emitting cancel_call_request for handle:', handle, 'sourceId:', sourceId);
+    this.emit('cancel_call_request', { handle, sourceId });
   }
 
   // Agent methods
@@ -206,9 +206,9 @@ export class SocketManager {
     this.emit('agent_online_with_user', { userId });
   }
 
-  goOnlineWithHandle(handle: string): void {
-    console.log('📤 Emitting agent_online_with_handle for handle:', handle);
-    this.emit('agent_online_with_handle', { handle });
+  goOnlineWithHandle(handle: string, sourceId?: string): void {
+    console.log('📤 Emitting agent_online_with_handle for handle:', handle, 'sourceId:', sourceId);
+    this.emit('agent_online_with_handle', { handle, sourceId });
   }
 
   goOffline(): void {
@@ -216,30 +216,30 @@ export class SocketManager {
     this.emit('agent_offline');
   }
 
-  acceptCall(callId: string, handle?: string): void {
-    console.log('📤 Emitting accept_call for:', callId, 'handle:', handle);
-    this.emit('accept_call', { callId, handle });
+  acceptCall(callId: string, handle?: string, sourceId?: string): void {
+    console.log('📤 Emitting accept_call for:', callId, 'handle:', handle, 'sourceId:', sourceId);
+    this.emit('accept_call', { callId, handle, sourceId });
   }
 
-  declineCall(callId: string, handle?: string): void {
-    console.log('📤 Emitting decline_call for:', callId, 'handle:', handle);
-    this.emit('decline_call', { callId, handle });
+  declineCall(callId: string, handle?: string, sourceId?: string): void {
+    console.log('📤 Emitting decline_call for:', callId, 'handle:', handle, 'sourceId:', sourceId);
+    this.emit('decline_call', { callId, handle, sourceId });
   }
 
   // WebRTC signaling methods
-  sendOffer(callId: string, offer: RTCSessionDescriptionInit, handle?: string): void {
-    console.log('📤 Emitting offer for:', callId, offer, 'handle:', handle);
-    this.emit('offer', { callId, offer, handle });
+  sendOffer(callId: string, offer: RTCSessionDescriptionInit, handle?: string, sourceId?: string): void {
+    console.log('📤 Emitting offer for:', callId, offer, 'handle:', handle, 'sourceId:', sourceId);
+    this.emit('offer', { callId, offer, handle, sourceId });
   }
 
-  sendAnswer(callId: string, answer: RTCSessionDescriptionInit, handle?: string): void {
-    console.log('📤 Emitting answer for:', callId, answer, 'handle:', handle);
-    this.emit('answer', { callId, answer, handle });
+  sendAnswer(callId: string, answer: RTCSessionDescriptionInit, handle?: string, sourceId?: string): void {
+    console.log('📤 Emitting answer for:', callId, answer, 'handle:', handle, 'sourceId:', sourceId);
+    this.emit('answer', { callId, answer, handle, sourceId });
   }
 
-  sendIceCandidate(callId: string, candidate: RTCIceCandidateInit, handle?: string): void {
-    console.log('📤 Emitting ice_candidate for:', callId, candidate, 'handle:', handle);
-    this.emit('ice_candidate', { callId, candidate, handle });
+  sendIceCandidate(callId: string, candidate: RTCIceCandidateInit, handle?: string, sourceId?: string): void {
+    console.log('📤 Emitting ice_candidate for:', callId, candidate, 'handle:', handle, 'sourceId:', sourceId);
+    this.emit('ice_candidate', { callId, candidate, handle, sourceId });
   }
 
   // Generic emit method

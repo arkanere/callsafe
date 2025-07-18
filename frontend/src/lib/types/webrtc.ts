@@ -4,6 +4,7 @@ export interface CallState {
   isCustomer: boolean;
   isMuted: boolean;
   error?: string;
+  sourceId?: string;
 }
 
 export interface ConnectionConfig {
