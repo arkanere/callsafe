@@ -5,9 +5,6 @@
   let hasCreatedHandle = false;
   let hasEmbedded = false;
   let callSafeHandle = '';
-  let embedCode = '';
-  let showEmbedCode = false;
-  let showInlineEmbedCode = false;
   let copied = false;
   let userHandles = [];
   let isLoading = false;
@@ -66,8 +63,6 @@
           callSafeHandle = firstHandle.handle;
           hasEmbedded = firstHandle.is_embedded;
           
-          // Generate embed code using full URL
-          generateEmbedCode(getFullUrl(firstHandle.handle));
         }
       }
     } catch (error) {
@@ -75,24 +70,6 @@
     }
   }
   
-  function generateEmbedCode(handleUrl) {
-    const handle = handleUrl.split('/').pop();
-    
-    embedCode = '<scr' + 'ipt>\n' +
-      '(function() {\n' +
-      '  window.CallWidgetConfig = {\n' +
-      '    buttonText: \'Call Us\',\n' +
-      '    position: \'bottom-right\',\n' +
-      '    theme: \'light\',\n' +
-      '    handle: \'' + handle + '\'\n' +
-      '  };\n' +
-      '  var s = document.createElement(\'script\');\n' +
-      '  s.src = \'https://www.callsafe.tech/embed.js\';\n' +
-      '  s.async = true;\n' +
-      '  document.head.appendChild(s);\n' +
-      '})();\n' +
-      '</scr' + 'ipt>';
-  }
   
   async function createCallSafeHandle() {
     if (isLoading) return;
@@ -117,8 +94,6 @@
         hasCreatedHandle = true;
         hasEmbedded = newHandle.is_embedded;
         
-        // Generate embed code using full URL
-        generateEmbedCode(getFullUrl(newHandle.handle));
       } else {
         alert('Failed to create handle: ' + data.error);
       }
@@ -171,8 +146,6 @@
         totalTime = '2h 15m';
         successfulCalls = 18;
         
-        // Close the modal
-        showEmbedCode = false;
       } else {
         alert('Failed to update embed status: ' + data.error);
       }
@@ -204,10 +177,10 @@
     </div>
 
     <!-- Setup Progress -->
-    {#if !hasEmbedded}
+    {#if !hasCreatedHandle}
       <div class="bg-white rounded-2xl shadow-xl p-6 mb-8">
         <h2 class="text-2xl font-bold text-gray-900 mb-4">Get Started with CallSafe</h2>
-        <p class="text-gray-600 mb-6">Follow these steps to start receiving anonymous calls from your customers</p>
+        <p class="text-gray-600 mb-6">Create your unique CallSafe handle to start receiving anonymous calls</p>
         
         <div class="space-y-4">
           <!-- Step 1: Create Handle -->
@@ -238,40 +211,12 @@
             {/if}
           </div>
           
-          <!-- Step 2: Embed Code -->
-          <div class="flex items-center p-4 bg-gray-50 rounded-xl">
-            <div class="w-8 h-8 rounded-full flex items-center justify-center mr-4 {hasEmbedded ? 'bg-green-100 text-green-600' : 'bg-gray-200 text-gray-500'}">
-              {#if hasEmbedded}
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-                </svg>
-              {:else}
-                <span class="text-sm font-bold">2</span>
-              {/if}
-            </div>
-            <div class="flex-1">
-              <h3 class="font-semibold text-gray-900">Embed on Your Website</h3>
-              <p class="text-sm text-gray-600">Add the CallSafe widget to your website</p>
-            </div>
-            {#if hasCreatedHandle && !hasEmbedded}
-              <button
-                on:click={() => showEmbedCode = true}
-                class="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors duration-200"
-              >
-                Get Code
-              </button>
-            {:else if hasEmbedded}
-              <span class="text-green-600 font-semibold">✓ Complete</span>
-            {:else}
-              <span class="text-gray-400 font-semibold">Pending</span>
-            {/if}
-          </div>
         </div>
       </div>
     {/if}
 
-    <!-- Created Handle Display - Only show after embedding -->
-    {#if hasEmbedded && callSafeHandle}
+    <!-- Created Handle Display -->
+    {#if hasCreatedHandle && callSafeHandle}
       <div class="bg-white rounded-2xl shadow-xl p-6 mb-8">
         <h2 class="text-xl font-bold text-gray-900 mb-4">Your CallSafe Handle</h2>
         
@@ -307,34 +252,11 @@
           </div>
         </div>
         
-        <div class="flex items-center justify-between mb-3">
-          <h3 class="text-lg font-semibold text-gray-900">Embed Code</h3>
-          <button
-            on:click={() => showInlineEmbedCode = !showInlineEmbedCode}
-            class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors duration-200"
-          >
-            {showInlineEmbedCode ? 'Hide Code' : 'Get Code'}
-          </button>
-        </div>
-        
-        {#if showInlineEmbedCode}
-          <div class="bg-gray-900 p-4 rounded-xl">
-            <div class="flex items-start justify-between">
-              <pre class="text-sm text-green-400 overflow-x-auto flex-1"><code>{embedCode}</code></pre>
-              <button
-                on:click={() => copyToClipboard(embedCode)}
-                class="ml-4 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors duration-200"
-              >
-                {copied ? 'Copied!' : 'Copy'}
-              </button>
-            </div>
-          </div>
-        {/if}
       </div>
     {/if}
 
-    <!-- User Stats - Only show after embedding -->
-    {#if hasEmbedded}
+    <!-- User Stats -->
+    {#if hasCreatedHandle}
       <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <div class="bg-white rounded-xl shadow-lg p-6">
           <div class="flex items-center">
@@ -381,8 +303,8 @@
       </div>
     {/if}
 
-    <!-- Quick Actions - Only show after embedding -->
-    {#if hasEmbedded}
+    <!-- Quick Actions -->
+    {#if hasCreatedHandle}
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
         <div class="bg-white rounded-2xl shadow-xl p-8">
           <div class="text-center">
@@ -422,8 +344,8 @@
       </div>
     {/if}
 
-    <!-- Recent Activity - Only show after embedding -->
-    {#if hasEmbedded}
+    <!-- Recent Activity -->
+    {#if hasCreatedHandle}
       <div class="bg-white rounded-2xl shadow-xl p-6">
         <h2 class="text-2xl font-bold text-gray-900 mb-6">Recent Activity</h2>
         <div class="space-y-4">
@@ -486,108 +408,3 @@
   </div>
 </div>
 
-<!-- Embed Code Modal -->
-{#if showEmbedCode}
-  <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50" on:click={() => showEmbedCode = false}>
-    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto" on:click|stopPropagation>
-      <div class="p-6">
-        <div class="flex items-center justify-between mb-6">
-          <h2 class="text-2xl font-bold text-gray-900">Embed CallSafe on Your Website</h2>
-          <button
-            on:click={() => showEmbedCode = false}
-            class="text-gray-400 hover:text-gray-600"
-          >
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-            </svg>
-          </button>
-        </div>
-        
-        <!-- Step 1: Your CallSafe Handle -->
-        <div class="mb-8">
-          <h3 class="text-lg font-semibold text-gray-900 mb-3">Step 1: Your CallSafe Handle</h3>
-          <p class="text-gray-600 mb-4">Your unique CallSafe handle:</p>
-          
-          <!-- Handle Identifier -->
-          <div class="mb-4">
-            <h4 class="text-sm font-medium text-gray-700 mb-2">Handle:</h4>
-            <div class="bg-blue-50 p-3 rounded-lg">
-              <div class="flex items-center justify-between">
-                <code class="text-lg font-mono text-blue-600 font-semibold">{callSafeHandle}</code>
-                <button
-                  on:click={() => copyToClipboard(callSafeHandle)}
-                  class="ml-4 bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm font-semibold transition-colors duration-200"
-                >
-                  {copied ? 'Copied!' : 'Copy'}
-                </button>
-              </div>
-            </div>
-          </div>
-          
-          <!-- Full URL -->
-          <div>
-            <h4 class="text-sm font-medium text-gray-700 mb-2">Full URL:</h4>
-            <div class="bg-gray-50 p-3 rounded-lg">
-              <div class="flex items-center justify-between">
-                <code class="text-sm text-gray-700 break-all">{getFullUrl(callSafeHandle)}</code>
-                <button
-                  on:click={() => copyToClipboard(getFullUrl(callSafeHandle))}
-                  class="ml-4 bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-sm font-semibold transition-colors duration-200"
-                >
-                  {copied ? 'Copied!' : 'Copy'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-        
-        <!-- Step 2: Embed Code -->
-        <div class="mb-8">
-          <h3 class="text-lg font-semibold text-gray-900 mb-3">Step 2: Embed Code</h3>
-          <p class="text-gray-600 mb-4">Copy this code and paste it into your website where you want the CallSafe button to appear:</p>
-          <div class="bg-gray-900 p-4 rounded-xl">
-            <div class="flex items-start justify-between">
-              <pre class="text-sm text-green-400 overflow-x-auto flex-1"><code>{embedCode}</code></pre>
-              <button
-                on:click={() => copyToClipboard(embedCode)}
-                class="ml-4 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors duration-200"
-              >
-                {copied ? 'Copied!' : 'Copy'}
-              </button>
-            </div>
-          </div>
-        </div>
-        
-        <!-- Step 3: Preview -->
-        <div class="mb-8">
-          <h3 class="text-lg font-semibold text-gray-900 mb-3">Step 3: Preview</h3>
-          <p class="text-gray-600 mb-4">This is how the CallSafe button will look on your website:</p>
-          <div class="bg-gray-50 p-6 rounded-xl text-center">
-            <a href={getFullUrl(callSafeHandle)} 
-               target="_blank" 
-               class="inline-block bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-semibold transition-colors duration-200">
-              📞 Call Us Anonymously
-            </a>
-          </div>
-        </div>
-        
-        <!-- Action Buttons -->
-        <div class="flex gap-4">
-          <button
-            on:click={() => showEmbedCode = false}
-            class="flex-1 px-6 py-3 border border-gray-300 text-gray-700 rounded-xl font-semibold hover:bg-gray-50 transition-colors duration-200"
-          >
-            Close
-          </button>
-          <button
-            on:click={markAsEmbedded}
-            disabled={isLoading}
-            class="flex-1 px-6 py-3 bg-green-600 text-white rounded-xl font-semibold hover:bg-green-700 disabled:bg-green-400 disabled:cursor-not-allowed transition-colors duration-200"
-          >
-            {isLoading ? 'Updating...' : '✓ I\'ve Embedded This Code'}
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
-{/if}
