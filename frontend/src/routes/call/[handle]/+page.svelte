@@ -232,6 +232,7 @@
       } else {
         // Cancel the call request during waiting phase
         socket.cancelCallRequest(handle);
+        console.log('📤 Sent cancel_call_request, waiting for server processing...');
       }
     }
     if (webrtc) {
