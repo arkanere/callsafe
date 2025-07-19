@@ -197,7 +197,8 @@
             this.iframe = document.createElement('iframe');
             this.iframe.className = 'callsafe-iframe';
             this.iframe.src = this.getEmbedUrl();
-            this.iframe.allow = 'microphone; camera';
+            this.iframe.allow = 'microphone *; camera *';
+            this.iframe.setAttribute('allowfullscreen', 'true');
             
             modal.appendChild(closeButton);
             modal.appendChild(this.iframe);
