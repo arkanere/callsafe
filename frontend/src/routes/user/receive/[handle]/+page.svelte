@@ -275,7 +275,7 @@
     }
   }
 
-  function acceptCall(callId: string) {
+  async function acceptCall(callId: string) {
     console.log('=== ACCEPT CALL CLICKED ===');
     console.log('Call ID:', callId);
     console.log('Handle:', handle);
@@ -283,6 +283,16 @@
     
     if (!isOnline) {
       console.log('❌ Agent not online, cannot accept call');
+      return;
+    }
+    
+    try {
+      console.log('🎤 Re-initializing media for new call...');
+      await webrtc.initializeMedia({ audio: true, video: false });
+      console.log('✅ Media re-initialized successfully');
+    } catch (error) {
+      console.error('❌ Failed to initialize media:', error);
+      errorMessage = 'Failed to initialize microphone. Please refresh and try again.';
       return;
     }
     
