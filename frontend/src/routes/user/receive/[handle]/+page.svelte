@@ -84,7 +84,7 @@
   function setupWebRTCHandlers() {
     webrtc.setStateChangeHandler((state) => {
       const previousStatus = callState.status;
-      callState = state;
+      callState = { ...callState, ...state };
       
       if (state.status === 'connected') {
         connectionMonitor.recordConnectionSuccess();
