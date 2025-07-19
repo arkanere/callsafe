@@ -1,31 +1,45 @@
 (function() {
     'use strict';
     
+    console.log('🚀 CallSafe Embed: Script started loading');
+    
     // Prevent multiple initializations
     if (window.CallSafeEmbedLoaded) {
+        console.log('⚠️ CallSafe Embed: Already loaded, skipping initialization');
         return;
     }
     window.CallSafeEmbedLoaded = true;
+    console.log('✅ CallSafe Embed: Initialization flag set');
     
     // Configuration from script tag
     const script = document.currentScript || document.querySelector('script[data-handle]');
+    console.log('🔍 CallSafe Embed: Script element found:', script);
+    
     const handle = script?.getAttribute('data-handle');
     const sourceId = script?.getAttribute('data-source-id') || 'embed-widget';
     
+    console.log('📋 CallSafe Embed: Configuration:', { handle, sourceId });
+    
     if (!handle) {
-        console.error('CallSafe Embed: data-handle attribute is required');
+        console.error('❌ CallSafe Embed: data-handle attribute is required');
+        console.log('💡 CallSafe Embed: Make sure your script tag includes data-handle="your-handle"');
         return;
     }
     
-    // CallSafe configuration
-    const CALLSAFE_BASE_URL = 'https://callsafe.vercel.app';
+    console.log('✅ CallSafe Embed: Handle validated, proceeding with initialization');
+    
+    // CallSafe configuration  
+    const CALLSAFE_BASE_URL = window.location.hostname === 'localhost' ? 'http://localhost:5173' : 'https://callsafe.vercel.app';
+    console.log('🌐 CallSafe Embed: Base URL set to:', CALLSAFE_BASE_URL);
     const WIDGET_ID = 'callsafe-widget-' + handle;
     const MODAL_ID = 'callsafe-modal-' + handle;
     
     // Prevent duplicate widgets
     if (document.getElementById(WIDGET_ID)) {
+        console.log('⚠️ CallSafe Embed: Widget already exists, skipping creation');
         return;
     }
+    console.log('✅ CallSafe Embed: No existing widget found, proceeding with creation');
     
     // CSS styles for the widget
     const widgetCSS = `
@@ -168,28 +182,45 @@
     
     // Create and inject CSS
     function injectCSS() {
+        console.log('🎨 CallSafe Embed: Injecting CSS styles');
         const style = document.createElement('style');
         style.textContent = widgetCSS;
         document.head.appendChild(style);
+        console.log('✅ CallSafe Embed: CSS styles injected successfully');
     }
     
     // Create the floating widget
     function createWidget() {
+        console.log('🔨 CallSafe Embed: Creating widget element');
         const widget = document.createElement('div');
         widget.id = WIDGET_ID;
         widget.className = 'callsafe-widget';
+        console.log('📦 CallSafe Embed: Widget element created with ID:', WIDGET_ID);
         
         const button = document.createElement('button');
         button.className = 'callsafe-button';
         button.innerHTML = phoneIcon + '<span>Quick Call</span>';
         button.onclick = openModal;
+        console.log('🔘 CallSafe Embed: Button created with click handler');
         
         widget.appendChild(button);
         document.body.appendChild(widget);
+        console.log('✅ CallSafe Embed: Widget successfully added to DOM');
+        
+        // Verify widget is visible
+        const widgetRect = widget.getBoundingClientRect();
+        console.log('📐 CallSafe Embed: Widget position and size:', {
+            top: widgetRect.top,
+            left: widgetRect.left,
+            width: widgetRect.width,
+            height: widgetRect.height,
+            visible: widgetRect.width > 0 && widgetRect.height > 0
+        });
     }
     
     // Create the modal
     function createModal() {
+        console.log('🖼️ CallSafe Embed: Creating modal element');
         const modal = document.createElement('div');
         modal.id = MODAL_ID;
         modal.className = 'callsafe-modal';
@@ -198,6 +229,7 @@
                 closeModal();
             }
         };
+        console.log('📱 CallSafe Embed: Modal element created with ID:', MODAL_ID);
         
         const modalContent = document.createElement('div');
         modalContent.className = 'callsafe-modal-content';
@@ -214,30 +246,38 @@
         
         const iframe = document.createElement('iframe');
         iframe.className = 'callsafe-iframe';
-        iframe.src = `${CALLSAFE_BASE_URL}/embed/${handle}?sourceId=${encodeURIComponent(sourceId)}`;
+        const iframeSrc = `${CALLSAFE_BASE_URL}/embed/${handle}?sourceId=${encodeURIComponent(sourceId)}`;
+        iframe.src = iframeSrc;
         iframe.allow = 'microphone';
         iframe.title = 'CallSafe Quick Call';
+        console.log('🌐 CallSafe Embed: Iframe created with src:', iframeSrc);
         
         modalContent.appendChild(header);
         modalContent.appendChild(iframe);
         modal.appendChild(modalContent);
         document.body.appendChild(modal);
+        console.log('✅ CallSafe Embed: Modal successfully added to DOM');
     }
     
     // Open modal function
     function openModal() {
+        console.log('🔄 CallSafe Embed: Opening modal');
         const modal = document.getElementById(MODAL_ID);
         if (modal) {
             modal.classList.add('show');
             document.body.style.overflow = 'hidden';
+            console.log('✅ CallSafe Embed: Modal opened successfully');
             
             // Track embed click event
             if (window.gtag) {
+                console.log('📊 CallSafe Embed: Tracking click event');
                 window.gtag('event', 'callsafe_embed_click', {
                     'source_id': sourceId,
                     'handle': handle
                 });
             }
+        } else {
+            console.error('❌ CallSafe Embed: Modal element not found!');
         }
     }
     
@@ -271,17 +311,28 @@
     
     // Initialize when DOM is ready
     function init() {
-        injectCSS();
-        createWidget();
-        createModal();
+        console.log('🎯 CallSafe Embed: Starting initialization');
+        console.log('📄 CallSafe Embed: Document ready state:', document.readyState);
+        console.log('🏗️ CallSafe Embed: Body element exists:', !!document.body);
         
-        console.log(`CallSafe Embed initialized for handle: ${handle}, sourceId: ${sourceId}`);
+        try {
+            injectCSS();
+            createWidget();
+            createModal();
+            
+            console.log(`🎉 CallSafe Embed: Successfully initialized for handle: ${handle}, sourceId: ${sourceId}`);
+        } catch (error) {
+            console.error('💥 CallSafe Embed: Initialization failed:', error);
+        }
     }
     
     // Initialize
+    console.log('⏳ CallSafe Embed: Checking document ready state');
     if (document.readyState === 'loading') {
+        console.log('📋 CallSafe Embed: Document still loading, waiting for DOMContentLoaded');
         document.addEventListener('DOMContentLoaded', init);
     } else {
+        console.log('📋 CallSafe Embed: Document already loaded, initializing immediately');
         init();
     }
     
