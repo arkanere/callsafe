@@ -267,7 +267,7 @@
       console.log('✅ Embed: Microphone access granted');
       
       // Ensure socket connection
-      if (!socket.isConnected()) {
+      if (!socket.getConnectionStatus()) {
         console.log('🔗 Embed: Connecting to signaling server...');
         connectionStatus = 'Connecting to signaling server...';
         await socket.connect();
