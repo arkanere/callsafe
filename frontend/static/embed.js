@@ -29,8 +29,9 @@
     console.log('✅ CallSafe Embed: Handle validated, proceeding with initialization');
     
     // CallSafe configuration  
-    const CALLSAFE_BASE_URL = window.location.hostname === 'localhost' ? 'http://localhost:5173' : 'https://callsafe.tech';
-    console.log('🌐 CallSafe Embed: Base URL set to:', CALLSAFE_BASE_URL);
+    const CALLSAFE_API_URL = 'https://callsafe.tech';
+    const SIGNALING_SERVER = 'https://tunnel.callsafe.tech';
+    console.log('🌐 CallSafe Embed: API URL set to:', CALLSAFE_API_URL);
     const WIDGET_ID = 'callsafe-widget-' + handle;
     const MODAL_ID = 'callsafe-modal-' + handle;
     
@@ -40,7 +41,14 @@
         return;
     }
     console.log('✅ CallSafe Embed: No existing widget found, proceeding with creation');
-    
+
+    // Global state for the call
+    let socket = null;
+    let peerConnection = null;
+    let localStream = null;
+    let isCallActive = false;
+    let callId = null;
+
     // CSS styles for the widget
     const widgetCSS = `
         .callsafe-widget {
@@ -136,21 +144,89 @@
             background: rgba(255, 255, 255, 0.2);
         }
         
-        .callsafe-iframe {
-            width: 100%;
-            height: 500px;
+        .callsafe-call-interface {
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .callsafe-status {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: #374151;
+        }
+        
+        .callsafe-status.connecting {
+            color: #f59e0b;
+        }
+        
+        .callsafe-status.connected {
+            color: #10b981;
+        }
+        
+        .callsafe-status.error {
+            color: #ef4444;
+        }
+        
+        .callsafe-start-btn {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
             border: none;
-            display: block;
+            border-radius: 12px;
+            padding: 16px 32px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin: 10px;
+        }
+        
+        .callsafe-start-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(16, 185, 129, 0.4);
+        }
+        
+        .callsafe-end-btn {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            padding: 16px 32px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin: 10px;
+        }
+        
+        .callsafe-end-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(239, 68, 68, 0.4);
+        }
+        
+        .callsafe-audio {
+            display: none;
+        }
+        
+        .callsafe-spinner {
+            border: 3px solid #f3f4f6;
+            border-top: 3px solid #3b82f6;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: callsafe-spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        
+        @keyframes callsafe-spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
         
         @media (max-width: 480px) {
             .callsafe-modal-content {
                 width: 95%;
                 max-height: 95vh;
-            }
-            
-            .callsafe-iframe {
-                height: 400px;
             }
             
             .callsafe-widget {
@@ -179,6 +255,247 @@
             <line x1="6" y1="6" x2="18" y2="18"></line>
         </svg>
     `;
+
+    // Load Socket.IO dynamically
+    function loadSocketIO() {
+        return new Promise((resolve, reject) => {
+            if (window.io) {
+                resolve(window.io);
+                return;
+            }
+            
+            const script = document.createElement('script');
+            script.src = 'https://cdn.socket.io/4.7.2/socket.io.min.js';
+            script.onload = () => resolve(window.io);
+            script.onerror = reject;
+            document.head.appendChild(script);
+        });
+    }
+
+    // WebRTC Configuration
+    const rtcConfig = {
+        iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
+            {
+                urls: 'turn:a.relay.metered.ca:80',
+                username: '***REDACTED***',
+                credential: 'AjJtOG9DbHp3OVZPK2ZG'
+            }
+        ]
+    };
+
+    // Initialize media (microphone)
+    async function initializeMedia() {
+        try {
+            console.log('🎤 CallSafe Embed: Requesting microphone access');
+            localStream = await navigator.mediaDevices.getUserMedia({ 
+                audio: true, 
+                video: false 
+            });
+            console.log('✅ CallSafe Embed: Microphone access granted');
+            return true;
+        } catch (error) {
+            console.error('❌ CallSafe Embed: Microphone access denied:', error);
+            updateStatus('Failed to access microphone. Please check permissions.', 'error');
+            return false;
+        }
+    }
+
+    // Create peer connection
+    function createPeerConnection() {
+        console.log('🔗 CallSafe Embed: Creating peer connection');
+        peerConnection = new RTCPeerConnection(rtcConfig);
+        
+        // Add local stream
+        if (localStream) {
+            localStream.getTracks().forEach(track => {
+                peerConnection.addTrack(track, localStream);
+            });
+        }
+        
+        // Handle remote stream
+        peerConnection.ontrack = (event) => {
+            console.log('🔊 CallSafe Embed: Received remote stream');
+            const remoteAudio = document.getElementById('callsafe-remote-audio');
+            if (remoteAudio) {
+                remoteAudio.srcObject = event.streams[0];
+                remoteAudio.play();
+            }
+        };
+        
+        // Handle ICE candidates
+        peerConnection.onicecandidate = (event) => {
+            if (event.candidate && socket) {
+                console.log('🧊 CallSafe Embed: Sending ICE candidate');
+                socket.emit('ice-candidate', {
+                    callId: callId,
+                    candidate: event.candidate
+                });
+            }
+        };
+        
+        return peerConnection;
+    }
+
+    // Connect to signaling server
+    async function connectToSignalingServer() {
+        try {
+            console.log('🔌 CallSafe Embed: Connecting to signaling server');
+            const io = await loadSocketIO();
+            socket = io(SIGNALING_SERVER);
+            
+            socket.on('connect', () => {
+                console.log('✅ CallSafe Embed: Connected to signaling server');
+            });
+            
+            socket.on('call-accepted', async (data) => {
+                console.log('📞 CallSafe Embed: Call accepted by agent');
+                updateStatus('Call accepted! Connecting...', 'connecting');
+                
+                // Create offer
+                const offer = await peerConnection.createOffer();
+                await peerConnection.setLocalDescription(offer);
+                
+                socket.emit('offer', {
+                    callId: callId,
+                    offer: offer
+                });
+            });
+            
+            socket.on('answer', async (data) => {
+                console.log('📞 CallSafe Embed: Received answer from agent');
+                await peerConnection.setRemoteDescription(data.answer);
+                updateStatus('Connected! You can now speak.', 'connected');
+                isCallActive = true;
+            });
+            
+            socket.on('ice-candidate', async (data) => {
+                console.log('🧊 CallSafe Embed: Received ICE candidate');
+                await peerConnection.addIceCandidate(data.candidate);
+            });
+            
+            socket.on('call-ended', () => {
+                console.log('📴 CallSafe Embed: Call ended by agent');
+                endCall();
+            });
+            
+            socket.on('agent-busy', () => {
+                console.log('😔 CallSafe Embed: No agents available');
+                updateStatus('No agents available. Please try again later.', 'error');
+            });
+            
+            return true;
+        } catch (error) {
+            console.error('❌ CallSafe Embed: Failed to connect to signaling server:', error);
+            updateStatus('Failed to connect. Please try again.', 'error');
+            return false;
+        }
+    }
+
+    // Start call
+    async function startCall() {
+        console.log('🚀 CallSafe Embed: Starting call');
+        updateStatus('Requesting microphone access...', 'connecting');
+        
+        // Request microphone access
+        const hasMedia = await initializeMedia();
+        if (!hasMedia) return;
+        
+        updateStatus('Connecting to server...', 'connecting');
+        
+        // Connect to signaling server
+        const connected = await connectToSignalingServer();
+        if (!connected) return;
+        
+        // Create peer connection
+        createPeerConnection();
+        
+        updateStatus('Looking for available agents...', 'connecting');
+        
+        // Generate call ID and request call
+        callId = 'call_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        
+        socket.emit('request-call', {
+            callId: callId,
+            handle: handle,
+            sourceId: sourceId
+        });
+        
+        // Show end call button
+        showEndCallButton();
+    }
+
+    // End call
+    function endCall() {
+        console.log('📴 CallSafe Embed: Ending call');
+        
+        isCallActive = false;
+        
+        // Close peer connection
+        if (peerConnection) {
+            peerConnection.close();
+            peerConnection = null;
+        }
+        
+        // Stop local stream
+        if (localStream) {
+            localStream.getTracks().forEach(track => track.stop());
+            localStream = null;
+        }
+        
+        // Disconnect socket
+        if (socket) {
+            socket.emit('end-call', { callId: callId });
+            socket.disconnect();
+            socket = null;
+        }
+        
+        updateStatus('Call ended', 'error');
+        showStartCallButton();
+        
+        // Auto close modal after 2 seconds
+        setTimeout(() => {
+            closeModal();
+        }, 2000);
+    }
+
+    // Update status display
+    function updateStatus(message, type = '') {
+        const statusEl = document.querySelector('.callsafe-status');
+        if (statusEl) {
+            statusEl.textContent = message;
+            statusEl.className = 'callsafe-status ' + type;
+        }
+    }
+
+    // Show start call button
+    function showStartCallButton() {
+        const interface = document.querySelector('.callsafe-call-interface');
+        if (interface) {
+            interface.innerHTML = `
+                <div class="callsafe-status">Ready to make a call</div>
+                <button class="callsafe-start-btn" onclick="window.CallSafeEmbed.startCall()">
+                    Start Call
+                </button>
+            `;
+        }
+    }
+
+    // Show end call button with spinner
+    function showEndCallButton() {
+        const interface = document.querySelector('.callsafe-call-interface');
+        if (interface) {
+            interface.innerHTML = `
+                <div class="callsafe-spinner"></div>
+                <div class="callsafe-status connecting">Connecting...</div>
+                <button class="callsafe-end-btn" onclick="window.CallSafeEmbed.endCall()">
+                    Cancel Call
+                </button>
+                <audio id="callsafe-remote-audio" class="callsafe-audio" autoplay></audio>
+            `;
+        }
+    }
     
     // Create and inject CSS
     function injectCSS() {
@@ -206,16 +523,6 @@
         widget.appendChild(button);
         document.body.appendChild(widget);
         console.log('✅ CallSafe Embed: Widget successfully added to DOM');
-        
-        // Verify widget is visible
-        const widgetRect = widget.getBoundingClientRect();
-        console.log('📐 CallSafe Embed: Widget position and size:', {
-            top: widgetRect.top,
-            left: widgetRect.left,
-            width: widgetRect.width,
-            height: widgetRect.height,
-            visible: widgetRect.width > 0 && widgetRect.height > 0
-        });
     }
     
     // Create the modal
@@ -244,30 +551,17 @@
             <button class="callsafe-close" onclick="window.CallSafeEmbed.closeModal()">${closeIcon}</button>
         `;
         
-        const iframe = document.createElement('iframe');
-        iframe.className = 'callsafe-iframe';
-        const iframeSrc = `${CALLSAFE_BASE_URL}/embed/${handle}?sourceId=${encodeURIComponent(sourceId)}`;
-        iframe.src = iframeSrc;
-        iframe.allow = 'microphone';
-        iframe.title = 'CallSafe Quick Call';
-        console.log('🌐 CallSafe Embed: Iframe created with src:', iframeSrc);
-        
-        // Listen for iframe load to send initial communication setup
-        iframe.onload = function() {
-            console.log('🎯 CallSafe Embed: Iframe loaded, sending initial setup');
-            try {
-                iframe.contentWindow.postMessage({
-                    type: 'initParentCommunication',
-                    functions: ['requestCall'],
-                    parentOrigin: window.location.origin
-                }, CALLSAFE_BASE_URL);
-            } catch (e) {
-                console.log('🚫 CallSafe Embed: Cannot access iframe contentWindow (cross-origin)');
-            }
-        };
+        const callInterface = document.createElement('div');
+        callInterface.className = 'callsafe-call-interface';
+        callInterface.innerHTML = `
+            <div class="callsafe-status">Ready to make a call</div>
+            <button class="callsafe-start-btn" onclick="window.CallSafeEmbed.startCall()">
+                Start Call
+            </button>
+        `;
         
         modalContent.appendChild(header);
-        modalContent.appendChild(iframe);
+        modalContent.appendChild(callInterface);
         modal.appendChild(modalContent);
         document.body.appendChild(modal);
         console.log('✅ CallSafe Embed: Modal successfully added to DOM');
@@ -281,6 +575,9 @@
             modal.classList.add('show');
             document.body.style.overflow = 'hidden';
             console.log('✅ CallSafe Embed: Modal opened successfully');
+            
+            // Reset to initial state
+            showStartCallButton();
             
             // Track embed click event
             if (window.gtag) {
@@ -297,123 +594,27 @@
     
     // Close modal function
     function closeModal() {
+        console.log('🔄 CallSafe Embed: Closing modal');
         const modal = document.getElementById(MODAL_ID);
         if (modal) {
             modal.classList.remove('show');
             document.body.style.overflow = '';
             
-            // Refresh iframe to end any active calls
-            const iframe = modal.querySelector('.callsafe-iframe');
-            if (iframe) {
-                iframe.src = iframe.src;
+            // End any active call
+            if (isCallActive) {
+                endCall();
             }
         }
     }
-    
-    // Handle messages from iframe
-    window.addEventListener('message', function(event) {
-        // Verify origin for security
-        if (event.origin !== CALLSAFE_BASE_URL) {
-            console.log('🔒 CallSafe Embed: Ignoring message from origin:', event.origin);
-            return;
-        }
-        
-        console.log('📨 CallSafe Embed: Received message:', event.data);
-        
-        // Handle both object and string messages
-        let messageData = event.data;
-        if (typeof messageData === 'string') {
-            try {
-                messageData = JSON.parse(messageData);
-            } catch (e) {
-                console.log('📨 CallSafe Embed: Non-JSON string message:', messageData);
-                messageData = { type: messageData };
-            }
-        }
-        
-        const { type, data } = messageData || {};
-        
-        switch (type) {
-            case 'requestCall':
-                console.log('📞 CallSafe Embed: Received requestCall from iframe');
-                // Send acknowledgment back to iframe
-                event.source.postMessage({
-                    type: 'callAcknowledged',
-                    success: true
-                }, event.origin);
-                break;
-                
-            case 'closeModal':
-                console.log('🔄 CallSafe Embed: Received closeModal from iframe');
-                closeModal();
-                break;
-                
-            case 'callStarted':
-                console.log('🎉 CallSafe Embed: Call started successfully');
-                break;
-                
-            case 'callEnded':
-                console.log('📴 CallSafe Embed: Call ended');
-                break;
-                
-            case undefined:
-            case null:
-                console.log('📨 CallSafe Embed: Message with undefined/null type, raw data:', event.data);
-                // Try to handle as generic call request
-                event.source.postMessage({
-                    type: 'callAcknowledged',
-                    success: true
-                }, event.origin);
-                break;
-                
-            default:
-                console.log('📨 CallSafe Embed: Unknown message type:', type, 'Data:', messageData);
-        }
-    });
 
-    // Expose functions globally for onclick handlers and iframe communication
+    // Expose functions globally
     window.CallSafeEmbed = {
         openModal: openModal,
         closeModal: closeModal,
-        requestCall: function() {
-            console.log('📞 CallSafe Embed: requestCall called directly');
-            return Promise.resolve({ success: true });
-        }
+        startCall: startCall,
+        endCall: endCall
     };
 
-    // Also expose requestCall directly on window for iframe access
-    window.requestCall = function() {
-        console.log('📞 CallSafe Embed: requestCall called on window');
-        return Promise.resolve({ success: true });
-    };
-
-    // Create a communication bridge for the iframe
-    window.CallSafeBridge = {
-        requestCall: function() {
-            console.log('📞 CallSafe Embed: requestCall called via bridge');
-            return Promise.resolve({ success: true });
-        },
-        postMessage: function(message) {
-            console.log('📨 CallSafe Embed: Bridge postMessage called:', message);
-            // Handle the message as if it came via postMessage
-            window.dispatchEvent(new MessageEvent('message', {
-                data: message,
-                origin: CALLSAFE_BASE_URL,
-                source: { postMessage: function() {} }
-            }));
-        }
-    };
-
-    // For legacy iframe code that might expect parent.requestCall
-    try {
-        if (window.parent && window.parent !== window) {
-            window.parent.requestCall = window.requestCall;
-            window.parent.CallSafeBridge = window.CallSafeBridge;
-        }
-    } catch (e) {
-        console.log('🚫 CallSafe Embed: Cannot set parent functions (cross-origin)');
-    }
-    
     // Handle escape key
     document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') {
