@@ -135,6 +135,9 @@
       callState = { ...callState, status: 'failed' };
       isConnecting = false;
       connectionStatus = 'Call failed - No agents available';
+      if (webrtc) {
+        webrtc.endCall();
+      }
     });
 
     socket.on('call_timeout', () => {
@@ -142,6 +145,9 @@
       callState = { ...callState, status: 'failed' };
       isConnecting = false;
       connectionStatus = 'Call timeout - No response from agents';
+      if (webrtc) {
+        webrtc.endCall();
+      }
     });
 
     socket.on('call_disconnected', (reason) => {
@@ -152,6 +158,9 @@
     socket.on('network_error', (error) => {
       errorMessage = "We're having trouble connecting your call. Please check your internet connection and try again.";
       callState = { ...callState, status: 'failed' };
+      if (webrtc) {
+        webrtc.endCall();
+      }
     });
 
     socket.on('reconnect_attempt', (attempt) => {
@@ -168,6 +177,9 @@
       errorMessage = 'Invalid call link. Please check the URL and try again.';
       callState = { ...callState, status: 'failed' };
       isConnecting = false;
+      if (webrtc) {
+        webrtc.endCall();
+      }
     });
   }
 
