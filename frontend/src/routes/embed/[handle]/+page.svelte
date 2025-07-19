@@ -138,6 +138,7 @@
       if (webrtc) {
         webrtc.endCall();
       }
+      socket.disconnect();
     });
 
     socket.on('call_timeout', () => {
@@ -148,6 +149,7 @@
       if (webrtc) {
         webrtc.endCall();
       }
+      socket.disconnect();
     });
 
     socket.on('call_disconnected', (reason) => {
@@ -161,6 +163,7 @@
       if (webrtc) {
         webrtc.endCall();
       }
+      socket.disconnect();
     });
 
     socket.on('reconnect_attempt', (attempt) => {
@@ -180,6 +183,7 @@
       if (webrtc) {
         webrtc.endCall();
       }
+      socket.disconnect();
     });
   }
 

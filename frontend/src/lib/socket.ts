@@ -26,6 +26,19 @@ export class SocketManager {
       return Promise.reject(new Error('Socket.io not available on server'));
     }
 
+    // If already connected, return resolved promise
+    if (this.socket && this.isConnected) {
+      console.log('✅ Socket already connected, reusing connection');
+      return Promise.resolve();
+    }
+
+    // Clean up any existing socket before creating new one
+    if (this.socket) {
+      console.log('🧹 Cleaning up existing socket connection');
+      this.socket.disconnect();
+      this.socket = null;
+    }
+
     return new Promise((resolve, reject) => {
       try {
         console.log('🔌 Creating socket connection...');
