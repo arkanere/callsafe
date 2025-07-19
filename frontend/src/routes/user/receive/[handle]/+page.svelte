@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { WebRTCManager } from '$lib/webrtc.js';
   import { SocketManager } from '$lib/socket.js';
@@ -14,7 +15,7 @@
     isMuted: false
   };
   let isOnline = false;
-  let incomingCalls: Array<{ callId: string; timestamp: number }> = [];
+  let incomingCalls: Array<{ callId: string; timestamp: number; sourceId?: string }> = [];
   let errorMessage = '';
   let connectionStatus = 'Disconnected';
   let remoteAudio: HTMLAudioElement;
@@ -23,9 +24,10 @@
   let callDuration = 0;
   let durationInterval: number;
   let socketConnected = false;
+  let handle = '';
   
-  // Hardcoded user ID for MVP - in real app this would come from session
-  const userId = 1;
+  // Extract handle from URL parameters
+  $: handle = $page.params.handle || '';
   
   // Reactive statement to update connection status
   $: {
@@ -110,19 +112,21 @@
 
     webrtc.setIceCandidateHandler((candidate) => {
       if (callState.callId) {
-        socket.sendIceCandidate(callState.callId, candidate);
+        socket.sendIceCandidate(callState.callId, candidate, handle);
       }
     });
   }
 
   function setupSocketHandlers() {
-    console.log('=== SETTING UP SOCKET HANDLERS (Agent) ===');
+    console.log('=== SETTING UP SOCKET HANDLERS (Agent with handle) ===');
+    console.log('Handle:', handle);
     
     socket.on('new_incoming_call', (data) => {
       console.log('📞 New incoming call received:', data);
       const call = {
         callId: data.callId,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        sourceId: data.sourceId
       };
       console.log('📝 Created call object:', call);
       incomingCalls = [...incomingCalls, call];
@@ -154,7 +158,7 @@
           console.log('✅ Call ID matches, creating answer...');
           const answer = await webrtc.createAnswer(data.callId, data.offer);
           console.log('📤 Sending answer to customer:', answer);
-          socket.sendAnswer(data.callId, answer);
+          socket.sendAnswer(data.callId, answer, handle, data.sourceId);
         } else {
           console.log('❌ Call ID mismatch - expected:', callState.callId, 'received:', data.callId);
         }
@@ -189,6 +193,47 @@
       endCall({ reason: `disconnected_${reason}` });
     });
 
+    socket.on('call_cancelled', (data) => {
+      console.log('📞 Call cancelled by customer:', data);
+      // Remove the cancelled call from incoming calls
+      if (data.callId) {
+        incomingCalls = incomingCalls.filter(call => call.callId !== data.callId);
+        // Stop ringtone if no more incoming calls
+        if (incomingCalls.length === 0) {
+          stopRingtone();
+        }
+      }
+    });
+
+    socket.on('call_request_cancelled', (data) => {
+      console.log('📞 Call request cancelled:', data);
+      // Remove the cancelled call from incoming calls
+      if (data.callId) {
+        incomingCalls = incomingCalls.filter(call => call.callId !== data.callId);
+        // Stop ringtone if no more incoming calls
+        if (incomingCalls.length === 0) {
+          stopRingtone();
+        }
+      }
+    });
+
+    socket.on('customer_disconnected', (data) => {
+      console.log('📞 Customer disconnected:', data);
+      // Remove calls from this customer
+      if (data.callId) {
+        incomingCalls = incomingCalls.filter(call => call.callId !== data.callId);
+        // Stop ringtone if no more incoming calls
+        if (incomingCalls.length === 0) {
+          stopRingtone();
+        }
+      }
+      
+      // End active call if it's from this customer
+      if (callState.callId === data.callId) {
+        endCall({ callId: data.callId, reason: 'customer_disconnected' });
+      }
+    });
+
     socket.on('network_error', (error) => {
       errorMessage = `Network error: ${error}`;
     });
@@ -210,6 +255,11 @@
       return;
     }
 
+    if (!handle) {
+      errorMessage = 'No handle specified for this agent portal';
+      return;
+    }
+
     if (isOnline) {
       socket.goOffline();
       isOnline = false;
@@ -217,8 +267,8 @@
       // Stop ringtone when going offline
       stopRingtone();
     } else {
-      console.log('👤 Agent going online with user ID:', userId);
-      socket.goOnlineWithUser(userId);
+      console.log('👤 Agent going online with handle:', handle);
+      socket.goOnlineWithHandle(handle);
       isOnline = true;
       connectionStatus = 'Online - Waiting for calls';
       errorMessage = '';
@@ -228,6 +278,7 @@
   function acceptCall(callId: string) {
     console.log('=== ACCEPT CALL CLICKED ===');
     console.log('Call ID:', callId);
+    console.log('Handle:', handle);
     console.log('Agent online status:', isOnline);
     
     if (!isOnline) {
@@ -273,7 +324,12 @@
       if (shouldEndActiveCall && callState.callId) {
         try {
           console.log('📤 Notifying server of call end:', callState.callId);
-          socket.endCall();
+          socket.endCall({ 
+            callId: callState.callId, 
+            handle: handle, 
+            sourceId: callState.sourceId,
+            reason 
+          });
         } catch (error) {
           console.error('❌ Failed to notify server of call end:', error);
           // Continue cleanup even if server notification fails
@@ -466,6 +522,9 @@
           <div>
             <h1 class="text-3xl font-bold text-gray-800">Agent Dashboard</h1>
             <p class="text-gray-600">CallSafe Business Portal</p>
+            {#if handle}
+              <p class="text-sm text-gray-500 mt-1">Handle: <code class="bg-gray-100 px-2 py-1 rounded">{handle}</code></p>
+            {/if}
           </div>
         </div>
         
@@ -481,7 +540,7 @@
           <!-- Online Toggle -->
           <button
             on:click={toggleOnlineStatus}
-            disabled={!socketConnected}
+            disabled={!socketConnected || !handle}
             class="px-6 py-2 rounded-lg font-semibold transition-colors duration-200 {
               isOnline 
                 ? 'bg-green-600 hover:bg-green-700 text-white' 
@@ -614,6 +673,9 @@
                   <div>
                     <p class="font-semibold text-gray-800">New Customer Call</p>
                     <p class="text-sm text-gray-600">Call ID: {call.callId}</p>
+                    {#if call.sourceId}
+                      <p class="text-sm text-blue-600">Source: {call.sourceId}</p>
+                    {/if}
                     <p class="text-xs text-gray-500">
                       {new Date(call.timestamp).toLocaleTimeString()}
                     </p>

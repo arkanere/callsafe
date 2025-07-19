@@ -30,9 +30,9 @@
   
   function goToAgent() {
     if (callSafeHandle) {
-      goto(`/agent/${callSafeHandle}`);
+      goto(`/user/receive/${callSafeHandle}`);
     } else {
-      goto('/user/receive');
+      errorMessage = 'Please create a handle first to access the agent portal';
     }
   }
   
@@ -366,13 +366,13 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2-2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
               </svg>
             </div>
-            <h3 class="text-2xl font-bold text-gray-900 mb-4">Agent Dashboard</h3>
-            <p class="text-gray-600 mb-6">Manage incoming calls and handle customer inquiries</p>
+            <h3 class="text-2xl font-bold text-gray-900 mb-4">Receive Calls</h3>
+            <p class="text-gray-600 mb-6">Accept and manage incoming calls from customers</p>
             <button
               on:click={goToAgent}
               class="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 px-6 rounded-xl transition-colors duration-200"
             >
-              Go to Agent Portal
+              Receive Calls
             </button>
           </div>
         </div>
@@ -384,13 +384,13 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
               </svg>
             </div>
-            <h3 class="text-2xl font-bold text-gray-900 mb-4">Customer Portal</h3>
-            <p class="text-gray-600 mb-6">Test the customer calling experience</p>
+            <h3 class="text-2xl font-bold text-gray-900 mb-4">Make Calls</h3>
+            <p class="text-gray-600 mb-6">Test the calling experience as a customer</p>
             <button
               on:click={goToCustomer}
               class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-xl transition-colors duration-200"
             >
-              Go to Customer Portal
+              Make Calls
             </button>
           </div>
         </div>
