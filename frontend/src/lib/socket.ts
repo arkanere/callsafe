@@ -147,6 +147,18 @@ export class SocketManager {
     this.socket.on('call_disconnected', (reason) => {
       this.triggerCallback('call_disconnected', reason);
     });
+
+    this.socket.on('call_no_longer_available', (data) => {
+      this.triggerCallback('call_no_longer_available', data);
+    });
+
+    this.socket.on('agent_registered', (data) => {
+      this.triggerCallback('agent_registered', data);
+    });
+
+    this.socket.on('call_request_cancelled', (data) => {
+      this.triggerCallback('call_request_cancelled', data);
+    });
   }
 
   private triggerCallback(event: string, data?: any): void {

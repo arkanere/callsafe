@@ -91,13 +91,16 @@
       try {
         // Set the call ID from the server response
         if (data.callId) {
-          callState = { ...callState, callId: data.callId };
+          callState = { ...callState, callId: data.callId, status: 'connecting' };
           console.log('✅ Call ID set from server:', data.callId);
         } else {
           console.error('❌ No call ID in server response');
+          errorMessage = 'No call ID received from server';
+          callState = { ...callState, status: 'failed' };
           return;
         }
         
+        connectionMonitor.startConnectionAttempt();
         console.log('📞 Creating WebRTC offer for call:', callState.callId);
         const offer = await webrtc.createOffer(callState.callId);
         console.log('📤 Sending offer to agent:', offer);
@@ -105,6 +108,13 @@
       } catch (error) {
         console.error('❌ Failed to create offer:', error);
         errorMessage = 'Failed to create call offer';
+        callState = { ...callState, status: 'failed' };
+        connectionMonitor.recordConnectionFailure(error instanceof Error ? error.message : 'Unknown error');
+        
+        // Clean up the call on the server side
+        if (callState.callId) {
+          socket.endCall({ callId: callState.callId, handle, sourceId });
+        }
       }
     });
 
@@ -116,6 +126,13 @@
       } catch (error) {
         console.error('❌ Failed to set remote answer:', error);
         errorMessage = 'Failed to connect to agent';
+        callState = { ...callState, status: 'failed' };
+        connectionMonitor.recordConnectionFailure(error instanceof Error ? error.message : 'Unknown error');
+        
+        // End the call on server side
+        if (callState.callId) {
+          socket.endCall({ callId: callState.callId, handle, sourceId });
+        }
       }
     });
 
@@ -126,8 +143,30 @@
         console.log('✅ ICE candidate added successfully');
       } catch (error) {
         console.error('❌ Failed to add ICE candidate:', error);
-        console.error('Failed to add ICE candidate:', error);
       }
+    });
+
+    socket.on('call_ended', (data) => {
+      console.log('📞 Call ended by agent/server:', data);
+      const reason = data?.reason || 'call_ended';
+      
+      if (reason.includes('timeout')) {
+        errorMessage = 'Call timed out - no agent response';
+      } else if (reason.includes('agent_disconnected')) {
+        errorMessage = 'Agent disconnected from the call';
+      } else if (reason.includes('agent_ended')) {
+        connectionStatus = 'Call ended by agent';
+      } else {
+        connectionStatus = 'Call ended';
+      }
+      
+      callState = { ...callState, status: 'ended' };
+      isConnecting = false;
+      
+      if (webrtc) {
+        webrtc.endCall();
+      }
+      // Don't disconnect socket here as server already handled cleanup
     });
 
     socket.on('no_agents_available', () => {
@@ -135,6 +174,7 @@
       callState = { ...callState, status: 'failed' };
       isConnecting = false;
       connectionStatus = 'Call failed - No agents available';
+      connectionMonitor.recordConnectionFailure('no_agents_available');
       if (webrtc) {
         webrtc.endCall();
       }
@@ -146,6 +186,7 @@
       callState = { ...callState, status: 'failed' };
       isConnecting = false;
       connectionStatus = 'Call timeout - No response from agents';
+      connectionMonitor.recordConnectionFailure('call_timeout');
       if (webrtc) {
         webrtc.endCall();
       }
@@ -155,6 +196,10 @@
     socket.on('call_disconnected', (reason) => {
       errorMessage = `Call disconnected: ${reason}`;
       callState = { ...callState, status: 'ended' };
+      if (webrtc) {
+        webrtc.endCall();
+      }
+      socket.disconnect();
     });
 
     socket.on('network_error', (error) => {
@@ -184,6 +229,19 @@
         webrtc.endCall();
       }
       socket.disconnect();
+    });
+
+    socket.on('error', (error) => {
+      console.error('📞 Server error:', error);
+      errorMessage = `Server error: ${error}`;
+      callState = { ...callState, status: 'failed' };
+      isConnecting = false;
+      connectionStatus = 'Server error';
+      connectionMonitor.recordConnectionFailure(error);
+      
+      if (webrtc) {
+        webrtc.endCall();
+      }
     });
   }
 
@@ -237,6 +295,16 @@
     } catch (error) {
       isConnecting = false;
       connectionMonitor.recordConnectionFailure(error instanceof Error ? error.message : 'Unknown error');
+      
+      // Clean up any partial WebRTC initialization
+      if (webrtc) {
+        webrtc.endCall();
+      }
+      
+      // Clean up socket if it was connected
+      if (socket) {
+        socket.disconnect();
+      }
       
       if (error instanceof Error && error.message.includes('microphone')) {
         errorMessage = 'Please allow microphone access to make a call. Click the microphone icon in your browser\'s address bar.';

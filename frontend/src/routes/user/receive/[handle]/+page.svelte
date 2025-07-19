@@ -25,9 +25,12 @@
   let durationInterval: number;
   let socketConnected = false;
   let handle = '';
+  let sourceId = '';
   
   // Extract handle from URL parameters
   $: handle = $page.params.handle || '';
+  // Extract sourceId from URL query parameters (optional for agents)
+  $: sourceId = $page.url.searchParams.get('sourceId') || '';
   
   // Reactive statement to update connection status
   $: {
@@ -112,7 +115,7 @@
 
     webrtc.setIceCandidateHandler((candidate) => {
       if (callState.callId) {
-        socket.sendIceCandidate(callState.callId, candidate, handle);
+        socket.sendIceCandidate(callState.callId, candidate, handle, callState.sourceId);
       }
     });
   }
@@ -161,10 +164,18 @@
           socket.sendAnswer(data.callId, answer, handle, data.sourceId);
         } else {
           console.log('❌ Call ID mismatch - expected:', callState.callId, 'received:', data.callId);
+          // End the call due to callId mismatch
+          errorMessage = 'Call session mismatch';
+          endCall({ callId: data.callId, reason: 'call_id_mismatch' });
         }
       } catch (error) {
         console.error('❌ Failed to create answer:', error);
         errorMessage = 'Failed to answer call';
+        callState = { ...callState, status: 'failed' };
+        connectionMonitor.recordConnectionFailure(error instanceof Error ? error.message : 'Unknown error');
+        
+        // End the call on server side
+        endCall({ callId: data.callId, reason: 'webrtc_answer_failed' });
       }
     });
 
@@ -247,6 +258,24 @@
       connectionStatus = 'Connection failed';
       isOnline = false;
     });
+
+    socket.on('call_no_longer_available', (data) => {
+      console.log('📞 Call no longer available (accepted by another agent):', data);
+      // Remove the call from incoming calls since it was accepted by another agent
+      if (data.callId) {
+        incomingCalls = incomingCalls.filter(call => call.callId !== data.callId);
+        // Stop ringtone if no more incoming calls
+        if (incomingCalls.length === 0) {
+          stopRingtone();
+        }
+      }
+    });
+
+    socket.on('agent_registered', (data) => {
+      console.log('✅ Agent successfully registered:', data);
+      connectionStatus = 'Registered - Ready to receive calls';
+      isOnline = true;
+    });
   }
 
   function toggleOnlineStatus() {
@@ -267,8 +296,8 @@
       // Stop ringtone when going offline
       stopRingtone();
     } else {
-      console.log('👤 Agent going online with handle:', handle);
-      socket.goOnlineWithHandle(handle);
+      console.log('👤 Agent going online with handle:', handle, 'sourceId:', sourceId);
+      socket.goOnlineWithHandle(handle, sourceId);
       isOnline = true;
       connectionStatus = 'Online - Waiting for calls';
       errorMessage = '';
@@ -297,8 +326,13 @@
     }
     
     console.log('✅ Accepting call...');
-    socket.acceptCall(callId);
-    console.log('📤 Accept call message sent to server');
+    
+    // Find the sourceId from incoming calls
+    const incomingCall = incomingCalls.find(call => call.callId === callId);
+    const sourceId = incomingCall?.sourceId;
+    
+    socket.acceptCall(callId, handle, sourceId);
+    console.log('📤 Accept call message sent to server with handle:', handle, 'sourceId:', sourceId);
     
     incomingCalls = incomingCalls.filter(call => call.callId !== callId);
     console.log('🗑️ Removed call from incoming calls list');
@@ -306,12 +340,18 @@
     // Stop ringtone when accepting call
     stopRingtone();
     
-    callState = { ...callState, callId, status: 'connecting' };
+    callState = { ...callState, callId, status: 'connecting', sourceId };
     console.log('📞 Agent call state updated:', callState);
   }
 
   function declineCall(callId: string) {
-    socket.declineCall(callId);
+    // Find the sourceId from incoming calls
+    const incomingCall = incomingCalls.find(call => call.callId === callId);
+    const sourceId = incomingCall?.sourceId;
+    
+    socket.declineCall(callId, handle, sourceId);
+    console.log('📤 Decline call message sent to server with handle:', handle, 'sourceId:', sourceId);
+    
     incomingCalls = incomingCalls.filter(call => call.callId !== callId);
     
     // Stop ringtone when declining call or if no more incoming calls
@@ -534,6 +574,9 @@
             <p class="text-gray-600">CallSafe Business Portal</p>
             {#if handle}
               <p class="text-sm text-gray-500 mt-1">Handle: <code class="bg-gray-100 px-2 py-1 rounded">{handle}</code></p>
+            {/if}
+            {#if sourceId}
+              <p class="text-sm text-gray-500 mt-1">Source: <code class="bg-blue-100 px-2 py-1 rounded">{sourceId}</code></p>
             {/if}
           </div>
         </div>

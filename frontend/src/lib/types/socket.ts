@@ -19,6 +19,10 @@ export interface ServerEvents {
   call_ended: (callId: string) => void;
   no_agents_available: () => void;
   call_timeout: (callId: string) => void;
+  call_no_longer_available: (data: { callId: string; handle?: string }) => void;
+  agent_registered: (data: { agentId: string; handle?: string; sourceId?: string }) => void;
+  call_request_cancelled: (data: { handle: string; reason: string }) => void;
+  handle_not_found: () => void;
 }
 
 export interface ErrorEvents {
