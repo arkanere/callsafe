@@ -2,6 +2,7 @@ import { createPool } from '@vercel/postgres';
 import { POSTGRES_URL } from '$env/static/private';
 import { json } from '@sveltejs/kit';
 import bcrypt from 'bcryptjs';
+import { randomBytes } from 'crypto';
 
 function createDbPool() {
     return createPool({ connectionString: POSTGRES_URL });
@@ -69,12 +70,15 @@ export async function POST({ request }) {
         const saltRounds = 12;
         const passwordHash = await bcrypt.hash(password, saltRounds);
 
+        // Generate unique sourceId
+        const sourceId = `user_${randomBytes(8).toString('hex')}`;
+
         // Create new user
         const result = await pool.query(
-            `INSERT INTO callsafeusers (email, password_hash, name) 
-             VALUES ($1, $2, $3) 
-             RETURNING id, email, name, created_at, is_active`,
-            [email.toLowerCase(), passwordHash, name.trim()]
+            `INSERT INTO callsafeusers (email, password_hash, name, sourceid) 
+             VALUES ($1, $2, $3, $4) 
+             RETURNING id, email, name, created_at, is_active, sourceid`,
+            [email.toLowerCase(), passwordHash, name.trim(), sourceId]
         );
 
         const newUser = result.rows[0];
@@ -87,7 +91,8 @@ export async function POST({ request }) {
                 email: newUser.email,
                 name: newUser.name,
                 createdAt: newUser.created_at,
-                isActive: newUser.is_active
+                isActive: newUser.is_active,
+                sourceId: newUser.sourceid
             }
         }, { status: 201 });
 

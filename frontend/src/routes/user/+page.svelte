@@ -8,6 +8,7 @@
   let copied = false;
   let userHandles = [];
   let isLoading = false;
+  let userData = null;
   
   // Helper function to construct full URL from handle
   function getFullUrl(handle) {
@@ -37,16 +38,31 @@
   
   function goToCustomer() {
     if (callSafeHandle) {
-      goto(`/call/${callSafeHandle}`);
+      const sourceIdParam = userData?.sourceId ? `?sourceId=${userData.sourceId}` : '';
+      goto(`/call/${callSafeHandle}${sourceIdParam}`);
     } else {
       goto('/customer');
     }
   }
   
   onMount(() => {
+    loadUserData();
     loadUserHandles();
   });
   
+  async function loadUserData() {
+    try {
+      const response = await fetch(`/api/user?userId=${userId}`);
+      const data = await response.json();
+      
+      if (data.success) {
+        userData = data.user;
+      }
+    } catch (error) {
+      console.error('Error loading user data:', error);
+    }
+  }
+
   async function loadUserHandles() {
     try {
       const response = await fetch(`/api/links?userId=${userId}`);
@@ -175,6 +191,43 @@
         </button>
       </div>
     </div>
+
+    <!-- User Information -->
+    {#if userData}
+      <div class="bg-white rounded-2xl shadow-xl p-6 mb-8">
+        <h2 class="text-xl font-bold text-gray-900 mb-4">User Information</h2>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <!-- Email -->
+          <div>
+            <h3 class="text-sm font-medium text-gray-700 mb-2">Email:</h3>
+            <div class="bg-gray-50 p-3 rounded-lg">
+              <code class="text-sm text-gray-700">{userData.email}</code>
+            </div>
+          </div>
+          
+          <!-- Source ID -->
+          <div>
+            <h3 class="text-sm font-medium text-gray-700 mb-2">Source ID:</h3>
+            <div class="bg-gray-50 p-3 rounded-lg">
+              {#if userData.sourceId}
+                <div class="flex items-center justify-between">
+                  <code class="text-sm font-mono text-blue-600 font-semibold">{userData.sourceId}</code>
+                  <button
+                    on:click={() => copyToClipboard(userData.sourceId)}
+                    class="ml-2 bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded text-xs font-semibold transition-colors duration-200"
+                  >
+                    {copied ? 'Copied!' : 'Copy'}
+                  </button>
+                </div>
+              {:else}
+                <span class="text-sm text-gray-500 italic">No source ID assigned</span>
+              {/if}
+            </div>
+          </div>
+        </div>
+      </div>
+    {/if}
 
     <!-- Setup Progress -->
     {#if !hasCreatedHandle}
