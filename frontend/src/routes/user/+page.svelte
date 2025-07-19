@@ -12,7 +12,7 @@
   
   // Helper function to construct full URL from handle
   function getFullUrl(handle) {
-    return `https://callsafe.vercel.app/call/${handle}`;
+    return `https://callsafe.vercel.app/user/call/${handle}`;
   }
   
   // Hardcoded user ID for MVP - in real app this would come from session
@@ -32,16 +32,16 @@
     if (callSafeHandle) {
       goto(`/agent/${callSafeHandle}`);
     } else {
-      goto('/agent');
+      goto('/user/receive');
     }
   }
   
   function goToCustomer() {
     if (callSafeHandle) {
       const sourceIdParam = userData?.sourceId ? `?sourceId=${userData.sourceId}` : '';
-      goto(`/call/${callSafeHandle}${sourceIdParam}`);
+      goto(`/user/call/${callSafeHandle}${sourceIdParam}`);
     } else {
-      goto('/customer');
+      goto('/user/customer');
     }
   }
   

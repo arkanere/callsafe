@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import { goto } from '$app/navigation';
   import { WebRTCManager } from '$lib/webrtc.js';
   import { SocketManager } from '$lib/socket.js';
   import { connectionMonitor } from '$lib/monitoring.js';
@@ -22,6 +23,9 @@
   let callDuration = 0;
   let durationInterval: number;
   let socketConnected = false;
+  
+  // Hardcoded user ID for MVP - in real app this would come from session
+  const userId = 1;
   
   // Reactive statement to update connection status
   $: {
@@ -170,14 +174,19 @@
       }
     });
 
-    socket.on('call_ended', () => {
-      console.log('📞 Call ended by customer');
-      endCall();
+    socket.on('call_ended', (data) => {
+      console.log('📞 Call ended by customer:', data);
+      
+      // Use robust endCall with data from server
+      endCall({
+        callId: data?.callId,
+        reason: data?.reason || 'customer_ended'
+      });
     });
 
     socket.on('call_disconnected', (reason) => {
       errorMessage = `Call disconnected: ${reason}`;
-      endCall();
+      endCall({ reason: `disconnected_${reason}` });
     });
 
     socket.on('network_error', (error) => {
@@ -208,7 +217,8 @@
       // Stop ringtone when going offline
       stopRingtone();
     } else {
-      socket.goOnline();
+      console.log('👤 Agent going online with user ID:', userId);
+      socket.goOnlineWithUser(userId);
       isOnline = true;
       connectionStatus = 'Online - Waiting for calls';
       errorMessage = '';
@@ -249,17 +259,129 @@
     }
   }
 
-  function endCall() {
-    if (callState.callId) {
-      socket.endCall();
-    }
-    if (webrtc) {
-      webrtc.endCall();
-    }
+  function endCall(options = {}) {
+    const { callId = null, reason = 'manual', force = false } = options;
     
-    stopRingtone();
-    callState = { ...callState, status: 'idle', callId: undefined };
-    stopCallTimer();
+    console.log('🔚 Starting robust call cleanup:', { callId, reason, force, currentCallId: callState.callId });
+    
+    try {
+      // 1. Determine which call(s) to end
+      const targetCallId = callId || callState.callId;
+      const shouldEndActiveCall = !callId || callId === callState.callId;
+      
+      // 2. Socket notification (if we have an active call to end)
+      if (shouldEndActiveCall && callState.callId) {
+        try {
+          console.log('📤 Notifying server of call end:', callState.callId);
+          socket.endCall();
+        } catch (error) {
+          console.error('❌ Failed to notify server of call end:', error);
+          // Continue cleanup even if server notification fails
+        }
+      }
+      
+      // 3. WebRTC cleanup (only for active call)
+      if (shouldEndActiveCall && webrtc) {
+        try {
+          console.log('🌐 Cleaning up WebRTC connection');
+          webrtc.endCall();
+        } catch (error) {
+          console.error('❌ Failed to cleanup WebRTC:', error);
+          // Continue cleanup even if WebRTC cleanup fails
+        }
+      }
+      
+      // 4. Clean up incoming calls array (specific call or all if force)
+      try {
+        const originalLength = incomingCalls.length;
+        if (targetCallId) {
+          incomingCalls = incomingCalls.filter(call => call.callId !== targetCallId);
+          console.log(`🗑️ Removed call ${targetCallId} from incoming calls`);
+        } else if (force) {
+          incomingCalls = [];
+          console.log('🗑️ Force cleared all incoming calls');
+        } else if (incomingCalls.length > 0) {
+          // Fallback: remove the oldest call
+          incomingCalls = incomingCalls.slice(1);
+          console.log('🗑️ Removed oldest incoming call as fallback');
+        }
+        
+        if (incomingCalls.length !== originalLength) {
+          console.log(`📊 Incoming calls: ${originalLength} → ${incomingCalls.length}`);
+        }
+      } catch (error) {
+        console.error('❌ Failed to cleanup incoming calls:', error);
+      }
+      
+      // 5. Audio cleanup (conditional ringtone stopping)
+      try {
+        // Only stop ringtone if no more incoming calls
+        if (incomingCalls.length === 0) {
+          console.log('🔇 Stopping ringtone - no more incoming calls');
+          stopRingtone();
+        }
+        
+        // Clean up remote audio source
+        const remoteAudio = document.querySelector('#remoteAudio');
+        if (remoteAudio && remoteAudio.srcObject) {
+          console.log('🎵 Cleaning up remote audio source');
+          remoteAudio.srcObject = null;
+        }
+      } catch (error) {
+        console.error('❌ Failed to cleanup audio:', error);
+      }
+      
+      // 6. Call state cleanup (only for active call)
+      if (shouldEndActiveCall) {
+        try {
+          console.log('📊 Resetting call state');
+          callState = {
+            status: 'idle',
+            callId: undefined,
+            sourceId: undefined,
+            isMuted: false,
+            duration: 0
+          };
+        } catch (error) {
+          console.error('❌ Failed to reset call state:', error);
+        }
+      }
+      
+      // 7. Timer cleanup
+      try {
+        console.log('⏱️ Stopping call timer');
+        stopCallTimer();
+      } catch (error) {
+        console.error('❌ Failed to stop call timer:', error);
+      }
+      
+      // 8. Final state validation
+      const finalState = {
+        activeCall: callState.callId,
+        incomingCalls: incomingCalls.length,
+        reason,
+        success: true
+      };
+      
+      console.log('✅ Call cleanup completed successfully:', finalState);
+      
+    } catch (error) {
+      console.error('💥 Critical error during call cleanup:', error);
+      
+      // Emergency fallback cleanup
+      if (force) {
+        console.log('🚨 Performing emergency fallback cleanup');
+        try {
+          stopRingtone();
+          incomingCalls = [];
+          callState = { status: 'idle', callId: undefined, sourceId: undefined, isMuted: false, duration: 0 };
+          stopCallTimer();
+          console.log('🆘 Emergency cleanup completed');
+        } catch (fallbackError) {
+          console.error('💀 Even emergency cleanup failed:', fallbackError);
+        }
+      }
+    }
   }
 
   function toggleMute() {
@@ -321,6 +443,10 @@
       default: return 'text-blue-600';
     }
   }
+
+  function backToDashboard() {
+    goto('/user');
+  }
 </script>
 
 <div class="min-h-screen bg-gradient-to-br from-purple-50 to-blue-100 p-4">
@@ -328,9 +454,19 @@
     <!-- Header -->
     <div class="bg-white rounded-2xl shadow-xl p-6 mb-6">
       <div class="flex items-center justify-between">
-        <div>
-          <h1 class="text-3xl font-bold text-gray-800">Agent Dashboard</h1>
-          <p class="text-gray-600">CallSafe Business Portal</p>
+        <div class="flex items-center">
+          <button
+            on:click={backToDashboard}
+            class="mr-4 p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors duration-200"
+          >
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+            </svg>
+          </button>
+          <div>
+            <h1 class="text-3xl font-bold text-gray-800">Agent Dashboard</h1>
+            <p class="text-gray-600">CallSafe Business Portal</p>
+          </div>
         </div>
         
         <div class="flex items-center space-x-4">
