@@ -1,7 +1,7 @@
 (function() {
     'use strict';
     
-    // CallSafe Embed Widget (Native Implementation)
+    // CallSafe Embed Widget (Modal Version)
     class CallSafeWidget {
         constructor(config) {
             this.config = {
@@ -36,12 +36,12 @@
         }
         
         createStyles() {
-            if (document.getElementById('callsafe-embed3-styles')) return;
+            if (document.getElementById('callsafe-embed4-styles')) return;
             
             const styles = document.createElement('style');
-            styles.id = 'callsafe-embed3-styles';
+            styles.id = 'callsafe-embed4-styles';
             styles.textContent = `
-                .callsafe-widget3 {
+                .callsafe-widget4 {
                     position: fixed;
                     bottom: 20px;
                     right: 20px;
@@ -49,7 +49,7 @@
                     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
                 }
                 
-                .callsafe-trigger3 {
+                .callsafe-trigger4 {
                     width: 60px;
                     height: 60px;
                     border-radius: 50%;
@@ -64,21 +64,21 @@
                     position: relative;
                 }
                 
-                .callsafe-trigger3:hover {
+                .callsafe-trigger4:hover {
                     transform: scale(1.1);
                     box-shadow: 0 6px 25px rgba(59, 130, 246, 0.6);
                 }
                 
-                .callsafe-trigger3.connecting {
+                .callsafe-trigger4.connecting {
                     background: linear-gradient(135deg, #f59e0b, #d97706);
                     animation: pulse 2s infinite;
                 }
                 
-                .callsafe-trigger3.connected {
+                .callsafe-trigger4.connected {
                     background: linear-gradient(135deg, #10b981, #059669);
                 }
                 
-                .callsafe-trigger3.failed {
+                .callsafe-trigger4.failed {
                     background: linear-gradient(135deg, #ef4444, #dc2626);
                 }
                 
@@ -88,24 +88,11 @@
                     100% { transform: scale(1); }
                 }
                 
-                .callsafe-trigger3 svg {
+                .callsafe-trigger4 svg {
                     width: 24px;
                     height: 24px;
                     fill: white;
                     transition: transform 0.3s ease;
-                }
-                
-                .callsafe-spinner {
-                    width: 20px;
-                    height: 20px;
-                    border: 2px solid rgba(255, 255, 255, 0.3);
-                    border-top: 2px solid white;
-                    border-radius: 50%;
-                    animation: spin 1s linear infinite;
-                }
-                
-                @keyframes spin {
-                    to { transform: rotate(360deg); }
                 }
                 
                 .callsafe-modal {
@@ -191,7 +178,9 @@
                 .callsafe-close svg {
                     width: 16px;
                     height: 16px;
-                    fill: #666;
+                    stroke: #666;
+                    stroke-width: 2;
+                    fill: none;
                 }
                 
                 .callsafe-call-status {
@@ -208,6 +197,7 @@
                     align-items: center;
                     justify-content: center;
                     transition: all 0.3s ease;
+                    position: relative;
                 }
                 
                 .callsafe-status-icon.idle {
@@ -233,10 +223,18 @@
                     fill: white;
                 }
                 
-                .callsafe-controls {
-                    display: flex;
-                    gap: 12px;
-                    margin-top: 24px;
+                .callsafe-spinner {
+                    width: 24px;
+                    height: 24px;
+                    border: 3px solid rgba(255, 255, 255, 0.3);
+                    border-top: 3px solid white;
+                    border-radius: 50%;
+                    animation: spin 1s linear infinite;
+                    position: absolute;
+                }
+                
+                @keyframes spin {
+                    to { transform: rotate(360deg); }
                 }
                 
                 .callsafe-status {
@@ -280,12 +278,18 @@
                     transform: none;
                 }
                 
+                .callsafe-controls {
+                    display: flex;
+                    gap: 12px;
+                    margin-top: 24px;
+                }
+                
                 .callsafe-btn {
                     flex: 1;
-                    padding: 8px 12px;
+                    padding: 12px 16px;
                     border: none;
                     border-radius: 8px;
-                    font-size: 12px;
+                    font-size: 14px;
                     font-weight: 600;
                     cursor: pointer;
                     transition: all 0.2s ease;
@@ -339,18 +343,18 @@
                     border-top-color: rgba(0, 0, 0, 0.8);
                 }
                 
-                .callsafe-trigger3:hover .callsafe-tooltip {
+                .callsafe-trigger4:hover .callsafe-tooltip {
                     opacity: 1;
                     transform: translateY(0);
                 }
                 
                 @media (max-width: 640px) {
-                    .callsafe-widget3 {
+                    .callsafe-widget4 {
                         bottom: 15px;
                         right: 15px;
                     }
                     
-                    .callsafe-trigger3 {
+                    .callsafe-trigger4 {
                         width: 56px;
                         height: 56px;
                     }
@@ -376,10 +380,10 @@
         createWidget() {
             // Create trigger button
             this.widget = document.createElement('div');
-            this.widget.className = 'callsafe-widget3';
+            this.widget.className = 'callsafe-widget4';
             
             this.widget.innerHTML = `
-                <button class="callsafe-trigger3" title="Start a call">
+                <button class="callsafe-trigger4" title="Start a call">
                     <svg class="callsafe-icon" viewBox="0 0 24 24">
                         <path d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
                     </svg>
@@ -449,7 +453,7 @@
         }
         
         bindEvents() {
-            const trigger = this.widget.querySelector('.callsafe-trigger3');
+            const trigger = this.widget.querySelector('.callsafe-trigger4');
             const closeBtn = this.modal.querySelector('.callsafe-close');
             const startBtn = this.modal.querySelector('.callsafe-start-btn');
             const muteBtn = this.modal.querySelector('.callsafe-btn.mute');
@@ -494,7 +498,7 @@
             this.modal.classList.remove('show');
             
             // Return focus to trigger button
-            const trigger = this.widget.querySelector('.callsafe-trigger3');
+            const trigger = this.widget.querySelector('.callsafe-trigger4');
             if (trigger) trigger.focus();
         }
         
@@ -610,7 +614,7 @@
                     });
                 } catch (error) {
                     console.error('Failed to create offer:', error);
-                    this.updateCallState({ status: 'failed' });
+                    this.updateCallState({ status: 'failed', error: 'Failed to create call offer' });
                 }
             });
             
@@ -621,7 +625,7 @@
                     this.updateCallState({ status: 'connected' });
                 } catch (error) {
                     console.error('Failed to set remote answer:', error);
-                    this.updateCallState({ status: 'failed' });
+                    this.updateCallState({ status: 'failed', error: 'Failed to connect to agent' });
                 }
             });
             
@@ -636,14 +640,14 @@
             this.socket.on('no_agents_available', () => {
                 this.updateCallState({ 
                     status: 'failed', 
-                    error: 'No agents available' 
+                    error: 'No agents available. Please try again later.' 
                 });
             });
             
             this.socket.on('call_timeout', () => {
                 this.updateCallState({ 
                     status: 'failed', 
-                    error: 'Call timeout' 
+                    error: 'Call timeout. Please try again.' 
                 });
             });
             
@@ -701,7 +705,7 @@
                 if (state === 'connected') {
                     this.updateCallState({ status: 'connected' });
                 } else if (state === 'failed' || state === 'disconnected') {
-                    this.updateCallState({ status: 'failed' });
+                    this.updateCallState({ status: 'failed', error: 'Connection lost' });
                 }
             };
         }
@@ -720,7 +724,7 @@
                 audioTrack.enabled = !audioTrack.enabled;
                 this.callState.isMuted = !audioTrack.enabled;
                 
-                const muteBtn = this.widget.querySelector('.callsafe-btn.mute');
+                const muteBtn = this.modal.querySelector('.callsafe-btn.mute');
                 muteBtn.textContent = this.callState.isMuted ? 'Unmute' : 'Mute';
                 muteBtn.classList.toggle('active', this.callState.isMuted);
             }
@@ -768,7 +772,7 @@
         }
         
         updateUI() {
-            const trigger = this.widget.querySelector('.callsafe-trigger3');
+            const trigger = this.widget.querySelector('.callsafe-trigger4');
             const tooltip = this.widget.querySelector('.callsafe-tooltip');
             
             // Modal elements
@@ -781,7 +785,7 @@
             const spinner = statusIcon.querySelector('.callsafe-spinner');
             
             // Reset classes
-            trigger.className = 'callsafe-trigger3';
+            trigger.className = 'callsafe-trigger4';
             statusIcon.className = 'callsafe-status-icon';
             
             switch (this.callState.status) {
@@ -887,13 +891,6 @@
                 }
             });
             
-            // Handle page visibility changes
-            document.addEventListener('visibilitychange', () => {
-                if (document.hidden && this.callState.status === 'connected') {
-                    // Optionally pause/resume call based on visibility
-                }
-            });
-            
             // Handle page unload
             window.addEventListener('beforeunload', () => {
                 if (this.callState.status !== 'idle') {
@@ -913,7 +910,7 @@
             if (this.remoteAudio) {
                 this.remoteAudio.remove();
             }
-            const styles = document.getElementById('callsafe-embed3-styles');
+            const styles = document.getElementById('callsafe-embed4-styles');
             if (styles) {
                 styles.remove();
             }
@@ -922,14 +919,14 @@
     
     // Auto-initialize widgets from script tags
     function initializeWidgets() {
-        const scripts = document.querySelectorAll('script[src*="embed3.js"]');
+        const scripts = document.querySelectorAll('script[src*="embed4.js"]');
         
         scripts.forEach(script => {
             const handle = script.getAttribute('data-handle');
             const sourceId = script.getAttribute('data-source-id');
             
             if (!handle) {
-                console.warn('CallSafe embed3: data-handle attribute is required');
+                console.warn('CallSafe embed4: data-handle attribute is required');
                 return;
             }
             
@@ -954,6 +951,6 @@
     }
     
     // Expose CallSafeWidget for manual initialization
-    window.CallSafeWidget3 = CallSafeWidget;
+    window.CallSafeWidget4 = CallSafeWidget;
     
 })();
