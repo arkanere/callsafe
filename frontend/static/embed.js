@@ -296,10 +296,51 @@
         }
     }
     
-    // Expose functions globally for onclick handlers
+    // Handle messages from iframe
+    window.addEventListener('message', function(event) {
+        // Verify origin for security
+        if (event.origin !== CALLSAFE_BASE_URL) {
+            return;
+        }
+        
+        const { type, data } = event.data;
+        
+        switch (type) {
+            case 'requestCall':
+                console.log('📞 CallSafe Embed: Received requestCall from iframe');
+                // The iframe handles the actual call logic, we just need to acknowledge
+                event.source.postMessage({
+                    type: 'callAcknowledged',
+                    success: true
+                }, event.origin);
+                break;
+                
+            case 'closeModal':
+                console.log('🔄 CallSafe Embed: Received closeModal from iframe');
+                closeModal();
+                break;
+                
+            case 'callStarted':
+                console.log('🎉 CallSafe Embed: Call started successfully');
+                break;
+                
+            case 'callEnded':
+                console.log('📴 CallSafe Embed: Call ended');
+                break;
+                
+            default:
+                console.log('📨 CallSafe Embed: Unknown message type:', type);
+        }
+    });
+
+    // Expose functions globally for onclick handlers and iframe communication
     window.CallSafeEmbed = {
         openModal: openModal,
-        closeModal: closeModal
+        closeModal: closeModal,
+        requestCall: function() {
+            console.log('📞 CallSafe Embed: requestCall called directly');
+            return Promise.resolve({ success: true });
+        }
     };
     
     // Handle escape key
