@@ -96,6 +96,10 @@
         // Store user session
         currentUser = result.user;
         
+        // Store userId in localStorage for session management
+        localStorage.setItem('callsafe_userId', result.user.id.toString());
+        localStorage.setItem('callsafe_user', JSON.stringify(result.user));
+        
         // Success - redirect to user page
         closeLoginModal();
         goto('/user');
@@ -136,6 +140,10 @@
       if (result.success) {
         // Store user session
         currentUser = result.user;
+        
+        // Store userId in localStorage for session management
+        localStorage.setItem('callsafe_userId', result.user.id.toString());
+        localStorage.setItem('callsafe_user', JSON.stringify(result.user));
         
         // Success - redirect to user page
         closeLoginModal();

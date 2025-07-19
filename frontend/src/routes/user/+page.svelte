@@ -2,7 +2,7 @@
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
   
-  let hasCreatedHandle = false;
+  let hasCreatedHandle = true; // Always true since handle is created during signup
   let hasEmbedded = false;
   let callSafeHandle = '';
   let copied = false;
@@ -15,8 +15,24 @@
     return `https://callsafe.vercel.app/user/call/${handle}`;
   }
   
-  // Hardcoded user ID for MVP - in real app this would come from session
-  const userId = 1;
+  // Get user ID from localStorage (session management)
+  let userId = 1; // fallback for development
+  
+  // Check for stored user session
+  onMount(() => {
+    const storedUserId = localStorage.getItem('callsafe_userId');
+    if (storedUserId) {
+      userId = parseInt(storedUserId);
+    } else {
+      // No session found - redirect to home page
+      goto('/');
+      return;
+    }
+    
+    // Continue with loading user data
+    loadUserData();
+    loadUserHandles();
+  });
   
   // Simulate user progress - in real app this would come from backend
   let totalCalls = hasEmbedded ? 24 : 0;
@@ -24,7 +40,11 @@
   let successfulCalls = hasEmbedded ? 18 : 0;
   
   function logout() {
-    // Simple logout - redirect to home
+    // Clear session data
+    localStorage.removeItem('callsafe_userId');
+    localStorage.removeItem('callsafe_user');
+    
+    // Redirect to home page
     goto('/');
   }
   
@@ -44,11 +64,6 @@
       goto('/user/customer');
     }
   }
-  
-  onMount(() => {
-    loadUserData();
-    loadUserHandles();
-  });
   
   async function loadUserData() {
     try {
@@ -71,14 +86,15 @@
       if (data.success) {
         userHandles = data.handles;
         
-        // Check if user has created any handles
+        // User should always have at least one handle (created during signup)
         if (userHandles.length > 0) {
-          hasCreatedHandle = true;
           // Use the first handle for display
           const firstHandle = userHandles[0];
           callSafeHandle = firstHandle.handle;
           hasEmbedded = firstHandle.is_embedded;
-          
+        } else {
+          // This shouldn't happen since handles are created during signup
+          console.error('No handles found for user - this indicates a signup issue');
         }
       }
     } catch (error) {
@@ -86,40 +102,6 @@
     }
   }
   
-  
-  async function createCallSafeHandle() {
-    if (isLoading) return;
-    
-    isLoading = true;
-    
-    try {
-      const response = await fetch('/api/links', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ userId })
-      });
-      
-      const data = await response.json();
-      
-      if (data.success) {
-        const newHandle = data.handle;
-        userHandles = [newHandle, ...userHandles];
-        callSafeHandle = newHandle.handle;
-        hasCreatedHandle = true;
-        hasEmbedded = newHandle.is_embedded;
-        
-      } else {
-        alert('Failed to create handle: ' + data.error);
-      }
-    } catch (error) {
-      console.error('Error creating handle:', error);
-      alert('Failed to create handle. Please try again.');
-    } finally {
-      isLoading = false;
-    }
-  }
   
   function copyToClipboard(text: string) {
     navigator.clipboard.writeText(text).then(() => {
@@ -180,7 +162,7 @@
     <div class="bg-white rounded-2xl shadow-xl p-6 mb-8">
       <div class="flex items-center justify-between">
         <div>
-          <h1 class="text-3xl font-bold text-gray-800">Welcome, Aniruddha!</h1>
+          <h1 class="text-3xl font-bold text-gray-800">Welcome, {userData?.name || 'User'}!</h1>
           <p class="text-gray-600">CallSafe User Dashboard</p>
         </div>
         <button
@@ -230,46 +212,8 @@
     {/if}
 
     <!-- Setup Progress -->
-    {#if !hasCreatedHandle}
-      <div class="bg-white rounded-2xl shadow-xl p-6 mb-8">
-        <h2 class="text-2xl font-bold text-gray-900 mb-4">Get Started with CallSafe</h2>
-        <p class="text-gray-600 mb-6">Create your unique CallSafe handle to start receiving anonymous calls</p>
-        
-        <div class="space-y-4">
-          <!-- Step 1: Create Handle -->
-          <div class="flex items-center p-4 bg-gray-50 rounded-xl">
-            <div class="w-8 h-8 rounded-full flex items-center justify-center mr-4 {hasCreatedHandle ? 'bg-green-100 text-green-600' : 'bg-blue-100 text-blue-600'}">
-              {#if hasCreatedHandle}
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-                </svg>
-              {:else}
-                <span class="text-sm font-bold">1</span>
-              {/if}
-            </div>
-            <div class="flex-1">
-              <h3 class="font-semibold text-gray-900">Create Your CallSafe Handle</h3>
-              <p class="text-sm text-gray-600">Generate a unique handle for your website</p>
-            </div>
-            {#if !hasCreatedHandle}
-              <button
-                on:click={createCallSafeHandle}
-                disabled={isLoading}
-                class="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-white font-semibold py-2 px-4 rounded-lg transition-colors duration-200"
-              >
-                {isLoading ? 'Creating...' : 'Create Handle'}
-              </button>
-            {:else}
-              <span class="text-green-600 font-semibold">✓ Complete</span>
-            {/if}
-          </div>
-          
-        </div>
-      </div>
-    {/if}
 
-    <!-- Created Handle Display -->
-    {#if hasCreatedHandle && callSafeHandle}
+    <!-- CallSafe Handle Display -->
       <div class="bg-white rounded-2xl shadow-xl p-6 mb-8">
         <h2 class="text-xl font-bold text-gray-900 mb-4">Your CallSafe Handle</h2>
         
@@ -289,27 +233,10 @@
           </div>
         </div>
         
-        <!-- Full URL -->
-        <div class="mb-6">
-          <h3 class="text-sm font-medium text-gray-700 mb-2">Full URL:</h3>
-          <div class="bg-gray-50 p-3 rounded-lg">
-            <div class="flex items-center justify-between">
-              <code class="text-sm text-gray-700 break-all">{getFullUrl(callSafeHandle)}</code>
-              <button
-                on:click={() => copyToClipboard(getFullUrl(callSafeHandle))}
-                class="ml-4 bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-sm font-semibold transition-colors duration-200"
-              >
-                {copied ? 'Copied!' : 'Copy'}
-              </button>
-            </div>
-          </div>
-        </div>
         
       </div>
-    {/if}
 
     <!-- User Stats -->
-    {#if hasCreatedHandle}
       <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <div class="bg-white rounded-xl shadow-lg p-6">
           <div class="flex items-center">
@@ -354,10 +281,8 @@
         </div>
         
       </div>
-    {/if}
 
     <!-- Quick Actions -->
-    {#if hasCreatedHandle}
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
         <div class="bg-white rounded-2xl shadow-xl p-8">
           <div class="text-center">
@@ -395,10 +320,8 @@
           </div>
         </div>
       </div>
-    {/if}
 
     <!-- Recent Activity -->
-    {#if hasCreatedHandle}
       <div class="bg-white rounded-2xl shadow-xl p-6">
         <h2 class="text-2xl font-bold text-gray-900 mb-6">Recent Activity</h2>
         <div class="space-y-4">
@@ -457,7 +380,6 @@
           </div>
         </div>
       </div>
-    {/if}
   </div>
 </div>
 

@@ -83,6 +83,19 @@ export async function POST({ request }) {
 
         const newUser = result.rows[0];
 
+        // Auto-create a handle for the new user using the same logic as the existing handle creation
+        const handleId = randomBytes(8).toString('hex');
+        const handle = handleId; // Store just the identifier, not the full URL
+
+        const handleResult = await pool.query(
+            `INSERT INTO callsafelinks (user_id, handle_id, handle, is_embedded) 
+             VALUES ($1, $2, $3, $4) 
+             RETURNING *`,
+            [newUser.id, handleId, handle, false]
+        );
+
+        const newHandle = handleResult.rows[0];
+
         return json({
             success: true,
             message: 'Account created successfully',
@@ -93,6 +106,13 @@ export async function POST({ request }) {
                 createdAt: newUser.created_at,
                 isActive: newUser.is_active,
                 sourceId: newUser.sourceid
+            },
+            handle: {
+                id: newHandle.id,
+                handleId: newHandle.handle_id,
+                handle: newHandle.handle,
+                isEmbedded: newHandle.is_embedded,
+                createdAt: newHandle.created_at
             }
         }, { status: 201 });
 
