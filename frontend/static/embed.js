@@ -29,7 +29,7 @@
     console.log('✅ CallSafe Embed: Handle validated, proceeding with initialization');
     
     // CallSafe configuration  
-    const CALLSAFE_BASE_URL = window.location.hostname === 'localhost' ? 'http://localhost:5173' : 'https://callsafe.vercel.app';
+    const CALLSAFE_BASE_URL = window.location.hostname === 'localhost' ? 'http://localhost:5173' : 'https://callsafe.tech';
     console.log('🌐 CallSafe Embed: Base URL set to:', CALLSAFE_BASE_URL);
     const WIDGET_ID = 'callsafe-widget-' + handle;
     const MODAL_ID = 'callsafe-modal-' + handle;
@@ -252,6 +252,20 @@
         iframe.title = 'CallSafe Quick Call';
         console.log('🌐 CallSafe Embed: Iframe created with src:', iframeSrc);
         
+        // Listen for iframe load to send initial communication setup
+        iframe.onload = function() {
+            console.log('🎯 CallSafe Embed: Iframe loaded, sending initial setup');
+            try {
+                iframe.contentWindow.postMessage({
+                    type: 'initParentCommunication',
+                    functions: ['requestCall'],
+                    parentOrigin: window.location.origin
+                }, CALLSAFE_BASE_URL);
+            } catch (e) {
+                console.log('🚫 CallSafe Embed: Cannot access iframe contentWindow (cross-origin)');
+            }
+        };
+        
         modalContent.appendChild(header);
         modalContent.appendChild(iframe);
         modal.appendChild(modalContent);
@@ -300,15 +314,29 @@
     window.addEventListener('message', function(event) {
         // Verify origin for security
         if (event.origin !== CALLSAFE_BASE_URL) {
+            console.log('🔒 CallSafe Embed: Ignoring message from origin:', event.origin);
             return;
         }
         
-        const { type, data } = event.data;
+        console.log('📨 CallSafe Embed: Received message:', event.data);
+        
+        // Handle both object and string messages
+        let messageData = event.data;
+        if (typeof messageData === 'string') {
+            try {
+                messageData = JSON.parse(messageData);
+            } catch (e) {
+                console.log('📨 CallSafe Embed: Non-JSON string message:', messageData);
+                messageData = { type: messageData };
+            }
+        }
+        
+        const { type, data } = messageData || {};
         
         switch (type) {
             case 'requestCall':
                 console.log('📞 CallSafe Embed: Received requestCall from iframe');
-                // The iframe handles the actual call logic, we just need to acknowledge
+                // Send acknowledgment back to iframe
                 event.source.postMessage({
                     type: 'callAcknowledged',
                     success: true
@@ -328,8 +356,18 @@
                 console.log('📴 CallSafe Embed: Call ended');
                 break;
                 
+            case undefined:
+            case null:
+                console.log('📨 CallSafe Embed: Message with undefined/null type, raw data:', event.data);
+                // Try to handle as generic call request
+                event.source.postMessage({
+                    type: 'callAcknowledged',
+                    success: true
+                }, event.origin);
+                break;
+                
             default:
-                console.log('📨 CallSafe Embed: Unknown message type:', type);
+                console.log('📨 CallSafe Embed: Unknown message type:', type, 'Data:', messageData);
         }
     });
 
@@ -342,6 +380,39 @@
             return Promise.resolve({ success: true });
         }
     };
+
+    // Also expose requestCall directly on window for iframe access
+    window.requestCall = function() {
+        console.log('📞 CallSafe Embed: requestCall called on window');
+        return Promise.resolve({ success: true });
+    };
+
+    // Create a communication bridge for the iframe
+    window.CallSafeBridge = {
+        requestCall: function() {
+            console.log('📞 CallSafe Embed: requestCall called via bridge');
+            return Promise.resolve({ success: true });
+        },
+        postMessage: function(message) {
+            console.log('📨 CallSafe Embed: Bridge postMessage called:', message);
+            // Handle the message as if it came via postMessage
+            window.dispatchEvent(new MessageEvent('message', {
+                data: message,
+                origin: CALLSAFE_BASE_URL,
+                source: { postMessage: function() {} }
+            }));
+        }
+    };
+
+    // For legacy iframe code that might expect parent.requestCall
+    try {
+        if (window.parent && window.parent !== window) {
+            window.parent.requestCall = window.requestCall;
+            window.parent.CallSafeBridge = window.CallSafeBridge;
+        }
+    } catch (e) {
+        console.log('🚫 CallSafe Embed: Cannot set parent functions (cross-origin)');
+    }
     
     // Handle escape key
     document.addEventListener('keydown', function(e) {
