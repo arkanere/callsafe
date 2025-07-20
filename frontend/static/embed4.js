@@ -364,8 +364,20 @@
                     }
                     
                     .callsafe-trigger4 {
-                        width: 56px;
-                        height: 56px;
+                        height: 44px;
+                        padding: 0 12px;
+                        border-radius: 22px;
+                        gap: 6px;
+                    }
+                    
+                    .callsafe-trigger4 svg {
+                        width: 16px;
+                        height: 16px;
+                    }
+                    
+                    .callsafe-text {
+                        font-size: 12px;
+                        font-weight: 600;
                     }
                     
                     .callsafe-modal-content {
