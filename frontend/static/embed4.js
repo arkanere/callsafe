@@ -287,6 +287,28 @@
                     transform: none;
                 }
                 
+                .callsafe-retry-btn {
+                    width: 100%;
+                    padding: 16px;
+                    border: none;
+                    border-radius: 12px;
+                    background: linear-gradient(135deg, #3b82f6, #1e40af);
+                    color: white;
+                    font-size: 16px;
+                    font-weight: 600;
+                    cursor: pointer;
+                    transition: all 0.3s ease;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 8px;
+                }
+                
+                .callsafe-retry-btn:hover {
+                    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+                    transform: translateY(-1px);
+                }
+                
                 .callsafe-controls {
                     display: flex;
                     gap: 12px;
@@ -452,14 +474,14 @@
                                 <div class="callsafe-spinner" style="display: none;"></div>
                             </div>
                             <div class="callsafe-status">Ready to Call</div>
-                            <div class="callsafe-status-message">Click the button below to start your call</div>
+                            <div class="callsafe-status-message">Connecting to support...</div>
                         </div>
                         
-                        <button class="callsafe-start-btn">
+                        <button class="callsafe-retry-btn" style="display: none;">
                             <svg viewBox="0 0 24 24" style="width: 20px; height: 20px; fill: currentColor;">
                                 <path d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
                             </svg>
-                            Start Call
+                            Try Again
                         </button>
                         
                         <div class="callsafe-controls" style="display: none;">
@@ -476,13 +498,13 @@
         bindEvents() {
             const trigger = this.widget.querySelector('.callsafe-trigger4');
             const closeBtn = this.modal.querySelector('.callsafe-close');
-            const startBtn = this.modal.querySelector('.callsafe-start-btn');
+            const retryBtn = this.modal.querySelector('.callsafe-retry-btn');
             const muteBtn = this.modal.querySelector('.callsafe-btn.mute');
             const endBtn = this.modal.querySelector('.callsafe-btn.end');
             
-            trigger.addEventListener('click', () => this.openModal());
+            trigger.addEventListener('click', () => this.handleStartCall());
             closeBtn.addEventListener('click', () => this.closeModal());
-            startBtn.addEventListener('click', () => this.handleStartCall());
+            retryBtn.addEventListener('click', () => this.handleStartCall());
             muteBtn.addEventListener('click', () => this.toggleMute());
             endBtn.addEventListener('click', () => this.endCall());
             
@@ -501,9 +523,9 @@
             
             // Focus management for accessibility
             setTimeout(() => {
-                const startBtn = this.modal.querySelector('.callsafe-start-btn');
-                if (startBtn && !startBtn.disabled) {
-                    startBtn.focus();
+                const closeBtn = this.modal.querySelector('.callsafe-close');
+                if (closeBtn) {
+                    closeBtn.focus();
                 }
             }, 100);
         }
@@ -513,6 +535,14 @@
                 // Don't close modal during active call
                 return;
             }
+            
+            // Reset call state when closing modal
+            this.updateCallState({ 
+                status: 'idle', 
+                error: null, 
+                isConnecting: false,
+                callId: null 
+            });
             
             this.isModalOpen = false;
             document.body.style.overflow = '';
@@ -526,6 +556,13 @@
         async handleStartCall() {
             if (this.callState.isConnecting) return;
             
+            // Reset call state for fresh attempt
+            this.updateCallState({ status: 'idle', error: null, isConnecting: false });
+            
+            // Open modal to show call progress
+            this.openModal();
+            
+            // Start the call immediately
             await this.startCall();
         }
         
@@ -635,7 +672,7 @@
                     });
                 } catch (error) {
                     console.error('Failed to create offer:', error);
-                    this.updateCallState({ status: 'failed', error: 'Failed to create call offer' });
+                    this.updateCallState({ status: 'failed', isConnecting: false, error: 'Failed to create call offer' });
                 }
             });
             
@@ -646,7 +683,7 @@
                     this.updateCallState({ status: 'connected' });
                 } catch (error) {
                     console.error('Failed to set remote answer:', error);
-                    this.updateCallState({ status: 'failed', error: 'Failed to connect to agent' });
+                    this.updateCallState({ status: 'failed', isConnecting: false, error: 'Failed to connect to agent' });
                 }
             });
             
@@ -661,6 +698,7 @@
             this.socket.on('no_agents_available', () => {
                 this.updateCallState({ 
                     status: 'failed', 
+                    isConnecting: false,
                     error: 'No agents available. Please try again later.' 
                 });
             });
@@ -668,6 +706,7 @@
             this.socket.on('call_timeout', () => {
                 this.updateCallState({ 
                     status: 'failed', 
+                    isConnecting: false,
                     error: 'Call timeout. Please try again.' 
                 });
             });
@@ -726,7 +765,7 @@
                 if (state === 'connected') {
                     this.updateCallState({ status: 'connected' });
                 } else if (state === 'failed' || state === 'disconnected') {
-                    this.updateCallState({ status: 'failed', error: 'Connection lost' });
+                    this.updateCallState({ status: 'failed', isConnecting: false, error: 'Connection lost' });
                 }
             };
         }
@@ -756,6 +795,12 @@
                 if (this.callState.callId) {
                     this.socket.emit('call_ended', {
                         callId: this.callState.callId,
+                        handle: this.config.handle,
+                        sourceId: this.config.sourceId
+                    });
+                } else if (this.callState.status === 'connecting') {
+                    // Cancel connection attempt if no callId yet
+                    this.socket.emit('cancel_call_request', {
                         handle: this.config.handle,
                         sourceId: this.config.sourceId
                     });
@@ -793,17 +838,22 @@
         }
         
         updateUI() {
-            const trigger = this.widget.querySelector('.callsafe-trigger4');
-            const tooltip = this.widget.querySelector('.callsafe-tooltip');
+            const trigger = this.widget?.querySelector('.callsafe-trigger4');
+            const tooltip = this.widget?.querySelector('.callsafe-tooltip');
             
-            // Modal elements
+            // Modal elements (check if modal exists)
+            if (!this.modal) return;
+            
             const statusIcon = this.modal.querySelector('.callsafe-status-icon');
             const statusText = this.modal.querySelector('.callsafe-status');
             const statusMessage = this.modal.querySelector('.callsafe-status-message');
-            const startBtn = this.modal.querySelector('.callsafe-start-btn');
+            const retryBtn = this.modal.querySelector('.callsafe-retry-btn');
             const controls = this.modal.querySelector('.callsafe-controls');
-            const iconSvg = statusIcon.querySelector('svg');
-            const spinner = statusIcon.querySelector('.callsafe-spinner');
+            const iconSvg = statusIcon?.querySelector('svg');
+            const spinner = statusIcon?.querySelector('.callsafe-spinner');
+            
+            // Return early if critical elements don't exist
+            if (!trigger || !statusIcon || !statusText || !statusMessage) return;
             
             // Reset classes
             trigger.className = 'callsafe-trigger4';
@@ -813,89 +863,64 @@
                 case 'idle':
                     // Trigger button
                     trigger.title = 'Start a call';
-                    tooltip.textContent = 'Start a call';
+                    if (tooltip) tooltip.textContent = 'Start a call';
                     
                     // Modal
                     statusIcon.classList.add('idle');
                     statusText.textContent = 'Ready to Call';
-                    statusMessage.textContent = 'Click the button below to start your call';
-                    startBtn.style.display = 'block';
-                    startBtn.disabled = false;
-                    startBtn.innerHTML = `
-                        <svg viewBox="0 0 24 24" style="width: 20px; height: 20px; fill: currentColor;">
-                            <path d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
-                        </svg>
-                        Start Call
-                    `;
-                    controls.style.display = 'none';
-                    iconSvg.style.display = 'block';
-                    spinner.style.display = 'none';
+                    statusMessage.textContent = 'Ready to start your call';
+                    if (retryBtn) retryBtn.style.display = 'none';
+                    if (controls) controls.style.display = 'none';
+                    if (iconSvg) iconSvg.style.display = 'block';
+                    if (spinner) spinner.style.display = 'none';
                     break;
                     
                 case 'connecting':
                     // Trigger button
                     trigger.classList.add('connecting');
                     trigger.title = 'Connecting...';
-                    tooltip.textContent = 'Connecting...';
+                    if (tooltip) tooltip.textContent = 'Connecting...';
                     
                     // Modal
                     statusIcon.classList.add('connecting');
                     statusText.textContent = 'Connecting...';
                     statusMessage.textContent = 'Looking for available agent';
-                    startBtn.disabled = true;
-                    startBtn.innerHTML = `
-                        <div class="callsafe-spinner"></div>
-                        Connecting...
-                    `;
-                    controls.style.display = 'none';
-                    iconSvg.style.display = 'none';
-                    spinner.style.display = 'block';
+                    if (retryBtn) retryBtn.style.display = 'none';
+                    if (controls) controls.style.display = 'flex';
+                    if (iconSvg) iconSvg.style.display = 'none';
+                    if (spinner) spinner.style.display = 'block';
                     break;
                     
                 case 'connected':
                     // Trigger button
                     trigger.classList.add('connected');
                     trigger.title = 'Call in progress';
-                    tooltip.textContent = 'Call in progress';
+                    if (tooltip) tooltip.textContent = 'Call in progress';
                     
                     // Modal
                     statusIcon.classList.add('connected');
                     statusText.textContent = 'Connected to Agent';
                     statusMessage.textContent = 'You are now speaking with an agent';
-                    startBtn.style.display = 'none';
-                    controls.style.display = 'flex';
-                    iconSvg.style.display = 'block';
-                    spinner.style.display = 'none';
+                    if (retryBtn) retryBtn.style.display = 'none';
+                    if (controls) controls.style.display = 'flex';
+                    if (iconSvg) iconSvg.style.display = 'block';
+                    if (spinner) spinner.style.display = 'none';
                     break;
                     
                 case 'failed':
                     // Trigger button
                     trigger.classList.add('failed');
                     trigger.title = this.callState.error || 'Call failed';
-                    tooltip.textContent = 'Call failed - Try again';
+                    if (tooltip) tooltip.textContent = 'Call failed - Try again';
                     
                     // Modal
                     statusIcon.classList.add('failed');
                     statusText.textContent = 'Call Failed';
                     statusMessage.textContent = this.callState.error || 'Unable to connect. Please try again.';
-                    startBtn.style.display = 'block';
-                    startBtn.disabled = false;
-                    startBtn.innerHTML = `
-                        <svg viewBox="0 0 24 24" style="width: 20px; height: 20px; fill: currentColor;">
-                            <path d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
-                        </svg>
-                        Try Again
-                    `;
-                    controls.style.display = 'none';
-                    iconSvg.style.display = 'block';
-                    spinner.style.display = 'none';
-                    
-                    // Auto-reset to idle after 3 seconds
-                    setTimeout(() => {
-                        if (this.callState.status === 'failed') {
-                            this.updateCallState({ status: 'idle' });
-                        }
-                    }, 3000);
+                    if (retryBtn) retryBtn.style.display = 'block';
+                    if (controls) controls.style.display = 'none';
+                    if (iconSvg) iconSvg.style.display = 'block';
+                    if (spinner) spinner.style.display = 'none';
                     break;
                     
                 case 'ended':
