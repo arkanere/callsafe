@@ -267,8 +267,8 @@
     connectionStatus = 'Connecting to service...';
     connectionMonitor.startConnectionAttempt();
     
-    // Reset mute state for new call
-    callState = { ...callState, isMuted: false };
+    // Reset mute state for new call and set status to connecting immediately
+    callState = { ...callState, isMuted: false, status: 'connecting' };
 
     try {
       console.log('🎤 Requesting microphone permission...');
@@ -288,9 +288,6 @@
       connectionStatus = 'Looking for available agent...';
       socket.connectAsCustomerWithHandle(handle, sourceId);
       console.log('✅ Customer registration sent with handle:', handle, 'sourceId:', sourceId);
-      
-      callState = { ...callState, status: 'connecting' };
-      console.log('📞 Call state updated to connecting');
       
     } catch (error) {
       isConnecting = false;

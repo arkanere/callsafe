@@ -11,6 +11,18 @@ export class SocketManager {
   private maxReconnectDelay = 16000; // Max 16 seconds
   private serverUrl: string;
   private connectionCallbacks: Map<string, (data?: any) => void> = new Map();
+  
+  // State tracking for reconnection
+  private agentState: {
+    isAgentOnline: boolean;
+    registrationType: 'none' | 'basic' | 'with_user' | 'with_handle';
+    userId?: number;
+    handle?: string;
+    sourceId?: string;
+  } = {
+    isAgentOnline: false,
+    registrationType: 'none'
+  };
 
   constructor(serverUrl?: string) {
     this.serverUrl = serverUrl || import.meta.env.VITE_SIGNALING_SERVER_URL || 'ws://localhost:3000';
@@ -58,6 +70,10 @@ export class SocketManager {
           this.reconnectAttempts = 0;
           this.reconnectDelay = 1000; // Reset delay
           console.log('Connected to signaling server');
+          
+          // Restore agent state after reconnection
+          this.restoreAgentState();
+          
           resolve();
         });
 
@@ -199,6 +215,39 @@ export class SocketManager {
     }
   }
 
+  private restoreAgentState(): void {
+    if (!this.agentState.isAgentOnline) {
+      console.log('🔄 No agent state to restore (agent was offline)');
+      return;
+    }
+
+    console.log('🔄 Restoring agent state after reconnection:', this.agentState);
+    
+    switch (this.agentState.registrationType) {
+      case 'basic':
+        console.log('🔄 Re-registering agent (basic)');
+        this.emit('agent_online');
+        break;
+      
+      case 'with_user':
+        if (this.agentState.userId) {
+          console.log('🔄 Re-registering agent with user ID:', this.agentState.userId);
+          this.emit('agent_online_with_user', { userId: this.agentState.userId });
+        }
+        break;
+      
+      case 'with_handle':
+        if (this.agentState.handle) {
+          console.log('🔄 Re-registering agent with handle:', this.agentState.handle, 'sourceId:', this.agentState.sourceId);
+          this.emit('agent_online_with_handle', { 
+            handle: this.agentState.handle, 
+            sourceId: this.agentState.sourceId 
+          });
+        }
+        break;
+    }
+  }
+
   // Customer methods
   connectAsCustomer(): void {
     console.log('📤 Emitting customer_connect (no handle)');
@@ -223,21 +272,40 @@ export class SocketManager {
   // Agent methods
   goOnline(): void {
     console.log('📤 Emitting agent_online');
+    this.agentState = {
+      isAgentOnline: true,
+      registrationType: 'basic'
+    };
     this.emit('agent_online');
   }
 
   goOnlineWithUser(userId: number): void {
     console.log('📤 Emitting agent_online_with_user for user ID:', userId);
+    this.agentState = {
+      isAgentOnline: true,
+      registrationType: 'with_user',
+      userId
+    };
     this.emit('agent_online_with_user', { userId });
   }
 
   goOnlineWithHandle(handle: string, sourceId?: string): void {
     console.log('📤 Emitting agent_online_with_handle for handle:', handle, 'sourceId:', sourceId);
+    this.agentState = {
+      isAgentOnline: true,
+      registrationType: 'with_handle',
+      handle,
+      sourceId
+    };
     this.emit('agent_online_with_handle', { handle, sourceId });
   }
 
   goOffline(): void {
     console.log('📤 Emitting agent_offline');
+    this.agentState = {
+      isAgentOnline: false,
+      registrationType: 'none'
+    };
     this.emit('agent_offline');
   }
 
