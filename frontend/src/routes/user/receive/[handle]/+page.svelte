@@ -242,12 +242,27 @@
 
     socket.on('call_request_cancelled', (data) => {
       console.log('📞 Call request cancelled:', data);
+      
+      // Find the call details before removing it
+      const cancelledCall = incomingCalls.find(call => call.callId === data.callId);
+      
       // Remove the cancelled call from incoming calls
       if (data.callId) {
         incomingCalls = incomingCalls.filter(call => call.callId !== data.callId);
         // Stop ringtone if no more incoming calls
         if (incomingCalls.length === 0) {
           stopRingtone();
+        }
+        
+        // Log as missed call if customer cancelled during connecting
+        if (cancelledCall) {
+          addToCallHistory({
+            callId: data.callId,
+            duration: 0,
+            status: 'missed',
+            sourceId: cancelledCall.sourceId,
+            reason: data.reason || 'customer_cancelled'
+          });
         }
       }
     });
@@ -388,6 +403,15 @@
     socket.declineCall(callId, handle, sourceId);
     console.log('📤 Decline call message sent to server with handle:', handle, 'sourceId:', sourceId);
     
+    // Add declined call to history as missed call
+    addToCallHistory({
+      callId: callId,
+      duration: 0,
+      status: 'missed',
+      sourceId: sourceId,
+      reason: 'agent_declined'
+    });
+    
     incomingCalls = incomingCalls.filter(call => call.callId !== callId);
     
     // Stop ringtone when declining call or if no more incoming calls
@@ -409,11 +433,25 @@
       // 1.5. Capture call data for history BEFORE resetting state
       let callHistoryData = null;
       if (shouldEndActiveCall && callState.callId) {
+        // Determine status based on call state and reason
+        let status = 'completed';
+        if (reason.includes('timeout')) {
+          status = 'timeout';
+        } else if (reason.includes('failed')) {
+          status = 'failed';
+        } else if (callState.status === 'connecting' && reason === 'manual') {
+          // Agent ended call while it was still incoming (not yet accepted)
+          status = 'missed';
+        } else if (callState.status === 'connected') {
+          status = 'completed';
+        } else {
+          status = 'missed'; // Default for calls that were never connected
+        }
+        
         callHistoryData = {
           callId: callState.callId,
           duration: callDuration,
-          status: reason.includes('timeout') ? 'timeout' : 
-                 reason.includes('failed') ? 'failed' : 'completed',
+          status: status,
           sourceId: callState.sourceId,
           reason: reason
         };
