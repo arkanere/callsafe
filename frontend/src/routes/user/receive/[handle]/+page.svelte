@@ -26,6 +26,7 @@
   let socketConnected = false;
   let handle = '';
   let sourceId = '';
+  let callHistory = [];
   
   // Extract handle from URL parameters
   $: handle = $page.params.handle || '';
@@ -46,6 +47,7 @@
     setupWebRTCHandlers();
     setupSocketHandlers();
     connectToServer();
+    loadCallHistory();
   });
 
   onDestroy(() => {
@@ -222,6 +224,14 @@
         if (incomingCalls.length === 0) {
           stopRingtone();
         }
+        // Add to call history
+        addToCallHistory({
+          callId: data.callId,
+          duration: 0,
+          status: 'cancelled',
+          sourceId: data.sourceId,
+          reason: 'customer_cancelled'
+        });
       }
     });
 
@@ -469,8 +479,25 @@
       } catch (error) {
         console.error('❌ Failed to stop call timer:', error);
       }
+
+      // 8. Add to call history
+      if (shouldEndActiveCall && callState.callId) {
+        try {
+          console.log('📝 Adding call to history');
+          addToCallHistory({
+            callId: callState.callId,
+            duration: callDuration,
+            status: reason.includes('timeout') ? 'timeout' : 
+                   reason.includes('failed') ? 'failed' : 'completed',
+            sourceId: callState.sourceId,
+            reason: reason
+          });
+        } catch (error) {
+          console.error('❌ Failed to add call to history:', error);
+        }
+      }
       
-      // 8. Final state validation
+      // 9. Final state validation
       const finalState = {
         activeCall: callState.callId,
         incomingCalls: incomingCalls.length,
@@ -547,6 +574,48 @@
 
   function clearError() {
     errorMessage = '';
+  }
+
+  function loadCallHistory() {
+    if (!handle) return;
+    
+    try {
+      const stored = localStorage.getItem(`call_history_${handle}`);
+      if (stored) {
+        callHistory = JSON.parse(stored);
+      }
+    } catch (error) {
+      console.error('Failed to load call history:', error);
+      callHistory = [];
+    }
+  }
+
+  function addToCallHistory(callData) {
+    if (!handle) return;
+    
+    const entry = {
+      callId: callData.callId || 'unknown',
+      timestamp: new Date().toISOString(),
+      duration: callData.duration || 0,
+      status: callData.status || 'unknown',
+      sourceId: callData.sourceId || '',
+      reason: callData.reason || ''
+    };
+    
+    // Add to beginning of array
+    callHistory = [entry, ...callHistory];
+    
+    // Keep only last 10
+    if (callHistory.length > 10) {
+      callHistory = callHistory.slice(0, 10);
+    }
+    
+    // Save to localStorage
+    try {
+      localStorage.setItem(`call_history_${handle}`, JSON.stringify(callHistory));
+    } catch (error) {
+      console.error('Failed to save call history:', error);
+    }
   }
 
   function getStatusColor(status: string): string {
@@ -763,6 +832,62 @@
           </div>
         {/if}
       </div>
+    </div>
+
+    <!-- Call History Section -->
+    <div class="bg-white rounded-2xl shadow-xl p-6 mt-6">
+      <h2 class="text-xl font-semibold text-gray-800 mb-4">Recent Calls</h2>
+      
+      {#if callHistory.length === 0}
+        <div class="text-center py-8">
+          <div class="w-16 h-16 bg-gray-100 rounded-full mx-auto mb-4 flex items-center justify-center">
+            <svg class="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6l4 2"/>
+            </svg>
+          </div>
+          <p class="text-gray-500">No recent calls</p>
+        </div>
+      {:else}
+        <div class="space-y-3">
+          {#each callHistory as call}
+            <div class="border border-gray-200 rounded-lg p-4">
+              <div class="flex justify-between items-start">
+                <div class="flex-1">
+                  <div class="flex items-center gap-2 mb-2">
+                    <div class="w-3 h-3 rounded-full {call.status === 'completed' ? 'bg-green-500' : 
+                                                     call.status === 'timeout' ? 'bg-yellow-500' : 
+                                                     call.status === 'cancelled' ? 'bg-gray-500' : 'bg-red-500'}"></div>
+                    <span class="font-medium text-sm capitalize">
+                      {call.status === 'completed' ? 'Completed' : 
+                       call.status === 'timeout' ? 'Timeout' : 
+                       call.status === 'cancelled' ? 'Cancelled' : 'Failed'}
+                    </span>
+                    {#if call.reason}
+                      <span class="text-xs text-gray-500">({call.reason})</span>
+                    {/if}
+                  </div>
+                  <div class="text-xs text-gray-600 mb-1">
+                    {new Date(call.timestamp).toLocaleString()}
+                  </div>
+                  {#if call.sourceId}
+                    <div class="text-xs text-blue-600">Source: {call.sourceId}</div>
+                  {/if}
+                </div>
+                <div class="text-right ml-4">
+                  {#if call.duration > 0}
+                    <div class="text-sm font-mono font-semibold text-gray-700">
+                      {formatDuration(call.duration)}
+                    </div>
+                  {/if}
+                  <div class="text-xs text-gray-500 mt-1">
+                    #{call.callId.slice(-6)}
+                  </div>
+                </div>
+              </div>
+            </div>
+          {/each}
+        </div>
+      {/if}
     </div>
 
     <!-- Hidden audio element for remote stream -->
