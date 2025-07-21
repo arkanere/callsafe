@@ -19,6 +19,11 @@
             this.remoteAudio = null;
             this.isModalOpen = false;
             
+            // Timer variables
+            this.currentCallStartTime = null;
+            this.callDuration = 0;
+            this.durationInterval = null;
+            
             this.callState = {
                 status: 'idle', // idle, connecting, connected, ended, failed
                 callId: null,
@@ -162,6 +167,14 @@
                 
                 .callsafe-modal-body {
                     padding: 0 24px 24px 24px;
+                }
+                
+                .callsafe-timer {
+                    font-size: 24px;
+                    font-weight: bold;
+                    color: #10b981;
+                    margin: 8px 0;
+                    font-family: 'Courier New', monospace;
                 }
                 
                 .callsafe-close {
@@ -475,6 +488,7 @@
                             </div>
                             <div class="callsafe-status">Ready to Call</div>
                             <div class="callsafe-status-message">Connecting to support...</div>
+                            <div class="callsafe-timer" style="display: none;">00:00</div>
                         </div>
                         
                         <button class="callsafe-retry-btn" style="display: none;">
@@ -504,7 +518,11 @@
             
             trigger.addEventListener('click', () => this.handleStartCall());
             closeBtn.addEventListener('click', () => this.closeModal());
-            retryBtn.addEventListener('click', () => this.handleStartCall());
+            retryBtn.addEventListener('click', () => {
+                // Reset state and start call directly (modal already open)
+                this.updateCallState({ status: 'idle', error: null, isConnecting: false, callId: null });
+                this.startCall();
+            });
             muteBtn.addEventListener('click', () => this.toggleMute());
             endBtn.addEventListener('click', () => this.endCall());
             
@@ -536,7 +554,8 @@
                 return;
             }
             
-            // Reset call state when closing modal
+            // Stop timer and reset call state when closing modal
+            this.stopCallTimer();
             this.updateCallState({ 
                 status: 'idle', 
                 error: null, 
@@ -714,6 +733,34 @@
             this.socket.on('call_disconnected', () => {
                 this.updateCallState({ status: 'ended' });
             });
+            
+            this.socket.on('call_ended', (data) => {
+                console.log('📞 Call ended by agent/server:', data);
+                
+                // Clean up WebRTC connection immediately to prevent "connection lost" message
+                if (this.peerConnection) {
+                    this.peerConnection.close();
+                    this.peerConnection = null;
+                }
+                
+                if (this.localStream) {
+                    this.localStream.getTracks().forEach(track => track.stop());
+                    this.localStream = null;
+                }
+                
+                // Clean up socket connection so "Try Again" can establish fresh connection
+                if (this.socket) {
+                    this.socket.disconnect();
+                    this.socket = null;
+                }
+                
+                this.updateCallState({ 
+                    status: 'ended',
+                    error: 'Call ended by agent',
+                    callId: null,
+                    isConnecting: false
+                });
+            });
         }
         
         registerAsCustomer() {
@@ -790,6 +837,38 @@
             }
         }
         
+        startCallTimer() {
+            this.currentCallStartTime = Date.now();
+            this.durationInterval = setInterval(() => {
+                if (this.currentCallStartTime) {
+                    this.callDuration = Math.floor((Date.now() - this.currentCallStartTime) / 1000);
+                    this.updateTimerDisplay();
+                }
+            }, 1000);
+        }
+        
+        stopCallTimer() {
+            if (this.durationInterval) {
+                clearInterval(this.durationInterval);
+            }
+            this.currentCallStartTime = null;
+            this.callDuration = 0;
+            this.durationInterval = null;
+        }
+        
+        formatDuration(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        }
+        
+        updateTimerDisplay() {
+            const timerElement = this.modal.querySelector('.callsafe-timer');
+            if (timerElement) {
+                timerElement.textContent = this.formatDuration(this.callDuration);
+            }
+        }
+        
         endCall() {
             if (this.socket) {
                 if (this.callState.callId) {
@@ -847,6 +926,7 @@
             const statusIcon = this.modal.querySelector('.callsafe-status-icon');
             const statusText = this.modal.querySelector('.callsafe-status');
             const statusMessage = this.modal.querySelector('.callsafe-status-message');
+            const timerElement = this.modal.querySelector('.callsafe-timer');
             const retryBtn = this.modal.querySelector('.callsafe-retry-btn');
             const controls = this.modal.querySelector('.callsafe-controls');
             const iconSvg = statusIcon?.querySelector('svg');
@@ -861,6 +941,9 @@
             
             switch (this.callState.status) {
                 case 'idle':
+                    // Stop timer
+                    this.stopCallTimer();
+                    
                     // Trigger button
                     trigger.title = 'Start a call';
                     if (tooltip) tooltip.textContent = 'Start a call';
@@ -869,6 +952,7 @@
                     statusIcon.classList.add('idle');
                     statusText.textContent = 'Ready to Call';
                     statusMessage.textContent = 'Ready to start your call';
+                    if (timerElement) timerElement.style.display = 'none';
                     if (retryBtn) retryBtn.style.display = 'none';
                     if (controls) controls.style.display = 'none';
                     if (iconSvg) iconSvg.style.display = 'block';
@@ -885,6 +969,7 @@
                     statusIcon.classList.add('connecting');
                     statusText.textContent = 'Connecting...';
                     statusMessage.textContent = 'Looking for available agent';
+                    if (timerElement) timerElement.style.display = 'none';
                     if (retryBtn) retryBtn.style.display = 'none';
                     if (controls) controls.style.display = 'flex';
                     if (iconSvg) iconSvg.style.display = 'none';
@@ -897,10 +982,19 @@
                     trigger.title = 'Call in progress';
                     if (tooltip) tooltip.textContent = 'Call in progress';
                     
+                    // Start timer if not already started
+                    if (!this.durationInterval) {
+                        this.startCallTimer();
+                    }
+                    
                     // Modal
                     statusIcon.classList.add('connected');
                     statusText.textContent = 'Connected to Agent';
                     statusMessage.textContent = 'You are now speaking with an agent';
+                    if (timerElement) {
+                        timerElement.style.display = 'block';
+                        timerElement.textContent = this.formatDuration(this.callDuration);
+                    }
                     if (retryBtn) retryBtn.style.display = 'none';
                     if (controls) controls.style.display = 'flex';
                     if (iconSvg) iconSvg.style.display = 'block';
@@ -908,6 +1002,9 @@
                     break;
                     
                 case 'failed':
+                    // Stop timer
+                    this.stopCallTimer();
+                    
                     // Trigger button
                     trigger.classList.add('failed');
                     trigger.title = this.callState.error || 'Call failed';
@@ -917,6 +1014,7 @@
                     statusIcon.classList.add('failed');
                     statusText.textContent = 'Call Failed';
                     statusMessage.textContent = this.callState.error || 'Unable to connect. Please try again.';
+                    if (timerElement) timerElement.style.display = 'none';
                     if (retryBtn) retryBtn.style.display = 'block';
                     if (controls) controls.style.display = 'none';
                     if (iconSvg) iconSvg.style.display = 'block';
@@ -924,7 +1022,23 @@
                     break;
                     
                 case 'ended':
-                    this.updateCallState({ status: 'idle' });
+                    // Stop timer
+                    this.stopCallTimer();
+                    
+                    // Trigger button
+                    trigger.classList.add('failed');
+                    trigger.title = 'Call ended';
+                    if (tooltip) tooltip.textContent = 'Call ended - Try again';
+                    
+                    // Modal - show ended state with retry option
+                    statusIcon.classList.add('failed');
+                    statusText.textContent = 'Call Ended';
+                    statusMessage.textContent = this.callState.error || 'Call has been ended';
+                    if (timerElement) timerElement.style.display = 'none';
+                    if (retryBtn) retryBtn.style.display = 'block';
+                    if (controls) controls.style.display = 'none';
+                    if (iconSvg) iconSvg.style.display = 'block';
+                    if (spinner) spinner.style.display = 'none';
                     break;
             }
         }
@@ -947,6 +1061,7 @@
         
         destroy() {
             this.endCall();
+            this.stopCallTimer(); // Ensure timer is stopped
             if (this.widget) {
                 this.widget.remove();
             }

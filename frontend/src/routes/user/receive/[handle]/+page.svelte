@@ -76,6 +76,15 @@
       // Initialize media for agent
       await webrtc.initializeMedia({ audio: true, video: false });
       
+      // Automatically go online if handle is available
+      if (handle) {
+        console.log('👤 Agent automatically going online with handle:', handle, 'sourceId:', sourceId);
+        socket.goOnlineWithHandle(handle, sourceId);
+        isOnline = true;
+        connectionStatus = 'Online - Waiting for calls';
+        errorMessage = '';
+      }
+      
     } catch (error) {
       connectionStatus = 'Connection failed';
       errorMessage = 'Failed to connect to server. Please refresh and try again.';

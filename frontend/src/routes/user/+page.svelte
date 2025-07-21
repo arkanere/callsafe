@@ -253,52 +253,8 @@
         
       </div>
 
-    <!-- User Stats -->
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <div class="bg-white rounded-xl shadow-lg p-6">
-          <div class="flex items-center">
-            <div class="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mr-4">
-              <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
-              </svg>
-            </div>
-            <div>
-              <p class="text-2xl font-bold text-gray-900">{totalCalls}</p>
-              <p class="text-sm text-gray-600">Total Calls</p>
-            </div>
-          </div>
-        </div>
-        
-        <div class="bg-white rounded-xl shadow-lg p-6">
-          <div class="flex items-center">
-            <div class="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mr-4">
-              <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-              </svg>
-            </div>
-            <div>
-              <p class="text-2xl font-bold text-gray-900">{totalTime}</p>
-              <p class="text-sm text-gray-600">Total Time</p>
-            </div>
-          </div>
-        </div>
-        
-        <div class="bg-white rounded-xl shadow-lg p-6">
-          <div class="flex items-center">
-            <div class="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center mr-4">
-              <svg class="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-              </svg>
-            </div>
-            <div>
-              <p class="text-2xl font-bold text-gray-900">{successfulCalls}</p>
-              <p class="text-sm text-gray-600">Successful Calls</p>
-            </div>
-          </div>
-        </div>
-        
-      </div>
 
+      
     <!-- Quick Actions -->
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
         <div class="bg-white rounded-2xl shadow-xl p-8">
@@ -338,65 +294,6 @@
         </div>
       </div>
 
-    <!-- Recent Activity -->
-      <div class="bg-white rounded-2xl shadow-xl p-6">
-        <h2 class="text-2xl font-bold text-gray-900 mb-6">Recent Activity</h2>
-        <div class="space-y-4">
-          <div class="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
-            <div class="flex items-center">
-              <div class="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center mr-4">
-                <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-                </svg>
-              </div>
-              <div>
-                <p class="font-semibold text-gray-900">Successful Call</p>
-                <p class="text-sm text-gray-600">Customer inquiry about pricing</p>
-              </div>
-            </div>
-            <div class="text-right">
-              <p class="text-sm font-medium text-gray-900">5 minutes</p>
-              <p class="text-xs text-gray-500">2 hours ago</p>
-            </div>
-          </div>
-          
-          <div class="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
-            <div class="flex items-center">
-              <div class="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center mr-4">
-                <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
-                </svg>
-              </div>
-              <div>
-                <p class="font-semibold text-gray-900">Incoming Call</p>
-                <p class="text-sm text-gray-600">Product demonstration request</p>
-              </div>
-            </div>
-            <div class="text-right">
-              <p class="text-sm font-medium text-gray-900">12 minutes</p>
-              <p class="text-xs text-gray-500">4 hours ago</p>
-            </div>
-          </div>
-          
-          <div class="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
-            <div class="flex items-center">
-              <div class="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center mr-4">
-                <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-                </svg>
-              </div>
-              <div>
-                <p class="font-semibold text-gray-900">Successful Call</p>
-                <p class="text-sm text-gray-600">Support inquiry resolved</p>
-              </div>
-            </div>
-            <div class="text-right">
-              <p class="text-sm font-medium text-gray-900">8 minutes</p>
-              <p class="text-xs text-gray-500">1 day ago</p>
-            </div>
-          </div>
-        </div>
-      </div>
   </div>
 </div>
 
