@@ -300,6 +300,18 @@
       connectionStatus = 'Registered - Ready to receive calls';
       isOnline = true;
     });
+
+    socket.on('missed_call', (data) => {
+      console.log('📞 Missed call notification received:', data);
+      // Add missed call to history
+      addToCallHistory({
+        callId: data.callId,
+        duration: 0,
+        status: 'missed',
+        sourceId: data.sourceId,
+        reason: data.reason || 'missed_call'
+      });
+    });
   }
 
   function toggleOnlineStatus() {
@@ -394,6 +406,20 @@
       const targetCallId = callId || callState.callId;
       const shouldEndActiveCall = !callId || callId === callState.callId;
       
+      // 1.5. Capture call data for history BEFORE resetting state
+      let callHistoryData = null;
+      if (shouldEndActiveCall && callState.callId) {
+        callHistoryData = {
+          callId: callState.callId,
+          duration: callDuration,
+          status: reason.includes('timeout') ? 'timeout' : 
+                 reason.includes('failed') ? 'failed' : 'completed',
+          sourceId: callState.sourceId,
+          reason: reason
+        };
+        console.log('📝 Captured call data for history:', callHistoryData);
+      }
+      
       // 2. Socket notification (if we have an active call to end)
       if (shouldEndActiveCall && callState.callId) {
         try {
@@ -486,35 +512,23 @@
       }
 
       // 8. Add to call history
-      if (shouldEndActiveCall && callState.callId) {
+      if (callHistoryData) {
         try {
-          console.log('📝 Adding call to history:', {
-            callId: callState.callId,
-            duration: callDuration,
-            status: reason.includes('timeout') ? 'timeout' : 
-                   reason.includes('failed') ? 'failed' : 'completed',
-            sourceId: callState.sourceId,
-            reason: reason,
-            handle: handle
-          });
-          addToCallHistory({
-            callId: callState.callId,
-            duration: callDuration,
-            status: reason.includes('timeout') ? 'timeout' : 
-                   reason.includes('failed') ? 'failed' : 'completed',
-            sourceId: callState.sourceId,
-            reason: reason
-          });
-          console.log('📝 Call added to history, current history length:', callHistory.length);
+          console.log('📝 Adding call to history:', callHistoryData);
+          
+          // Check if this call is already in history (prevent duplicates)
+          const existingCall = callHistory.find(call => call.callId === callHistoryData.callId);
+          if (existingCall) {
+            console.log('📝 Call already in history, skipping:', callHistoryData.callId);
+          } else {
+            addToCallHistory(callHistoryData);
+            console.log('📝 Call added to history, current history length:', callHistory.length);
+          }
         } catch (error) {
           console.error('❌ Failed to add call to history:', error);
         }
       } else {
-        console.log('📝 Not adding to history because:', {
-          shouldEndActiveCall,
-          hasCallId: !!callState.callId,
-          callId: callState.callId
-        });
+        console.log('📝 Not adding to history - no call data captured');
       }
       
       // 9. Final state validation
@@ -666,6 +680,10 @@
       case 'connecting': return 'text-yellow-600';
       case 'failed': return 'text-red-600';
       case 'ended': return 'text-gray-600';
+      case 'missed': return 'text-orange-600';
+      case 'completed': return 'text-green-600';
+      case 'timeout': return 'text-yellow-600';
+      case 'cancelled': return 'text-gray-600';
       default: return 'text-blue-600';
     }
   }
@@ -781,15 +799,15 @@
             </div>
           </div>
         {:else if callState.status === 'connected'}
-          <div class="text-center py-4">
-            <div class="w-16 h-16 bg-green-200 rounded-full mx-auto mb-4 flex items-center justify-center">
-              <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div class="text-center py-2 sm:py-4">
+            <div class="w-12 h-12 sm:w-16 sm:h-16 bg-green-200 rounded-full mx-auto mb-2 sm:mb-4 flex items-center justify-center">
+              <svg class="w-6 h-6 sm:w-8 sm:h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
               </svg>
             </div>
             <p class="text-green-600 font-semibold mb-2">Connected to Customer</p>
-            <p class="text-2xl font-mono text-gray-700 mb-4">{formatDuration(callDuration)}</p>
-            <p class="text-sm text-gray-500 mb-6">Call ID: {callState.callId}</p>
+            <p class="text-xl sm:text-2xl font-mono text-green-700 sm:text-gray-700 font-bold sm:font-normal mb-2 sm:mb-4 border border-green-200 sm:border-0 bg-green-50 sm:bg-transparent px-2 py-1 sm:px-0 sm:py-0 rounded">{formatDuration(callDuration)}</p>
+            <p class="text-sm text-gray-500 mb-4 sm:mb-6">Call ID: {callState.callId}</p>
 
             <!-- Call Controls -->
             <div class="flex space-x-4">
@@ -898,11 +916,13 @@
                   <div class="flex items-center gap-2 mb-2">
                     <div class="w-3 h-3 rounded-full {call.status === 'completed' ? 'bg-green-500' : 
                                                      call.status === 'timeout' ? 'bg-yellow-500' : 
-                                                     call.status === 'cancelled' ? 'bg-gray-500' : 'bg-red-500'}"></div>
+                                                     call.status === 'cancelled' ? 'bg-gray-500' : 
+                                                     call.status === 'missed' ? 'bg-orange-500' : 'bg-red-500'}"></div>
                     <span class="font-medium text-sm capitalize">
                       {call.status === 'completed' ? 'Completed' : 
                        call.status === 'timeout' ? 'Timeout' : 
-                       call.status === 'cancelled' ? 'Cancelled' : 'Failed'}
+                       call.status === 'cancelled' ? 'Cancelled' : 
+                       call.status === 'missed' ? 'Missed Call' : 'Failed'}
                     </span>
                     {#if call.reason}
                       <span class="text-xs text-gray-500">({call.reason})</span>

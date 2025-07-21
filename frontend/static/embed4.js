@@ -898,17 +898,16 @@
                 this.localStream = null;
             }
             
-            this.updateCallState({ 
+            // Update state to allow modal closing, but don't update UI
+            this.callState = { 
                 status: 'idle', 
                 callId: null, 
                 isMuted: false,
                 isConnecting: false 
-            });
+            };
             
-            // Close modal after call ends
-            setTimeout(() => {
-                this.closeModal();
-            }, 1000);
+            // Close modal immediately
+            this.closeModal();
         }
         
         updateCallState(updates) {
