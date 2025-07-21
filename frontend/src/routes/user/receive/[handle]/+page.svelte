@@ -33,6 +33,12 @@
   // Extract sourceId from URL query parameters (optional for agents)
   $: sourceId = $page.url.searchParams.get('sourceId') || '';
   
+  // Reactive statement to load call history when handle changes
+  $: if (handle) {
+    console.log('📝 Handle changed:', handle, 'loading call history...');
+    loadCallHistory();
+  }
+  
   // Reactive statement to update connection status
   $: {
     if (socket) {
@@ -47,7 +53,6 @@
     setupWebRTCHandlers();
     setupSocketHandlers();
     connectToServer();
-    loadCallHistory();
   });
 
   onDestroy(() => {
@@ -483,7 +488,15 @@
       // 8. Add to call history
       if (shouldEndActiveCall && callState.callId) {
         try {
-          console.log('📝 Adding call to history');
+          console.log('📝 Adding call to history:', {
+            callId: callState.callId,
+            duration: callDuration,
+            status: reason.includes('timeout') ? 'timeout' : 
+                   reason.includes('failed') ? 'failed' : 'completed',
+            sourceId: callState.sourceId,
+            reason: reason,
+            handle: handle
+          });
           addToCallHistory({
             callId: callState.callId,
             duration: callDuration,
@@ -492,9 +505,16 @@
             sourceId: callState.sourceId,
             reason: reason
           });
+          console.log('📝 Call added to history, current history length:', callHistory.length);
         } catch (error) {
           console.error('❌ Failed to add call to history:', error);
         }
+      } else {
+        console.log('📝 Not adding to history because:', {
+          shouldEndActiveCall,
+          hasCallId: !!callState.callId,
+          callId: callState.callId
+        });
       }
       
       // 9. Final state validation
@@ -577,12 +597,22 @@
   }
 
   function loadCallHistory() {
-    if (!handle) return;
+    if (!handle) {
+      console.log('📝 Not loading call history - no handle');
+      return;
+    }
     
     try {
-      const stored = localStorage.getItem(`call_history_${handle}`);
+      const key = `call_history_${handle}`;
+      const stored = localStorage.getItem(key);
+      console.log('📝 Loading call history for handle:', handle, 'key:', key, 'stored:', stored);
+      
       if (stored) {
         callHistory = JSON.parse(stored);
+        console.log('📝 Loaded call history:', callHistory.length, 'calls');
+      } else {
+        console.log('📝 No stored call history found');
+        callHistory = [];
       }
     } catch (error) {
       console.error('Failed to load call history:', error);
@@ -591,7 +621,10 @@
   }
 
   function addToCallHistory(callData) {
-    if (!handle) return;
+    if (!handle) {
+      console.log('📝 Not adding to call history - no handle');
+      return;
+    }
     
     const entry = {
       callId: callData.callId || 'unknown',
@@ -601,6 +634,8 @@
       sourceId: callData.sourceId || '',
       reason: callData.reason || ''
     };
+    
+    console.log('📝 Creating call history entry:', entry);
     
     // Add to beginning of array
     callHistory = [entry, ...callHistory];
@@ -612,7 +647,14 @@
     
     // Save to localStorage
     try {
-      localStorage.setItem(`call_history_${handle}`, JSON.stringify(callHistory));
+      const key = `call_history_${handle}`;
+      const data = JSON.stringify(callHistory);
+      localStorage.setItem(key, data);
+      console.log('📝 Saved call history to localStorage:', key, 'length:', callHistory.length);
+      
+      // Verify it was saved
+      const verification = localStorage.getItem(key);
+      console.log('📝 Verification - retrieved from localStorage:', verification ? JSON.parse(verification).length : 'null', 'calls');
     } catch (error) {
       console.error('Failed to save call history:', error);
     }
