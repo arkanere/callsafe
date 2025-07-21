@@ -208,11 +208,32 @@
     socket.on('call_ended', (data) => {
       console.log('📞 Call ended by customer:', data);
       
-      // Use robust endCall with data from server
-      endCall({
-        callId: data?.callId,
-        reason: data?.reason || 'customer_ended'
-      });
+      // Check if this was an incoming call that we never accepted
+      const incomingCall = incomingCalls.find(call => call.callId === data.callId);
+      if (incomingCall) {
+        // This was a missed call - customer ended it before we accepted
+        addToCallHistory({
+          callId: data.callId,
+          duration: 0,
+          status: 'missed',
+          sourceId: incomingCall.sourceId,
+          reason: data.reason || 'customer_ended'
+        });
+        
+        // Remove from incoming calls
+        incomingCalls = incomingCalls.filter(call => call.callId !== data.callId);
+        
+        // Stop ringtone if no more incoming calls
+        if (incomingCalls.length === 0) {
+          stopRingtone();
+        }
+      } else {
+        // This was an active call that ended
+        endCall({
+          callId: data?.callId,
+          reason: data?.reason || 'customer_ended'
+        });
+      }
     });
 
     socket.on('call_disconnected', (reason) => {
