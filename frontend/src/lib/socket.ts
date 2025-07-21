@@ -175,6 +175,10 @@ export class SocketManager {
     this.socket.on('call_request_cancelled', (data) => {
       this.triggerCallback('call_request_cancelled', data);
     });
+
+    this.socket.on('missed_call', (data) => {
+      this.triggerCallback('missed_call', data);
+    });
   }
 
   private triggerCallback(event: string, data?: any): void {

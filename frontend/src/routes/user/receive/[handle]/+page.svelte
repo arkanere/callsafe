@@ -80,6 +80,7 @@
       console.log('Successfully connected to server');
       console.log('Socket connection status:', socket.getConnectionStatus());
       
+      
       // Initialize media for agent
       await webrtc.initializeMedia({ audio: true, video: false });
       
@@ -339,6 +340,7 @@
 
     socket.on('missed_call', (data) => {
       console.log('📞 Missed call notification received:', data);
+      
       // Add missed call to history
       addToCallHistory({
         callId: data.callId,
@@ -347,6 +349,14 @@
         sourceId: data.sourceId,
         reason: data.reason || 'missed_call'
       });
+      
+      // Remove from incoming calls if it exists
+      incomingCalls = incomingCalls.filter(call => call.callId !== data.callId);
+      
+      // Stop ringtone if no more incoming calls
+      if (incomingCalls.length === 0) {
+        stopRingtone();
+      }
     });
   }
 
