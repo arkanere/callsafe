@@ -19,7 +19,7 @@ export async function GET({ url }) {
         }
 
         const result = await pool.query(
-            'SELECT id, email, name, is_active, sourceid FROM callsafeusers WHERE id = $1',
+            'SELECT id, email, name, is_active, sourceid, isembedded FROM callsafeusers WHERE id = $1',
             [userId]
         );
 
@@ -36,7 +36,8 @@ export async function GET({ url }) {
                 email: user.email,
                 name: user.name,
                 isActive: user.is_active,
-                sourceId: user.sourceid
+                sourceId: user.sourceid,
+                isEmbedded: user.isembedded
             }
         });
     } catch (error) {

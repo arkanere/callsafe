@@ -36,7 +36,7 @@ export async function POST({ request }) {
 
         // Find user by email
         const result = await pool.query(
-            'SELECT id, email, password_hash, name, is_active FROM callsafeusers WHERE email = $1',
+            'SELECT id, email, password_hash, name, is_active, isembedded FROM callsafeusers WHERE email = $1',
             [email.toLowerCase()]
         );
 
@@ -75,7 +75,8 @@ export async function POST({ request }) {
                 id: user.id,
                 email: user.email,
                 name: user.name,
-                isActive: user.is_active
+                isActive: user.is_active,
+                isEmbedded: user.isembedded
             }
         });
 

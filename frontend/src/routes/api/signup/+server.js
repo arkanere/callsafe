@@ -75,10 +75,10 @@ export async function POST({ request }) {
 
         // Create new user
         const result = await pool.query(
-            `INSERT INTO callsafeusers (email, password_hash, name, sourceid) 
-             VALUES ($1, $2, $3, $4) 
-             RETURNING id, email, name, created_at, is_active, sourceid`,
-            [email.toLowerCase(), passwordHash, name.trim(), sourceId]
+            `INSERT INTO callsafeusers (email, password_hash, name, sourceid, isembedded) 
+             VALUES ($1, $2, $3, $4, $5) 
+             RETURNING id, email, name, created_at, is_active, sourceid, isembedded`,
+            [email.toLowerCase(), passwordHash, name.trim(), sourceId, false]
         );
 
         const newUser = result.rows[0];
@@ -105,7 +105,8 @@ export async function POST({ request }) {
                 name: newUser.name,
                 createdAt: newUser.created_at,
                 isActive: newUser.is_active,
-                sourceId: newUser.sourceid
+                sourceId: newUser.sourceid,
+                isEmbedded: newUser.isembedded
             },
             handle: {
                 id: newHandle.id,

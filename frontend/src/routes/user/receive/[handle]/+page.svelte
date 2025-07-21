@@ -764,28 +764,43 @@
 
 <div class="min-h-screen bg-gradient-to-br from-purple-50 to-blue-100 p-4">
   <div class="max-w-4xl mx-auto">
+    <!-- Breadcrumb Navigation -->
+    <nav class="mb-4" aria-label="Breadcrumb">
+      <ol class="flex items-center space-x-2 text-sm text-gray-600">
+        <li>
+          <button
+            on:click={backToDashboard}
+            class="hover:text-blue-600 transition-colors duration-200 font-medium"
+          >
+            Dashboard
+          </button>
+        </li>
+        <li>
+          <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+          </svg>
+        </li>
+        <li class="text-gray-900 font-medium">
+          Agent Portal
+          {#if handle}
+            <span class="text-gray-500 font-normal">({handle})</span>
+          {/if}
+        </li>
+      </ol>
+    </nav>
+
     <!-- Header -->
     <div class="bg-white rounded-2xl shadow-xl p-6 mb-6">
       <div class="flex items-center justify-between">
-        <div class="flex items-center">
-          <button
-            on:click={backToDashboard}
-            class="mr-4 p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors duration-200"
-          >
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
-            </svg>
-          </button>
-          <div>
-            <h1 class="text-3xl font-bold text-gray-800">Agent Dashboard</h1>
-            <p class="text-gray-600">CallSafe Business Portal</p>
-            {#if handle}
-              <p class="text-sm text-gray-500 mt-1">Handle: <code class="bg-gray-100 px-2 py-1 rounded">{handle}</code></p>
-            {/if}
-            {#if sourceId}
-              <p class="text-sm text-gray-500 mt-1">Source: <code class="bg-blue-100 px-2 py-1 rounded">{sourceId}</code></p>
-            {/if}
-          </div>
+        <div>
+          <h1 class="text-3xl font-bold text-gray-800">Agent Dashboard</h1>
+          <p class="text-gray-600">CallSafe Business Portal</p>
+          {#if handle}
+            <p class="text-sm text-gray-500 mt-1">Handle: <code class="bg-gray-100 px-2 py-1 rounded">{handle}</code></p>
+          {/if}
+          {#if sourceId}
+            <p class="text-sm text-gray-500 mt-1">Source: <code class="bg-blue-100 px-2 py-1 rounded">{sourceId}</code></p>
+          {/if}
         </div>
         
         <div class="flex items-center space-x-4">

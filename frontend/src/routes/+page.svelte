@@ -145,9 +145,32 @@
         localStorage.setItem('callsafe_userId', result.user.id.toString());
         localStorage.setItem('callsafe_user', JSON.stringify(result.user));
         
-        // Success - redirect to user page
+        // Success - redirect based on embed status
         closeLoginModal();
-        goto('/user');
+        
+        if (result.user.isEmbedded) {
+          // User has already embedded the code, redirect to receive page
+          // First get their handle
+          const userId = result.user.id;
+          try {
+            const handleResponse = await fetch(`/api/links?userId=${userId}`);
+            const handleData = await handleResponse.json();
+            
+            if (handleData.success && handleData.handles.length > 0) {
+              const handle = handleData.handles[0].handle;
+              goto(`/user/receive/${handle}`);
+            } else {
+              // Fallback to user page if no handle found
+              goto('/user');
+            }
+          } catch (error) {
+            console.error('Error fetching handle:', error);
+            goto('/user'); // Fallback
+          }
+        } else {
+          // User hasn't embedded yet, show user page with embed instructions
+          goto('/user');
+        }
       } else {
         loginError = result.error || 'Invalid email or password';
       }
