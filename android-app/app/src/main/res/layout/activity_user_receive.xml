@@ -45,6 +45,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="16dp"
+            app:cardBackgroundColor="@color/card_white"
             app:cardCornerRadius="16dp"
             app:cardElevation="8dp">
 
@@ -158,6 +159,7 @@
             android:layout_height="wrap_content"
             android:layout_marginBottom="16dp"
             android:visibility="gone"
+            app:cardBackgroundColor="@color/card_white"
             app:cardCornerRadius="16dp"
             app:cardElevation="8dp">
 
@@ -213,6 +215,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:visibility="visible"
+                    app:cardBackgroundColor="@color/card_white"
                     app:cardCornerRadius="12dp">
 
                     <LinearLayout
@@ -249,6 +252,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="16dp"
+            app:cardBackgroundColor="@color/card_white"
             app:cardCornerRadius="16dp"
             app:cardElevation="8dp">
 
@@ -290,6 +294,7 @@
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            app:cardBackgroundColor="@color/card_white"
             app:cardCornerRadius="16dp"
             app:cardElevation="8dp">
 
