@@ -280,20 +280,84 @@ export class WebRTCManager {
     return answer;
   }
 
-  async setRemoteAnswer(answer: RTCSessionDescriptionInit): Promise<void> {
+  async setRemoteAnswer(answer: RTCSessionDescriptionInit | any): Promise<void> {
     if (!this.peerConnection) {
       throw new Error('Peer connection not initialized');
     }
     
-    await this.peerConnection.setRemoteDescription(answer);
+    // Validate and normalize answer format
+    let normalizedAnswer: RTCSessionDescriptionInit;
+    
+    if (answer && typeof answer === 'object') {
+      // Handle both direct RTCSessionDescriptionInit and wrapped formats
+      if (answer.sdp && answer.type) {
+        // Already in correct format
+        normalizedAnswer = {
+          type: answer.type,
+          sdp: answer.sdp
+        };
+      } else if (answer.answer && answer.answer.sdp && answer.answer.type) {
+        // Wrapped in answer object (from Android)
+        normalizedAnswer = {
+          type: answer.answer.type,
+          sdp: answer.answer.sdp
+        };
+      } else {
+        console.error('Invalid answer format:', answer);
+        throw new Error('Invalid answer format - missing sdp or type');
+      }
+    } else {
+      console.error('Answer is not an object:', answer);
+      throw new Error('Answer must be an object');
+    }
+    
+    console.log('Setting remote answer:', normalizedAnswer);
+    await this.peerConnection.setRemoteDescription(normalizedAnswer);
   }
 
-  async addIceCandidate(candidate: RTCIceCandidateInit): Promise<void> {
+  async addIceCandidate(candidate: RTCIceCandidateInit | any): Promise<void> {
     if (!this.peerConnection) {
       throw new Error('Peer connection not initialized');
     }
     
-    await this.peerConnection.addIceCandidate(candidate);
+    // Only add ICE candidates if we have a remote description
+    if (!this.peerConnection.remoteDescription) {
+      console.warn('Cannot add ICE candidate - no remote description set yet');
+      return;
+    }
+    
+    // Validate and normalize candidate format
+    let normalizedCandidate: RTCIceCandidateInit;
+    
+    if (candidate && typeof candidate === 'object') {
+      // Handle both direct RTCIceCandidateInit and wrapped formats
+      if (candidate.candidate && candidate.sdpMid !== undefined && candidate.sdpMLineIndex !== undefined) {
+        // Already in correct format
+        normalizedCandidate = candidate;
+      } else if (candidate.candidate && candidate.candidate.candidate && candidate.candidate.sdpMid !== undefined) {
+        // Wrapped in candidate object (from Android)
+        normalizedCandidate = {
+          candidate: candidate.candidate.candidate,
+          sdpMid: candidate.candidate.sdpMid,
+          sdpMLineIndex: candidate.candidate.sdpMLineIndex,
+          usernameFragment: candidate.candidate.usernameFragment
+        };
+      } else {
+        console.warn('Invalid candidate format, skipping:', candidate);
+        return;
+      }
+    } else {
+      console.warn('Candidate is not an object, skipping:', candidate);
+      return;
+    }
+    
+    try {
+      await this.peerConnection.addIceCandidate(normalizedCandidate);
+      console.log('✅ ICE candidate added successfully');
+    } catch (error) {
+      console.warn('Failed to add ICE candidate:', error);
+      // Don't throw - ICE candidates can fail without breaking the call
+    }
   }
 
   private setMobileAudioOutput(): void {
