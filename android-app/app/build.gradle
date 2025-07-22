@@ -47,7 +47,7 @@ dependencies {
     implementation 'io.socket:socket.io-client:2.0.1'
     
     // WebRTC for audio/video communication - most reliable option
-    implementation 'io.github.webrtc-sdk:android:104.5112.09'
+    implementation 'io.github.webrtc-sdk:android:125.6422.07'
     
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'

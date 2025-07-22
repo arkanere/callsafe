@@ -22,6 +22,7 @@ class WebRTCManager(private val context: Context) {
     private var onIceCandidateListener: ((IceCandidate) -> Unit)? = null
     private var onConnectionStateChangeListener: ((PeerConnection.PeerConnectionState) -> Unit)? = null
     private var onRemoteAudioTrackListener: ((AudioTrack) -> Unit)? = null
+    private var onWebRTCStateChangeListener: ((String, String?) -> Unit)? = null // (state, reason)
     
     init {
         initializePeerConnectionFactory()
@@ -49,38 +50,36 @@ class WebRTCManager(private val context: Context) {
     private fun createPeerConnection(): PeerConnection? {
         Log.d(TAG, "🔗 Creating PeerConnection")
         
-        // ICE servers configuration - prioritize TURN relay for cellular connectivity
+        // ICE servers configuration - multiple servers for redundancy
         val iceServers = listOf(
-            // Primary TURN server (most reliable for cellular)
-            PeerConnection.IceServer.builder("turn:a.relay.metered.ca:443")
+            // Primary TURN server with TCP transport (more reliable through firewalls)
+            PeerConnection.IceServer.builder("turn:a.relay.metered.ca:443?transport=tcp")
                 .setUsername("***REDACTED***")
                 .setPassword("***REDACTED***")
                 .createIceServer(),
-            
-            // Secondary TURN server with TCP fallback  
+            // Fallback TURN server with UDP
             PeerConnection.IceServer.builder("turn:a.relay.metered.ca:80")
                 .setUsername("***REDACTED***")
                 .setPassword("***REDACTED***")
                 .createIceServer(),
-                
-            // STUN servers for SRFLX candidates
-            PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
-            PeerConnection.IceServer.builder("stun:stun1.l.google.com:19302").createIceServer()
+            // Google STUN server for fallback
+            PeerConnection.IceServer.builder("stun:stun.l.google.com:19302")
+                .createIceServer()
         )
         
         val rtcConfig = PeerConnection.RTCConfiguration(iceServers).apply {
-            // Mobile-optimized configuration for cellular networks
+            // Ultra-conservative mobile configuration to prevent TURN conflicts
             bundlePolicy = PeerConnection.BundlePolicy.MAXBUNDLE  
             rtcpMuxPolicy = PeerConnection.RtcpMuxPolicy.REQUIRE
             
-            // Conservative candidate pool to ensure TURN allocation succeeds
-            iceCandidatePoolSize = 2
+            // Enable ICE candidate pre-gathering for faster connection
+            iceCandidatePoolSize = 4
             
-            // Force RELAY mode for cellular to ensure TURN usage
-            iceTransportsType = PeerConnection.IceTransportsType.RELAY
+            // Allow all transport types for better connectivity (STUN fallback)
+            // iceTransportsType = PeerConnection.IceTransportsType.ALL // Default behavior
             
-            // Mobile-specific optimizations
-            continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_CONTINUALLY
+            // Conservative gathering to prevent resource contention
+            continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_ONCE
         }
         
         val observer = object : PeerConnection.Observer {
@@ -97,15 +96,18 @@ class WebRTCManager(private val context: Context) {
                     PeerConnection.IceConnectionState.CONNECTED,
                     PeerConnection.IceConnectionState.COMPLETED -> {
                         Log.i(TAG, "✅ ICE connection established successfully")
+                        onWebRTCStateChangeListener?.invoke("webrtc_connected", null)
                     }
                     PeerConnection.IceConnectionState.FAILED -> {
                         Log.e(TAG, "❌ ICE connection failed after connectivity checks")
                         Log.e(TAG, "🚨 This indicates no candidate pair could establish connection")
                         Log.e(TAG, "🔍 Common causes on cellular: Customer network blocking TURN server")
                         Log.e(TAG, "💡 Solution: Ensure customer can reach TURN relay at 188.245.177.56")
+                        onWebRTCStateChangeListener?.invoke("webrtc_failed", "ice_connection_failed")
                     }
                     PeerConnection.IceConnectionState.DISCONNECTED -> {
                         Log.w(TAG, "⚠️ ICE connection disconnected - attempting reconnection")
+                        onWebRTCStateChangeListener?.invoke("webrtc_disconnected", "ice_disconnected")
                     }
                     else -> {
                         Log.d(TAG, "🔄 ICE connection state: $state")
@@ -375,6 +377,10 @@ class WebRTCManager(private val context: Context) {
     
     fun setOnRemoteAudioTrackListener(listener: (AudioTrack) -> Unit) {
         onRemoteAudioTrackListener = listener
+    }
+    
+    fun setOnWebRTCStateChangeListener(listener: (String, String?) -> Unit) {
+        onWebRTCStateChangeListener = listener
     }
     
     // Cleanup

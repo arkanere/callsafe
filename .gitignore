@@ -89,3 +89,6 @@ android-app/*.jks
 android-app/app/schemas/
 android-app/app/src/androidTest/
 android-app/app/src/test/
+
+# Firebase WebRTC sample project
+FirebaseWebRTCVideoCall/

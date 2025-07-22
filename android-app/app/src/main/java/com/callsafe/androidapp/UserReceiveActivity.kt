@@ -17,6 +17,7 @@ import com.callsafe.androidapp.adapters.IncomingCallsAdapter
 import com.callsafe.androidapp.models.CallHistoryItem
 import com.callsafe.androidapp.models.IncomingCall
 import com.callsafe.androidapp.network.SocketManager
+import com.callsafe.androidapp.utils.RingtonePlayer
 import com.callsafe.androidapp.webrtc.WebRTCManager
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
@@ -38,6 +39,7 @@ class UserReceiveActivity : AppCompatActivity() {
     private lateinit var sharedPreferences: SharedPreferences
     private lateinit var socketManager: SocketManager
     private lateinit var webrtcManager: WebRTCManager
+    private lateinit var ringtonePlayer: RingtonePlayer
     private lateinit var tvAgentHandle: MaterialTextView
     private lateinit var tvSourceId: MaterialTextView
     private lateinit var tvConnectionStatus: MaterialTextView
@@ -80,6 +82,7 @@ class UserReceiveActivity : AppCompatActivity() {
         sharedPreferences = getSharedPreferences("callsafe_prefs", MODE_PRIVATE)
         socketManager = SocketManager.getInstance()
         webrtcManager = WebRTCManager(this)
+        ringtonePlayer = RingtonePlayer(this)
         
         // Get handle from intent
         handle = intent.getStringExtra("handle") ?: ""
@@ -113,6 +116,9 @@ class UserReceiveActivity : AppCompatActivity() {
         
         // Clean up WebRTC
         webrtcManager.dispose()
+        
+        // Clean up ringtone
+        ringtonePlayer.dispose()
         
         // Clean up call timer
         stopCallTimer()
@@ -250,6 +256,24 @@ class UserReceiveActivity : AppCompatActivity() {
             Log.i(TAG, "🔊 Remote audio track received")
             runOnUiThread {
                 Toast.makeText(this, "Audio connected!", Toast.LENGTH_SHORT).show()
+            }
+        }
+        
+        // Handle WebRTC state changes for server synchronization
+        webrtcManager.setOnWebRTCStateChangeListener { state, reason ->
+            Log.i(TAG, "📡 WebRTC state change: $state, reason: $reason")
+            currentCallId?.let { callId ->
+                when (state) {
+                    "webrtc_connected" -> {
+                        socketManager.emitWebRTCConnected(callId, handle, currentCallSourceId)
+                    }
+                    "webrtc_failed" -> {
+                        socketManager.emitWebRTCFailed(callId, handle, currentCallSourceId, reason)
+                    }
+                    "webrtc_disconnected" -> {
+                        socketManager.emitWebRTCDisconnected(callId, handle, currentCallSourceId, reason)
+                    }
+                }
             }
         }
         
@@ -411,6 +435,10 @@ class UserReceiveActivity : AppCompatActivity() {
         Log.d(TAG, "=== ACCEPT CALL CLICKED ===")
         Log.d(TAG, "Call ID: $callId")
         
+        // Stop ringtone when call is accepted
+        ringtonePlayer.stopRinging()
+        Log.d(TAG, "🔇 Ringtone stopped - call accepted")
+        
         if (!isOnline) {
             Log.w(TAG, "Agent not online, cannot accept call")
             return
@@ -435,6 +463,10 @@ class UserReceiveActivity : AppCompatActivity() {
     
     private fun declineCall(callId: String) {
         Log.d(TAG, "Declining call: $callId")
+        
+        // Stop ringtone when call is declined
+        ringtonePlayer.stopRinging()
+        Log.d(TAG, "🔇 Ringtone stopped - call declined")
         
         // Find the incoming call for sourceId
         val incomingCall = incomingCalls.find { it.callId == callId }
@@ -585,6 +617,11 @@ class UserReceiveActivity : AppCompatActivity() {
             Log.i(TAG, "✅ Adding call to UI - callId: $callId")
             incomingCalls.add(call)
             updateIncomingCallsUI()
+            
+            // Start playing ringtone for incoming call
+            ringtonePlayer.startRinging()
+            Log.i(TAG, "🔔 Ringtone started for incoming call")
+            
             Toast.makeText(this, "Incoming call from $sourceId!", Toast.LENGTH_SHORT).show()
             Log.i(TAG, "✅ UI updated with incoming call")
         }
@@ -593,6 +630,11 @@ class UserReceiveActivity : AppCompatActivity() {
         Handler(Looper.getMainLooper()).postDelayed({
             runOnUiThread {
                 Log.d(TAG, "⏰ Auto-removing call $callId after 30 seconds")
+                // Stop ringtone if call times out
+                if (incomingCalls.any { it.callId == callId }) {
+                    ringtonePlayer.stopRinging()
+                    Log.d(TAG, "🔇 Ringtone stopped - call timed out")
+                }
                 incomingCalls.removeAll { it.callId == callId }
                 updateIncomingCallsUI()
             }
@@ -838,6 +880,12 @@ class UserReceiveActivity : AppCompatActivity() {
         }
         
         runOnUiThread {
+            // Stop ringtone if call is cancelled
+            if (incomingCalls.any { it.callId == callId }) {
+                ringtonePlayer.stopRinging()
+                Log.d(TAG, "🔇 Ringtone stopped - call cancelled")
+            }
+            
             incomingCalls.removeAll { it.callId == callId }
             updateIncomingCallsUI()
             
@@ -884,6 +932,12 @@ class UserReceiveActivity : AppCompatActivity() {
         
         runOnUiThread {
             val cancelledCall = incomingCalls.find { it.callId == callId }
+            
+            // Stop ringtone if call request is cancelled
+            if (cancelledCall != null) {
+                ringtonePlayer.stopRinging()
+                Log.d(TAG, "🔇 Ringtone stopped - call request cancelled")
+            }
             
             incomingCalls.removeAll { it.callId == callId }
             updateIncomingCallsUI()
@@ -943,6 +997,12 @@ class UserReceiveActivity : AppCompatActivity() {
         }
         
         runOnUiThread {
+            // Stop ringtone if call is no longer available
+            if (incomingCalls.any { it.callId == callId }) {
+                ringtonePlayer.stopRinging()
+                Log.d(TAG, "🔇 Ringtone stopped - call no longer available")
+            }
+            
             incomingCalls.removeAll { it.callId == callId }
             updateIncomingCallsUI()
             Toast.makeText(this, "Call was accepted by another agent", Toast.LENGTH_SHORT).show()

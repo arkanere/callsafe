@@ -348,6 +348,39 @@ class SocketManager private constructor() {
         emit("ice_candidate", data)
     }
     
+    // WebRTC state synchronization methods
+    fun emitWebRTCConnected(callId: String, handle: String?, sourceId: String?) {
+        Log.d(TAG, "📤 Emitting webrtc_connected for: $callId, handle: $handle, sourceId: $sourceId")
+        val data = JSONObject().apply {
+            put("callId", callId)
+            handle?.let { put("handle", it) }
+            sourceId?.let { put("sourceId", it) }
+        }
+        emit("webrtc_connected", data)
+    }
+    
+    fun emitWebRTCFailed(callId: String, handle: String?, sourceId: String?, reason: String?) {
+        Log.d(TAG, "📤 Emitting webrtc_failed for: $callId, handle: $handle, sourceId: $sourceId, reason: $reason")
+        val data = JSONObject().apply {
+            put("callId", callId)
+            handle?.let { put("handle", it) }
+            sourceId?.let { put("sourceId", it) }
+            reason?.let { put("reason", it) }
+        }
+        emit("webrtc_failed", data)
+    }
+    
+    fun emitWebRTCDisconnected(callId: String, handle: String?, sourceId: String?, reason: String?) {
+        Log.d(TAG, "📤 Emitting webrtc_disconnected for: $callId, handle: $handle, sourceId: $sourceId, reason: $reason")
+        val data = JSONObject().apply {
+            put("callId", callId)
+            handle?.let { put("handle", it) }
+            sourceId?.let { put("sourceId", it) }
+            reason?.let { put("reason", it) }
+        }
+        emit("webrtc_disconnected", data)
+    }
+    
     private fun emit(event: String, data: JSONObject?) {
         if (socket?.connected() == true && isConnected) {
             socket?.emit(event, data)
