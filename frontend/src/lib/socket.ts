@@ -339,6 +339,22 @@ export class SocketManager {
     this.emit('ice_candidate', { callId, candidate, handle, sourceId });
   }
 
+  // WebRTC state synchronization methods
+  emitWebRTCConnected(callId: string, handle?: string, sourceId?: string): void {
+    console.log('📤 Emitting webrtc_connected for:', callId, 'handle:', handle, 'sourceId:', sourceId);
+    this.emit('webrtc_connected', { callId, handle, sourceId });
+  }
+
+  emitWebRTCFailed(callId: string, handle?: string, sourceId?: string, reason?: string): void {
+    console.log('📤 Emitting webrtc_failed for:', callId, 'handle:', handle, 'sourceId:', sourceId, 'reason:', reason);
+    this.emit('webrtc_failed', { callId, handle, sourceId, reason });
+  }
+
+  emitWebRTCDisconnected(callId: string, handle?: string, sourceId?: string, reason?: string): void {
+    console.log('📤 Emitting webrtc_disconnected for:', callId, 'handle:', handle, 'sourceId:', sourceId, 'reason:', reason);
+    this.emit('webrtc_disconnected', { callId, handle, sourceId, reason });
+  }
+
   // Generic emit method
   private emit(event: string, data?: any): void {
     console.log('🔥 Attempting to emit:', event, 'with data:', data);

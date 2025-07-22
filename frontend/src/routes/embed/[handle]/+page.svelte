@@ -77,6 +77,23 @@
         socket.sendIceCandidate(callState.callId, candidate, handle, sourceId);
       }
     });
+
+    webrtc.setWebRTCStateChangeHandler((state, reason) => {
+      console.log('📡 WebRTC state change:', state, 'reason:', reason);
+      if (callState.callId) {
+        switch (state) {
+          case 'webrtc_connected':
+            socket.emitWebRTCConnected(callState.callId, handle, sourceId);
+            break;
+          case 'webrtc_failed':
+            socket.emitWebRTCFailed(callState.callId, handle, sourceId, reason);
+            break;
+          case 'webrtc_disconnected':
+            socket.emitWebRTCDisconnected(callState.callId, handle, sourceId, reason);
+            break;
+        }
+      }
+    });
   }
 
   function setupSocketHandlers() {

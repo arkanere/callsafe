@@ -9,6 +9,7 @@ export class WebRTCManager {
   private callMetrics: CallMetrics;
   private onStateChange?: (state: CallState) => void;
   private onRemoteStream?: (stream: MediaStream) => void;
+  private onWebRTCStateChange?: (state: string, reason: string | null) => void;
 
   constructor(isCustomer: boolean = true) {
     this.callState = {
@@ -170,17 +171,23 @@ export class WebRTCManager {
         if (this.callState.status !== 'connected') {
           this.updateCallState({ status: 'connected' });
         }
+        // Notify server of successful WebRTC connection
+        this.onWebRTCStateChange?.('webrtc_connected', null);
         break;
       case 'disconnected':
         console.log('ICE connection disconnected - attempting reconnection...');
         this.callMetrics.quality = { level: 'poor' };
         // Don't change status to failed immediately - wait for reconnection
         this.updateCallState({ status: 'connecting' });
+        // Notify server of WebRTC disconnection
+        this.onWebRTCStateChange?.('webrtc_disconnected', 'ice_disconnected');
         break;
       case 'failed':
         console.log('ICE connection failed!');
         this.callMetrics.quality = { level: 'failed' };
         this.updateCallState({ status: 'failed', error: 'ICE connection failed' });
+        // Notify server of WebRTC failure
+        this.onWebRTCStateChange?.('webrtc_failed', 'ice_connection_failed');
         break;
       case 'checking':
         console.log('ICE connection checking...');
@@ -374,6 +381,10 @@ export class WebRTCManager {
 
   setRemoteStreamHandler(handler: (stream: MediaStream) => void): void {
     this.onRemoteStream = handler;
+  }
+
+  setWebRTCStateChangeHandler(handler: (state: string, reason: string | null) => void): void {
+    this.onWebRTCStateChange = handler;
   }
 
   private onIceCandidate?: (candidate: RTCIceCandidate) => void;
