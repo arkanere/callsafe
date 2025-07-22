@@ -17,11 +17,15 @@ import com.callsafe.androidapp.adapters.IncomingCallsAdapter
 import com.callsafe.androidapp.models.CallHistoryItem
 import com.callsafe.androidapp.models.IncomingCall
 import com.callsafe.androidapp.network.SocketManager
+import com.callsafe.androidapp.webrtc.WebRTCManager
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.textview.MaterialTextView
 import kotlinx.coroutines.launch
 import org.json.JSONObject
+import org.webrtc.IceCandidate
+import org.webrtc.PeerConnection
+import org.webrtc.SessionDescription
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -33,6 +37,7 @@ class UserReceiveActivity : AppCompatActivity() {
     
     private lateinit var sharedPreferences: SharedPreferences
     private lateinit var socketManager: SocketManager
+    private lateinit var webrtcManager: WebRTCManager
     private lateinit var tvAgentHandle: MaterialTextView
     private lateinit var tvSourceId: MaterialTextView
     private lateinit var tvConnectionStatus: MaterialTextView
@@ -74,6 +79,7 @@ class UserReceiveActivity : AppCompatActivity() {
         
         sharedPreferences = getSharedPreferences("callsafe_prefs", MODE_PRIVATE)
         socketManager = SocketManager.getInstance()
+        webrtcManager = WebRTCManager(this)
         
         // Get handle from intent
         handle = intent.getStringExtra("handle") ?: ""
@@ -90,6 +96,7 @@ class UserReceiveActivity : AppCompatActivity() {
         initViews()
         setupRecyclerViews()
         setupClickListeners()
+        setupWebRTCListeners()
         setupSocketEventListeners()
         loadCallHistory()
         connectToServer()
@@ -103,6 +110,9 @@ class UserReceiveActivity : AppCompatActivity() {
         if (isOnline) {
             socketManager.goOffline()
         }
+        
+        // Clean up WebRTC
+        webrtcManager.dispose()
         
         // Clean up call timer
         stopCallTimer()
@@ -189,6 +199,61 @@ class UserReceiveActivity : AppCompatActivity() {
         btnEndCall.setOnClickListener {
             endCall()
         }
+    }
+    
+    private fun setupWebRTCListeners() {
+        Log.i(TAG, "🔧 Setting up WebRTC listeners")
+        
+        // Handle WebRTC answer creation
+        webrtcManager.setOnAnswerCreatedListener { answer ->
+            Log.i(TAG, "✅ WebRTC answer created, sending to server")
+            currentCallId?.let { callId ->
+                socketManager.sendAnswer(callId, answer.description, handle, currentCallSourceId)
+            }
+        }
+        
+        // Handle ICE candidates
+        webrtcManager.setOnIceCandidateListener { candidate ->
+            Log.d(TAG, "🧊 Local ICE candidate generated")
+            currentCallId?.let { callId ->
+                socketManager.sendIceCandidate(callId, candidate, handle, currentCallSourceId)
+            }
+        }
+        
+        // Handle connection state changes
+        webrtcManager.setOnConnectionStateChangeListener { state ->
+            Log.i(TAG, "🔌 WebRTC connection state: $state")
+            runOnUiThread {
+                when (state) {
+                    PeerConnection.PeerConnectionState.CONNECTED -> {
+                        showCurrentCall("Connected to Customer")
+                        startCallTimer()
+                        Log.i(TAG, "✅ WebRTC connection established")
+                    }
+                    PeerConnection.PeerConnectionState.DISCONNECTED,
+                    PeerConnection.PeerConnectionState.FAILED -> {
+                        Log.w(TAG, "⚠️ WebRTC connection lost")
+                        showCurrentCall("Connection Lost")
+                    }
+                    PeerConnection.PeerConnectionState.CONNECTING -> {
+                        showCurrentCall("Connecting...")
+                    }
+                    else -> {
+                        Log.d(TAG, "🔄 WebRTC state: $state")
+                    }
+                }
+            }
+        }
+        
+        // Handle remote audio
+        webrtcManager.setOnRemoteAudioTrackListener { audioTrack ->
+            Log.i(TAG, "🔊 Remote audio track received")
+            runOnUiThread {
+                Toast.makeText(this, "Audio connected!", Toast.LENGTH_SHORT).show()
+            }
+        }
+        
+        Log.i(TAG, "✅ WebRTC listeners configured")
     }
     
     private fun setupSocketEventListeners() {
@@ -399,6 +464,10 @@ class UserReceiveActivity : AppCompatActivity() {
                 ((System.currentTimeMillis() - callStartTime) / 1000).toInt()
             } else 0
             
+            // End WebRTC call first
+            webrtcManager.endCall()
+            
+            // Notify server
             socketManager.endCall(callId, handle, currentCallSourceId, "manual")
             
             // Add to call history
@@ -420,7 +489,12 @@ class UserReceiveActivity : AppCompatActivity() {
         btnMute.setBackgroundColor(
             getColor(if (isMuted) android.R.color.holo_red_dark else android.R.color.darker_gray)
         )
-        // Note: Actual mute functionality would require WebRTC integration
+        
+        // Use WebRTC to actually mute/unmute
+        webrtcManager.setMuted(isMuted)
+        
+        Log.d(TAG, "🔇 Audio ${if (isMuted) "muted" else "unmuted"}")
+        Toast.makeText(this, if (isMuted) "Microphone muted" else "Microphone unmuted", Toast.LENGTH_SHORT).show()
     }
     
     // Socket event handlers that EXACTLY match website behavior
@@ -545,17 +619,119 @@ class UserReceiveActivity : AppCompatActivity() {
     }
     
     private fun handleOffer(data: Any?) {
-        // In a real implementation, this would handle WebRTC offer
-        // For now, just simulate connection established
+        Log.i(TAG, "📥 Handling WebRTC offer")
+        
+        // Extract offer data - EXACTLY like website does
+        val callId: String
+        val offerSdp: String
+        val offerType: String
+        
+        when (data) {
+            is JSONObject -> {
+                callId = data.optString("callId", "")
+                val offerObj = data.optJSONObject("offer")
+                offerSdp = offerObj?.optString("sdp", "") ?: ""
+                offerType = offerObj?.optString("type", "offer") ?: "offer"
+                Log.i(TAG, "📋 JSON: callId=$callId, SDP length=${offerSdp.length}, type=$offerType")
+            }
+            is Map<*, *> -> {
+                callId = data["callId"]?.toString() ?: ""
+                val offerObj = data["offer"] as? Map<*, *>
+                offerSdp = offerObj?.get("sdp")?.toString() ?: ""
+                offerType = offerObj?.get("type")?.toString() ?: "offer"
+                Log.i(TAG, "📋 Map: callId=$callId, SDP length=${offerSdp.length}, type=$offerType")
+            }
+            else -> {
+                Log.e(TAG, "❌ Invalid offer data format: ${data?.javaClass}")
+                return
+            }
+        }
+        
+        // Validate required data
+        if (callId.isEmpty() || offerSdp.isEmpty()) {
+            Log.e(TAG, "❌ Missing required data - callId: '$callId', SDP length: ${offerSdp.length}")
+            return
+        }
+        
+        // Validate call ID matches current call
+        if (currentCallId != callId) {
+            Log.e(TAG, "❌ Call ID mismatch - expected: $currentCallId, got: $callId")
+            return
+        }
+        
+        Log.i(TAG, "✅ Processing WebRTC offer for callId: $callId")
+        
+        // Create WebRTC offer object
+        val offer = SessionDescription(SessionDescription.Type.OFFER, offerSdp)
+        
+        // Process offer and create answer using WebRTCManager
+        val answer = webrtcManager.createAnswer(callId, offer)
+        
+        // Update UI to show connecting state
         runOnUiThread {
-            showCurrentCall("Connected to Customer")
-            startCallTimer()
+            showCurrentCall("Creating Answer...")
+            Log.i(TAG, "📤 WebRTC offer being processed, answer will be sent automatically")
         }
     }
     
     private fun handleIceCandidate(data: Any?) {
-        // WebRTC ICE candidate handling would go here
-        Log.d(TAG, "ICE candidate received (WebRTC integration needed)")
+        Log.d(TAG, "🧊 Handling ICE candidate")
+        
+        // Extract ICE candidate data
+        val callId: String
+        val candidateData: String
+        val sdpMid: String
+        val sdpMLineIndex: Int
+        
+        when (data) {
+            is JSONObject -> {
+                callId = data.optString("callId", "")
+                val candidateObj = data.optJSONObject("candidate")
+                candidateData = candidateObj?.optString("candidate", "") ?: ""
+                sdpMid = candidateObj?.optString("sdpMid", "") ?: ""
+                sdpMLineIndex = candidateObj?.optInt("sdpMLineIndex", 0) ?: 0
+                Log.d(TAG, "📋 JSON ICE: callId=$callId, candidate=${candidateData.take(50)}...")
+            }
+            is Map<*, *> -> {
+                callId = data["callId"]?.toString() ?: ""
+                val candidateObj = data["candidate"] as? Map<*, *>
+                candidateData = candidateObj?.get("candidate")?.toString() ?: ""
+                sdpMid = candidateObj?.get("sdpMid")?.toString() ?: ""
+                sdpMLineIndex = candidateObj?.get("sdpMLineIndex")?.toString()?.toIntOrNull() ?: 0
+                Log.d(TAG, "📋 Map ICE: callId=$callId, candidate=${candidateData.take(50)}...")
+            }
+            else -> {
+                Log.e(TAG, "❌ Invalid ICE candidate data format: ${data?.javaClass}")
+                return
+            }
+        }
+        
+        // Validate required data
+        if (callId.isEmpty() || candidateData.isEmpty()) {
+            Log.e(TAG, "❌ Missing ICE candidate data - callId: '$callId', candidate length: ${candidateData.length}")
+            return
+        }
+        
+        // Validate call ID matches current call
+        if (currentCallId != callId) {
+            Log.e(TAG, "❌ ICE candidate call ID mismatch - expected: $currentCallId, got: $callId")
+            return
+        }
+        
+        Log.d(TAG, "✅ Adding ICE candidate for callId: $callId")
+        
+        try {
+            // Create WebRTC ICE candidate
+            val iceCandidate = IceCandidate(sdpMid, sdpMLineIndex, candidateData)
+            
+            // Add to WebRTC manager
+            webrtcManager.addIceCandidate(iceCandidate)
+            
+            Log.d(TAG, "✅ ICE candidate added successfully")
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Failed to add ICE candidate", e)
+        }
     }
     
     private fun handleCallEnded(data: Any?) {

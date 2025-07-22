@@ -6,6 +6,7 @@ import io.socket.client.Socket
 import io.socket.emitter.Emitter
 import org.json.JSONException
 import org.json.JSONObject
+import org.webrtc.IceCandidate
 import java.net.URI
 
 class SocketManager private constructor() {
@@ -330,11 +331,17 @@ class SocketManager private constructor() {
         emit("answer", data)
     }
     
-    fun sendIceCandidate(callId: String, candidate: String, handle: String?, sourceId: String?) {
+    fun sendIceCandidate(callId: String, candidate: IceCandidate, handle: String?, sourceId: String?) {
         Log.d(TAG, "📤 Emitting ice_candidate for: $callId, handle: $handle, sourceId: $sourceId")
+        val candidateData = JSONObject().apply {
+            put("candidate", candidate.sdp)
+            put("sdpMid", candidate.sdpMid)
+            put("sdpMLineIndex", candidate.sdpMLineIndex)
+        }
+        
         val data = JSONObject().apply {
             put("callId", callId)
-            put("candidate", candidate)
+            put("candidate", candidateData)
             handle?.let { put("handle", it) }
             sourceId?.let { put("sourceId", it) }
         }
