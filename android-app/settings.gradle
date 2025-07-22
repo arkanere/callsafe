@@ -1,0 +1,2 @@
+rootProject.name = "CallSafe"
+include ':app'
