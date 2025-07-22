@@ -322,9 +322,13 @@ class SocketManager private constructor() {
     
     fun sendAnswer(callId: String, answer: String, handle: String?, sourceId: String?) {
         Log.d(TAG, "📤 Emitting answer for: $callId, handle: $handle, sourceId: $sourceId")
+        val answerObject = JSONObject().apply {
+            put("type", "answer")
+            put("sdp", answer)
+        }
         val data = JSONObject().apply {
             put("callId", callId)
-            put("answer", answer)
+            put("answer", answerObject)
             handle?.let { put("handle", it) }
             sourceId?.let { put("sourceId", it) }
         }

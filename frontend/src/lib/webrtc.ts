@@ -280,39 +280,13 @@ export class WebRTCManager {
     return answer;
   }
 
-  async setRemoteAnswer(answer: RTCSessionDescriptionInit | any): Promise<void> {
+  async setRemoteAnswer(answer: RTCSessionDescriptionInit): Promise<void> {
     if (!this.peerConnection) {
       throw new Error('Peer connection not initialized');
     }
     
-    // Validate and normalize answer format
-    let normalizedAnswer: RTCSessionDescriptionInit;
-    
-    if (answer && typeof answer === 'object') {
-      // Handle both direct RTCSessionDescriptionInit and wrapped formats
-      if (answer.sdp && answer.type) {
-        // Already in correct format
-        normalizedAnswer = {
-          type: answer.type,
-          sdp: answer.sdp
-        };
-      } else if (answer.answer && answer.answer.sdp && answer.answer.type) {
-        // Wrapped in answer object (from Android)
-        normalizedAnswer = {
-          type: answer.answer.type,
-          sdp: answer.answer.sdp
-        };
-      } else {
-        console.error('Invalid answer format:', answer);
-        throw new Error('Invalid answer format - missing sdp or type');
-      }
-    } else {
-      console.error('Answer is not an object:', answer);
-      throw new Error('Answer must be an object');
-    }
-    
-    console.log('Setting remote answer:', normalizedAnswer);
-    await this.peerConnection.setRemoteDescription(normalizedAnswer);
+    console.log('Setting remote answer:', answer);
+    await this.peerConnection.setRemoteDescription(answer);
   }
 
   async addIceCandidate(candidate: RTCIceCandidateInit | any): Promise<void> {
