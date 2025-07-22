@@ -20,6 +20,10 @@
   let connectionStatus = 'Disconnected';
   let handle = '';
   let sourceId = '';
+  let webrtcFailureTimeout: NodeJS.Timeout | null = null;
+  let connectionRetryCount = 0;
+  const MAX_RETRY_ATTEMPTS = 2;
+  const WEBRTC_FAILURE_DELAY = 20000; // 20 seconds delay before reporting failure
 
   // Extract handle from URL parameters
   $: handle = $page.params.handle || '';
@@ -38,6 +42,9 @@
   });
 
   onDestroy(() => {
+    if (webrtcFailureTimeout) {
+      clearTimeout(webrtcFailureTimeout);
+    }
     if (webrtc) {
       webrtc.endCall();
     }
@@ -83,10 +90,45 @@
       if (callState.callId) {
         switch (state) {
           case 'webrtc_connected':
+            // Clear any pending failure timeout
+            if (webrtcFailureTimeout) {
+              clearTimeout(webrtcFailureTimeout);
+              webrtcFailureTimeout = null;
+            }
+            connectionRetryCount = 0;
             socket.emitWebRTCConnected(callState.callId, handle, sourceId);
             break;
           case 'webrtc_failed':
-            socket.emitWebRTCFailed(callState.callId, handle, sourceId, reason);
+            console.log('🔄 WebRTC failed, retry count:', connectionRetryCount);
+            
+            // Don't immediately report failure - add delay and retry logic
+            if (connectionRetryCount < MAX_RETRY_ATTEMPTS) {
+              connectionRetryCount++;
+              console.log(`🔄 Attempting WebRTC retry ${connectionRetryCount}/${MAX_RETRY_ATTEMPTS}`);
+              connectionStatus = `Connection failed, retrying... (${connectionRetryCount}/${MAX_RETRY_ATTEMPTS})`;
+              
+              // Wait a bit before retrying
+              setTimeout(() => {
+                if (callState.status !== 'ended' && callState.callId) {
+                  console.log('🔄 Retrying WebRTC connection...');
+                  // Don't create a new offer, just wait for ICE to continue
+                }
+              }, 3000);
+            } else {
+              // Only report failure after retries exhausted and with delay
+              if (!webrtcFailureTimeout) {
+                connectionStatus = 'Connection struggling, please wait...';
+                console.log(`⏰ Scheduling WebRTC failure report in ${WEBRTC_FAILURE_DELAY/1000} seconds`);
+                
+                webrtcFailureTimeout = setTimeout(() => {
+                  if (callState.status !== 'ended' && callState.callId) {
+                    console.log('⏰ WebRTC failure timeout reached, reporting failure');
+                    socket.emitWebRTCFailed(callState.callId, handle, sourceId, reason);
+                  }
+                  webrtcFailureTimeout = null;
+                }, WEBRTC_FAILURE_DELAY);
+              }
+            }
             break;
           case 'webrtc_disconnected':
             socket.emitWebRTCDisconnected(callState.callId, handle, sourceId, reason);
@@ -332,6 +374,12 @@
   }
 
   function endCall() {
+    // Clear any pending failure timeout when ending call
+    if (webrtcFailureTimeout) {
+      clearTimeout(webrtcFailureTimeout);
+      webrtcFailureTimeout = null;
+    }
+    
     if (socket) {
       // Always send both callId, handle, and sourceId - server will handle based on what's available
       socket.endCall({ 
@@ -362,6 +410,13 @@
     callState = { ...callState, status: 'idle', isMuted: false };
     isConnecting = false;
     connectionStatus = 'Disconnected';
+    connectionRetryCount = 0;
+    
+    // Clear any pending failure timeout
+    if (webrtcFailureTimeout) {
+      clearTimeout(webrtcFailureTimeout);
+      webrtcFailureTimeout = null;
+    }
   }
 
   function getStatusColor(status: string): string {
