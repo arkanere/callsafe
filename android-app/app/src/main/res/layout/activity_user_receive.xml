@@ -13,32 +13,6 @@
         android:orientation="vertical"
         android:padding="16dp">
 
-        <!-- Breadcrumb Navigation -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="16dp"
-            android:orientation="horizontal">
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btn_back_dashboard"
-                style="@style/Widget.Material3.Button.TextButton"
-                android:layout_width="wrap_content"
-                android:layout_height="36dp"
-                android:text="← Dashboard"
-                android:textColor="@color/button_blue_600"
-                android:textSize="14sp" />
-
-            <com.google.android.material.textview.MaterialTextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center_vertical"
-                android:layout_marginStart="8dp"
-                android:text="/ Agent Portal"
-                android:textColor="@color/text_gray_900"
-                android:textSize="14sp"
-                android:textStyle="bold" />
-        </LinearLayout>
 
         <!-- Header Card -->
         <com.google.android.material.card.MaterialCardView
@@ -55,90 +29,41 @@
                 android:orientation="vertical"
                 android:padding="20dp">
 
+                <!-- Navigation Buttons -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="16dp"
+                    android:gravity="end"
                     android:orientation="horizontal">
 
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:orientation="vertical">
-
-                        <com.google.android.material.textview.MaterialTextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Agent Dashboard"
-                            android:textColor="@color/text_gray_900"
-                            android:textSize="24sp"
-                            android:textStyle="bold" />
-
-                        <com.google.android.material.textview.MaterialTextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="CallSafe Business Portal"
-                            android:textColor="@color/text_gray_600"
-                            android:textSize="16sp" />
-                    </LinearLayout>
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_dashboard"
+                        style="@style/Widget.Material3.Button.TextButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:layout_marginEnd="8dp"
+                        android:text="Dashboard"
+                        android:textColor="@color/button_blue_600"
+                        android:textSize="14sp" />
 
                     <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btn_toggle_online"
+                        android:id="@+id/btn_back_dashboard"
+                        style="@style/Widget.Material3.Button.TextButton"
                         android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Go Online"
-                        android:textColor="@color/white" />
+                        android:layout_height="36dp"
+                        android:text="Logout"
+                        android:textColor="@color/button_red_600"
+                        android:textSize="14sp" />
                 </LinearLayout>
 
-                <!-- Handle and Connection Info -->
+                <!-- Connection Status -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:layout_marginBottom="16dp"
+                    android:gravity="center"
                     android:orientation="vertical">
-
-                    <com.google.android.material.textview.MaterialTextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginBottom="4dp"
-                        android:text="Handle:"
-                        android:textColor="@color/text_gray_600"
-                        android:textSize="14sp"
-                        android:textStyle="bold" />
-
-                    <com.google.android.material.textview.MaterialTextView
-                        android:id="@+id/tv_agent_handle"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginBottom="12dp"
-                        android:background="@color/input_bg_gray_50"
-                        android:fontFamily="monospace"
-                        android:padding="8dp"
-                        android:text="Loading..."
-                        android:textColor="@color/button_blue_600"
-                        android:textSize="16sp"
-                        android:textStyle="bold" />
-
-                    <com.google.android.material.textview.MaterialTextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginBottom="4dp"
-                        android:text="Source ID:"
-                        android:textColor="@color/text_gray_600"
-                        android:textSize="14sp"
-                        android:textStyle="bold" />
-
-                    <com.google.android.material.textview.MaterialTextView
-                        android:id="@+id/tv_source_id"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginBottom="12dp"
-                        android:background="@color/input_bg_gray_50"
-                        android:fontFamily="monospace"
-                        android:padding="8dp"
-                        android:text="No source ID"
-                        android:textColor="@color/button_green_600"
-                        android:textSize="14sp" />
 
                     <com.google.android.material.textview.MaterialTextView
                         android:id="@+id/tv_connection_status"
@@ -146,9 +71,11 @@
                         android:layout_height="wrap_content"
                         android:text="Connecting..."
                         android:textColor="@color/text_gray_600"
-                        android:textSize="14sp"
-                        android:textStyle="bold" />
+                        android:textSize="16sp"
+                        android:textStyle="bold"
+                        android:gravity="center" />
                 </LinearLayout>
+
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 

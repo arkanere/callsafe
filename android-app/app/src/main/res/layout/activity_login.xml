@@ -66,7 +66,10 @@
                         android:layout_height="wrap_content"
                         android:layout_marginBottom="16dp"
                         android:visibility="gone"
+                        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+                        app:boxBackgroundColor="@color/input_bg_gray_50"
                         app:boxStrokeColor="@color/input_focus_blue_500"
+                        app:boxStrokeWidth="2dp"
                         app:hintTextColor="@color/input_focus_blue_500">
 
                         <com.google.android.material.textfield.TextInputEditText
@@ -75,7 +78,9 @@
                             android:layout_height="wrap_content"
                             android:hint="Full Name"
                             android:inputType="textPersonName"
-                            android:textSize="16sp" />
+                            android:textSize="16sp"
+                            android:textColor="@color/text_gray_900"
+                            android:background="@android:color/transparent" />
                     </com.google.android.material.textfield.TextInputLayout>
 
                     <com.google.android.material.textfield.TextInputLayout
@@ -83,7 +88,10 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginBottom="16dp"
+                        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+                        app:boxBackgroundColor="@color/input_bg_gray_50"
                         app:boxStrokeColor="@color/input_focus_blue_500"
+                        app:boxStrokeWidth="2dp"
                         app:hintTextColor="@color/input_focus_blue_500">
 
                         <com.google.android.material.textfield.TextInputEditText
@@ -92,7 +100,9 @@
                             android:layout_height="wrap_content"
                             android:hint="Email Address"
                             android:inputType="textEmailAddress"
-                            android:textSize="16sp" />
+                            android:textSize="16sp"
+                            android:textColor="@color/text_gray_900"
+                            android:background="@android:color/transparent" />
                     </com.google.android.material.textfield.TextInputLayout>
 
                     <com.google.android.material.textfield.TextInputLayout
@@ -100,7 +110,10 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginBottom="16dp"
+                        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+                        app:boxBackgroundColor="@color/input_bg_gray_50"
                         app:boxStrokeColor="@color/input_focus_blue_500"
+                        app:boxStrokeWidth="2dp"
                         app:hintTextColor="@color/input_focus_blue_500"
                         app:passwordToggleEnabled="true">
 
@@ -110,7 +123,9 @@
                             android:layout_height="wrap_content"
                             android:hint="Password"
                             android:inputType="textPassword"
-                            android:textSize="16sp" />
+                            android:textSize="16sp"
+                            android:textColor="@color/text_gray_900"
+                            android:background="@android:color/transparent" />
                     </com.google.android.material.textfield.TextInputLayout>
 
                     <com.google.android.material.textfield.TextInputLayout
@@ -119,7 +134,10 @@
                         android:layout_height="wrap_content"
                         android:layout_marginBottom="24dp"
                         android:visibility="gone"
+                        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+                        app:boxBackgroundColor="@color/input_bg_gray_50"
                         app:boxStrokeColor="@color/input_focus_blue_500"
+                        app:boxStrokeWidth="2dp"
                         app:hintTextColor="@color/input_focus_blue_500"
                         app:passwordToggleEnabled="true">
 
@@ -129,7 +147,9 @@
                             android:layout_height="wrap_content"
                             android:hint="Confirm Password"
                             android:inputType="textPassword"
-                            android:textSize="16sp" />
+                            android:textSize="16sp"
+                            android:textColor="@color/text_gray_900"
+                            android:background="@android:color/transparent" />
                     </com.google.android.material.textfield.TextInputLayout>
 
                     <com.google.android.material.button.MaterialButton

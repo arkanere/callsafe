@@ -209,6 +209,13 @@ class WebRTCManager(private val context: Context) {
     private fun createLocalAudioTrack(): AudioTrack? {
         Log.d(TAG, "🎤 Creating local audio track")
         
+        // Ensure we don't have any existing audio source
+        if (audioSource != null) {
+            Log.w(TAG, "⚠️ Audio source already exists, disposing before creating new one")
+            audioSource?.dispose()
+            audioSource = null
+        }
+        
         val audioConstraints = MediaConstraints().apply {
             mandatory.add(MediaConstraints.KeyValuePair("googEchoCancellation", "true"))
             mandatory.add(MediaConstraints.KeyValuePair("googNoiseSuppression", "true"))
@@ -216,12 +223,60 @@ class WebRTCManager(private val context: Context) {
             mandatory.add(MediaConstraints.KeyValuePair("googHighpassFilter", "true"))
         }
         
+        Log.d(TAG, "🎤 Creating audio source with constraints")
         audioSource = peerConnectionFactory?.createAudioSource(audioConstraints)
+        
+        if (audioSource == null) {
+            Log.e(TAG, "❌ Failed to create audio source")
+            return null
+        }
+        
+        Log.d(TAG, "🎤 Creating audio track from source")
         return audioSource?.let { source ->
-            peerConnectionFactory?.createAudioTrack("AndroidAgentAudioTrack", source)
+            val audioTrack = peerConnectionFactory?.createAudioTrack("AndroidAgentAudioTrack", source)
+            
+            if (audioTrack == null) {
+                Log.e(TAG, "❌ Failed to create audio track")
+                return null
+            }
+            
+            // CRITICAL FIX: Explicitly enable the audio track to ensure microphone works
+            audioTrack.setEnabled(true)
+            
+            Log.i(TAG, "✅ Local audio track created and enabled: ${audioTrack.enabled()}")
+            Log.i(TAG, "🎤 Audio track ID: ${audioTrack.id()}")
+            return audioTrack
         }
     }
     
+    // CRITICAL FIX: Clean up existing resources to prevent double initialization
+    private fun cleanupExistingResources() {
+        Log.d(TAG, "🧹 Cleaning up existing WebRTC resources")
+        
+        // Dispose existing audio track
+        localAudioTrack?.let { track ->
+            Log.d(TAG, "🧹 Disposing existing audio track")
+            track.dispose()
+            localAudioTrack = null
+        }
+        
+        // Dispose existing audio source
+        audioSource?.let { source ->
+            Log.d(TAG, "🧹 Disposing existing audio source")
+            source.dispose()
+            audioSource = null
+        }
+        
+        // Close existing peer connection
+        peerConnection?.let { pc ->
+            Log.d(TAG, "🧹 Closing existing peer connection")
+            pc.close()
+            peerConnection = null
+        }
+        
+        Log.d(TAG, "✅ Resource cleanup completed")
+    }
+
     // Public API - matches website WebRTCManager interface
     
     fun createAnswer(callId: String, offer: SessionDescription): SessionDescription? {
@@ -229,6 +284,9 @@ class WebRTCManager(private val context: Context) {
         currentCallId = callId
         
         try {
+            // CRITICAL FIX: Clean up any existing resources before creating new ones
+            cleanupExistingResources()
+            
             // Create peer connection
             peerConnection = createPeerConnection()
             if (peerConnection == null) {
@@ -241,8 +299,18 @@ class WebRTCManager(private val context: Context) {
             localAudioTrack?.let { audioTrack ->
                 // Use addTrack instead of addStream for Unified Plan compatibility
                 peerConnection?.addTrack(audioTrack, listOf("AndroidAgentStream"))
+                
+                // CRITICAL VERIFICATION: Double-check audio track is enabled and working
+                val isEnabled = audioTrack.enabled()
                 Log.i(TAG, "✅ Local audio track added to peer connection using addTrack")
-            }
+                Log.i(TAG, "🎤 Audio track enabled status: $isEnabled")
+                
+                if (!isEnabled) {
+                    Log.w(TAG, "⚠️ Audio track is disabled! Attempting to enable...")
+                    audioTrack.setEnabled(true)
+                    Log.i(TAG, "🔧 Audio track re-enabled: ${audioTrack.enabled()}")
+                }
+            } ?: Log.e(TAG, "❌ Failed to create local audio track!")
             
             // Set remote description (customer's offer)
             val setRemoteDescriptionObserver = object : SdpObserver {
@@ -335,23 +403,24 @@ class WebRTCManager(private val context: Context) {
     fun endCall() {
         Log.d(TAG, "🔚 Ending WebRTC call")
         
-        localAudioTrack?.dispose()
-        localAudioTrack = null
-        
-        audioSource?.dispose()
-        audioSource = null
-        
-        peerConnection?.close()
-        peerConnection = null
-        
+        // Use the centralized cleanup method
+        cleanupExistingResources()
         currentCallId = null
         
         Log.i(TAG, "✅ WebRTC call ended and resources cleaned up")
     }
     
     fun setMuted(muted: Boolean) {
-        localAudioTrack?.setEnabled(!muted)
-        Log.d(TAG, "🔇 Audio ${if (muted) "muted" else "unmuted"}")
+        localAudioTrack?.let { audioTrack ->
+            audioTrack.setEnabled(!muted)
+            val actualEnabled = audioTrack.enabled()
+            Log.d(TAG, "🔇 Audio ${if (muted) "muted" else "unmuted"}")
+            Log.d(TAG, "🎤 Audio track enabled status after setMuted: $actualEnabled")
+            
+            if (actualEnabled == muted) {
+                Log.w(TAG, "⚠️ Audio track state mismatch! Expected enabled=${!muted}, got $actualEnabled")
+            }
+        } ?: Log.w(TAG, "⚠️ Cannot set mute - local audio track is null")
     }
     
     fun setSpeakerEnabled(enabled: Boolean) {
@@ -386,7 +455,8 @@ class WebRTCManager(private val context: Context) {
     // Cleanup
     fun dispose() {
         Log.d(TAG, "🧹 Disposing WebRTCManager")
-        endCall()
+        cleanupExistingResources()
+        currentCallId = null
         peerConnectionFactory?.dispose()
         peerConnectionFactory = null
     }

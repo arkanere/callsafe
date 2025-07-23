@@ -1,7 +1,9 @@
 package com.callsafe.androidapp
 
+import android.Manifest
 import android.content.Intent
 import android.content.SharedPreferences
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -9,6 +11,8 @@ import android.util.Log
 import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -18,6 +22,7 @@ import com.callsafe.androidapp.models.CallHistoryItem
 import com.callsafe.androidapp.models.IncomingCall
 import com.callsafe.androidapp.network.SocketManager
 import com.callsafe.androidapp.utils.RingtonePlayer
+import com.callsafe.androidapp.utils.SessionManager
 import com.callsafe.androidapp.webrtc.WebRTCManager
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
@@ -34,16 +39,16 @@ class UserReceiveActivity : AppCompatActivity() {
     
     companion object {
         private const val TAG = "UserReceiveActivity"
+        private const val PERMISSION_REQUEST_RECORD_AUDIO = 1001
     }
     
     private lateinit var sharedPreferences: SharedPreferences
+    private lateinit var sessionManager: SessionManager
     private lateinit var socketManager: SocketManager
     private lateinit var webrtcManager: WebRTCManager
     private lateinit var ringtonePlayer: RingtonePlayer
-    private lateinit var tvAgentHandle: MaterialTextView
-    private lateinit var tvSourceId: MaterialTextView
     private lateinit var tvConnectionStatus: MaterialTextView
-    private lateinit var btnToggleOnline: MaterialButton
+    private lateinit var btnDashboard: MaterialButton
     private lateinit var btnBackToDashboard: MaterialButton
     private lateinit var cardCurrentCall: MaterialCardView
     private lateinit var tvCallStatus: MaterialTextView
@@ -62,7 +67,6 @@ class UserReceiveActivity : AppCompatActivity() {
     
     private var handle: String = ""
     private var sourceId: String = ""
-    private var isOnline = false
     private var isConnected = false
     private var callDuration = 0
     private var currentCallId: String? = null
@@ -80,39 +84,36 @@ class UserReceiveActivity : AppCompatActivity() {
         setContentView(R.layout.activity_user_receive)
         
         sharedPreferences = getSharedPreferences("callsafe_prefs", MODE_PRIVATE)
+        sessionManager = SessionManager.getInstance(this)
         socketManager = SocketManager.getInstance()
         webrtcManager = WebRTCManager(this)
         ringtonePlayer = RingtonePlayer(this)
         
-        // Get handle from intent
-        handle = intent.getStringExtra("handle") ?: ""
-        sourceId = intent.getStringExtra("sourceId") ?: ""
-        
-        if (handle.isEmpty()) {
-            Toast.makeText(this, "No handle provided", Toast.LENGTH_SHORT).show()
-            finish()
+        // Check if user has a valid session
+        if (!sessionManager.isSessionValid()) {
+            Toast.makeText(this, "Session expired. Please login again.", Toast.LENGTH_LONG).show()
+            navigateToLogin()
             return
         }
         
-        Log.i(TAG, "Starting receive activity for handle: $handle")
+        Log.i(TAG, "Starting call receive activity")
         
         initViews()
-        setupRecyclerViews()
+        setupRecyclerViews() 
         setupClickListeners()
         setupWebRTCListeners()
         setupSocketEventListeners()
-        loadCallHistory()
-        connectToServer()
+        
+        // CRITICAL FIX: Request microphone permission before connecting
+        checkAndRequestAudioPermission()
     }
     
     override fun onDestroy() {
         super.onDestroy()
         // Clean up on destroy
         
-        // Go offline and cleanup
-        if (isOnline) {
-            socketManager.goOffline()
-        }
+        // Cleanup connection
+        socketManager.goOffline()
         
         // Clean up WebRTC
         webrtcManager.dispose()
@@ -142,10 +143,8 @@ class UserReceiveActivity : AppCompatActivity() {
     }
     
     private fun initViews() {
-        tvAgentHandle = findViewById(R.id.tv_agent_handle)
-        tvSourceId = findViewById(R.id.tv_source_id)
         tvConnectionStatus = findViewById(R.id.tv_connection_status)
-        btnToggleOnline = findViewById(R.id.btn_toggle_online)
+        btnDashboard = findViewById(R.id.btn_dashboard)
         btnBackToDashboard = findViewById(R.id.btn_back_dashboard)
         cardCurrentCall = findViewById(R.id.card_current_call)
         tvCallStatus = findViewById(R.id.tv_call_status)
@@ -160,9 +159,7 @@ class UserReceiveActivity : AppCompatActivity() {
         tvNoCallHistory = findViewById(R.id.tv_no_call_history)
         
         // Set initial values
-        tvAgentHandle.text = handle
-        tvSourceId.text = if (sourceId.isNotEmpty()) sourceId else "No source ID"
-        tvConnectionStatus.text = "Disconnected"
+        tvConnectionStatus.text = "Initializing..."
     }
     
     private fun setupRecyclerViews() {
@@ -188,15 +185,14 @@ class UserReceiveActivity : AppCompatActivity() {
     }
     
     private fun setupClickListeners() {
-        btnBackToDashboard.setOnClickListener {
-            val intent = Intent(this, UserActivity::class.java)
-            startActivity(intent)
-            finish()
+        btnDashboard.setOnClickListener {
+            startActivity(Intent(this, MainActivity::class.java))
         }
         
-        btnToggleOnline.setOnClickListener {
-            toggleOnlineStatus()
+        btnBackToDashboard.setOnClickListener {
+            logout()
         }
+        
         
         btnMute.setOnClickListener {
             toggleMute()
@@ -239,7 +235,8 @@ class UserReceiveActivity : AppCompatActivity() {
                     PeerConnection.PeerConnectionState.DISCONNECTED,
                     PeerConnection.PeerConnectionState.FAILED -> {
                         Log.w(TAG, "⚠️ WebRTC connection lost")
-                        showCurrentCall("Connection Lost")
+                        // Don't show "Connection Lost" - the call_ended event will handle UI cleanup properly
+                        // Showing "Connection Lost" creates confusion when calls end normally
                     }
                     PeerConnection.PeerConnectionState.CONNECTING -> {
                         showCurrentCall("Connecting...")
@@ -278,6 +275,108 @@ class UserReceiveActivity : AppCompatActivity() {
         }
         
         Log.i(TAG, "✅ WebRTC listeners configured")
+    }
+    
+    // CRITICAL FIX: Check and request microphone permission
+    private fun checkAndRequestAudioPermission() {
+        Log.d(TAG, "🎤 Checking microphone permission")
+        
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) 
+            != PackageManager.PERMISSION_GRANTED) {
+            
+            Log.w(TAG, "⚠️ Microphone permission not granted, requesting...")
+            
+            if (ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.RECORD_AUDIO)) {
+                // Show explanation to user
+                Toast.makeText(this, 
+                    "Microphone permission is required for voice calls. Please grant the permission.", 
+                    Toast.LENGTH_LONG).show()
+            }
+            
+            // Request the permission
+            ActivityCompat.requestPermissions(this,
+                arrayOf(Manifest.permission.RECORD_AUDIO),
+                PERMISSION_REQUEST_RECORD_AUDIO)
+        } else {
+            Log.i(TAG, "✅ Microphone permission already granted")
+            // Permission already granted, proceed with setup
+            loadCachedDataAndConnect()
+        }
+    }
+    
+    override fun onRequestPermissionsResult(
+        requestCode: Int, 
+        permissions: Array<out String>, 
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        
+        when (requestCode) {
+            PERMISSION_REQUEST_RECORD_AUDIO -> {
+                if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                    Log.i(TAG, "✅ Microphone permission granted by user")
+                    Toast.makeText(this, "Microphone permission granted", Toast.LENGTH_SHORT).show()
+                    // Permission granted, proceed with setup
+                    loadCachedDataAndConnect()
+                } else {
+                    Log.e(TAG, "❌ Microphone permission denied by user")
+                    Toast.makeText(this, 
+                        "Microphone permission is required for voice calls. Please enable it in Settings.", 
+                        Toast.LENGTH_LONG).show()
+                    
+                    // Could optionally finish the activity or disable call functionality
+                    // For now, still try to connect but warn user
+                    loadCachedDataAndConnect()
+                }
+            }
+        }
+    }
+    
+    private fun loadCachedDataAndConnect() {
+        // Load all data from cache - no API calls needed!
+        val user = sessionManager.getUser()
+        val userHandle = sessionManager.getUserHandle()
+        val userSourceId = sessionManager.getSourceId()
+        
+        if (user == null || userHandle == null) {
+            Log.e(TAG, "Cached data is invalid, redirecting to login")
+            Toast.makeText(this, "Session data corrupted. Please login again.", Toast.LENGTH_LONG).show()
+            sessionManager.clearSession()
+            navigateToLogin()
+            return
+        }
+        
+        Log.i(TAG, "Using cached data - User: ${user.name}, Handle: $userHandle, Session age: ${sessionManager.getSessionAgeInDays()} days")
+        
+        // Set handle from cached data
+        handle = userHandle
+        sourceId = userSourceId ?: ""
+        
+        // Load call history from local storage
+        loadCallHistory()
+        
+        // Connect to server with cached data
+        tvConnectionStatus.text = "Connecting to server..."
+        connectToServer()
+    }
+    
+    private fun navigateToLogin() {
+        startActivity(Intent(this, LoginActivity::class.java))
+        finish()
+    }
+    
+    private fun logout() {
+        // Clear session using SessionManager
+        sessionManager.clearSession()
+        
+        // Also clear old SharedPreferences for backward compatibility
+        with(sharedPreferences.edit()) {
+            clear()
+            apply()
+        }
+        
+        Toast.makeText(this, "Logged out successfully", Toast.LENGTH_SHORT).show()
+        navigateToLogin()
     }
     
     private fun setupSocketEventListeners() {
@@ -343,8 +442,6 @@ class UserReceiveActivity : AppCompatActivity() {
             runOnUiThread {
                 tvConnectionStatus.text = "Connection failed"
                 isConnected = false
-                isOnline = false
-                updateConnectionUI()
                 showError("Lost connection to server. Please try again.")
             }
         }
@@ -357,9 +454,8 @@ class UserReceiveActivity : AppCompatActivity() {
         socketManager.on("agent_registered") { data ->
             Log.i(TAG, "✅ AGENT REGISTERED - Ready for calls")
             runOnUiThread {
-                tvConnectionStatus.text = "Registered - Ready to receive calls"
-                isOnline = true
-                updateConnectionUI()
+                tvConnectionStatus.text = "Ready to receive calls"
+                isConnected = true
             }
         }
         
@@ -378,9 +474,8 @@ class UserReceiveActivity : AppCompatActivity() {
                     Log.i(TAG, "Connected to server")
                     isConnected = true
                     tvConnectionStatus.text = "Connected"
-                    updateConnectionUI()
                     
-                    // Automatically go online with handle
+                    // Automatically connect with handle
                     Handler(Looper.getMainLooper()).postDelayed({
                         goOnlineWithHandle()
                     }, 1000)
@@ -389,47 +484,19 @@ class UserReceiveActivity : AppCompatActivity() {
                     Log.e(TAG, "Connection failed: $error")
                     tvConnectionStatus.text = "Connection failed"
                     isConnected = false
-                    updateConnectionUI()
                     showError("Failed to connect to server: $error")
                 }
             }
         }
     }
     
-    private fun toggleOnlineStatus() {
-        if (!isConnected) {
-            showError("Not connected to server")
-            return
-        }
-        
-        if (isOnline) {
-            goOffline()
-        } else {
-            goOnlineWithHandle()
-        }
-    }
     
     private fun goOnlineWithHandle() {
-        Log.i(TAG, "Going online with handle: $handle")
+        Log.i(TAG, "Connecting with handle: $handle")
         socketManager.goOnlineWithHandle(handle, sourceId.takeIf { it.isNotEmpty() })
-        isOnline = true
-        tvConnectionStatus.text = "Online - Waiting for calls"
-        updateConnectionUI()
-        Toast.makeText(this, "You are now online", Toast.LENGTH_SHORT).show()
+        tvConnectionStatus.text = "Connecting - Please wait..."
     }
     
-    private fun goOffline() {
-        socketManager.goOffline()
-        isOnline = false
-        tvConnectionStatus.text = "Offline"
-        updateConnectionUI()
-        
-        // Clear incoming calls when going offline
-        incomingCalls.clear()
-        updateIncomingCallsUI()
-        
-        Toast.makeText(this, "You are now offline", Toast.LENGTH_SHORT).show()
-    }
     
     private fun acceptCall(callId: String) {
         Log.d(TAG, "=== ACCEPT CALL CLICKED ===")
@@ -439,8 +506,8 @@ class UserReceiveActivity : AppCompatActivity() {
         ringtonePlayer.stopRinging()
         Log.d(TAG, "🔇 Ringtone stopped - call accepted")
         
-        if (!isOnline) {
-            Log.w(TAG, "Agent not online, cannot accept call")
+        if (!isConnected) {
+            Log.w(TAG, "Agent not connected, cannot accept call")
             return
         }
         
@@ -655,6 +722,16 @@ class UserReceiveActivity : AppCompatActivity() {
         }
         
         runOnUiThread {
+            // Stop ringtone when call is routed (call is now being processed)
+            if (incomingCalls.any { it.callId == callId }) {
+                ringtonePlayer.stopRinging()
+                Log.d(TAG, "🔇 Ringtone stopped - call routed")
+            }
+            
+            // Remove from incoming calls list since call is now being processed
+            incomingCalls.removeAll { it.callId == callId }
+            updateIncomingCallsUI()
+            
             currentCallId = callId
             showCurrentCall("Call routed - Connecting...")
         }
@@ -702,6 +779,14 @@ class UserReceiveActivity : AppCompatActivity() {
         }
         
         Log.i(TAG, "✅ Processing WebRTC offer for callId: $callId")
+        
+        // CRITICAL CHECK: Verify microphone permission before proceeding
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) 
+            != PackageManager.PERMISSION_GRANTED) {
+            Log.e(TAG, "❌ Cannot process WebRTC offer - microphone permission not granted")
+            Toast.makeText(this, "Cannot start call - microphone permission required", Toast.LENGTH_LONG).show()
+            return
+        }
         
         // Create WebRTC offer object
         val offer = SessionDescription(SessionDescription.Type.OFFER, offerSdp)
@@ -822,6 +907,10 @@ class UserReceiveActivity : AppCompatActivity() {
                 )
                 
                 hideCurrentCall()
+                
+                // Also remove from incoming calls list to prevent "Connection Lost" state
+                incomingCalls.removeAll { it.callId == callId }
+                updateIncomingCallsUI()
             } else {
                 // This was an incoming call that we never accepted
                 val incomingCall = incomingCalls.find { it.callId == callId }
@@ -1045,6 +1134,12 @@ class UserReceiveActivity : AppCompatActivity() {
         }
         
         runOnUiThread {
+            // Stop ringtone when call is missed
+            if (incomingCalls.any { it.callId == callId }) {
+                ringtonePlayer.stopRinging()
+                Log.d(TAG, "🔇 Ringtone stopped - call missed")
+            }
+            
             addToCallHistory(
                 callId = callId,
                 duration = 0,
@@ -1103,25 +1198,6 @@ class UserReceiveActivity : AppCompatActivity() {
         }
     }
     
-    private fun updateConnectionUI() {
-        when {
-            !isConnected -> {
-                btnToggleOnline.isEnabled = false
-                btnToggleOnline.text = "Disconnected"
-                btnToggleOnline.setBackgroundColor(getColor(android.R.color.darker_gray))
-            }
-            isOnline -> {
-                btnToggleOnline.isEnabled = true
-                btnToggleOnline.text = "Go Offline"
-                btnToggleOnline.setBackgroundColor(getColor(android.R.color.holo_green_dark))
-            }
-            else -> {
-                btnToggleOnline.isEnabled = true
-                btnToggleOnline.text = "Go Online"
-                btnToggleOnline.setBackgroundColor(getColor(android.R.color.darker_gray))
-            }
-        }
-    }
     
     private fun updateIncomingCallsUI() {
         if (incomingCalls.isEmpty()) {

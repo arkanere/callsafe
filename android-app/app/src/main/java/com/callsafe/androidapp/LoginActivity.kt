@@ -3,6 +3,7 @@ package com.callsafe.androidapp
 import android.content.Intent
 import android.content.SharedPreferences
 import android.os.Bundle
+import android.util.Log
 import android.util.Patterns
 import android.view.View
 import android.widget.Toast
@@ -11,6 +12,7 @@ import androidx.lifecycle.lifecycleScope
 import com.callsafe.androidapp.models.LoginRequest
 import com.callsafe.androidapp.models.SignupRequest
 import com.callsafe.androidapp.network.RetrofitInstance
+import com.callsafe.androidapp.utils.SessionManager
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textview.MaterialTextView
@@ -27,6 +29,11 @@ class LoginActivity : AppCompatActivity() {
     private lateinit var tvToggleMode: MaterialTextView
     private lateinit var tvTitle: MaterialTextView
     private lateinit var sharedPreferences: SharedPreferences
+    private lateinit var sessionManager: SessionManager
+    
+    companion object {
+        private const val TAG = "LoginActivity"
+    }
     
     private var isSignUpMode = false
     
@@ -35,11 +42,17 @@ class LoginActivity : AppCompatActivity() {
         setContentView(R.layout.activity_login)
         
         sharedPreferences = getSharedPreferences("callsafe_prefs", MODE_PRIVATE)
+        sessionManager = SessionManager.getInstance(this)
         
-        // Check if user is already logged in
-        if (isUserLoggedIn()) {
+        // Check if user has valid session
+        if (sessionManager.isSessionValid()) {
+            Log.i(TAG, "Valid session found, session age: ${sessionManager.getSessionAgeInDays()} days")
             navigateToMainApp()
             return
+        } else {
+            // Clear any invalid session data
+            sessionManager.clearSession()
+            Log.i(TAG, "No valid session found, showing login screen")
         }
         
         initViews()
@@ -47,13 +60,11 @@ class LoginActivity : AppCompatActivity() {
     }
     
     private fun isUserLoggedIn(): Boolean {
-        val userId = sharedPreferences.getInt("callsafe_userId", -1)
-        val userJson = sharedPreferences.getString("callsafe_user", null)
-        return userId != -1 && !userJson.isNullOrEmpty()
+        return sessionManager.isSessionValid()
     }
     
     private fun navigateToMainApp() {
-        startActivity(Intent(this, UserActivity::class.java))
+        startActivity(Intent(this, UserReceiveActivity::class.java))
         finish()
     }
     
@@ -128,10 +139,8 @@ class LoginActivity : AppCompatActivity() {
                 if (response.isSuccessful && response.body()?.success == true) {
                     val user = response.body()?.user
                     if (user != null) {
-                        saveUserSession(user.id, user)
-                        Toast.makeText(this@LoginActivity, "Login successful!", Toast.LENGTH_SHORT).show()
-                        
-                        navigateToMainApp()
+                        // Cache user data and handle during login
+                        cacheUserDataAndHandle(user)
                     }
                 } else {
                     val error = response.body()?.error ?: "Login failed"
@@ -139,7 +148,8 @@ class LoginActivity : AppCompatActivity() {
                 }
             } catch (e: Exception) {
                 Toast.makeText(this@LoginActivity, "Network error: ${e.message}", Toast.LENGTH_LONG).show()
-            } finally {
+            } catch (e: Exception) {
+                Toast.makeText(this@LoginActivity, "Network error: ${e.message}", Toast.LENGTH_LONG).show()
                 btnSubmit.isEnabled = true
                 btnSubmit.text = "Login"
             }
@@ -164,10 +174,8 @@ class LoginActivity : AppCompatActivity() {
                 if (response.isSuccessful && response.body()?.success == true) {
                     val user = response.body()?.user
                     if (user != null) {
-                        saveUserSession(user.id, user)
-                        Toast.makeText(this@LoginActivity, "Account created successfully!", Toast.LENGTH_SHORT).show()
-                        
-                        navigateToMainApp()
+                        // Cache user data and handle during signup
+                        cacheUserDataAndHandle(user)
                     }
                 } else {
                     val error = response.body()?.error ?: "Sign up failed"
@@ -175,7 +183,8 @@ class LoginActivity : AppCompatActivity() {
                 }
             } catch (e: Exception) {
                 Toast.makeText(this@LoginActivity, "Network error: ${e.message}", Toast.LENGTH_LONG).show()
-            } finally {
+            } catch (e: Exception) {
+                Toast.makeText(this@LoginActivity, "Network error: ${e.message}", Toast.LENGTH_LONG).show()
                 btnSubmit.isEnabled = true
                 btnSubmit.text = "Sign Up"
             }
@@ -222,11 +231,38 @@ class LoginActivity : AppCompatActivity() {
         return true
     }
     
-    private fun saveUserSession(userId: Int, user: com.callsafe.androidapp.models.User) {
-        with(sharedPreferences.edit()) {
-            putInt("callsafe_userId", userId)
-            putString("callsafe_user", Gson().toJson(user))
-            apply()
+    private fun cacheUserDataAndHandle(user: com.callsafe.androidapp.models.User) {
+        lifecycleScope.launch {
+            try {
+                Log.i(TAG, "Caching user data for: ${user.email}")
+                
+                // Fetch user handle during login/signup
+                val handlesResponse = RetrofitInstance.api.getUserHandles(user.id)
+                if (handlesResponse.isSuccessful && handlesResponse.body()?.success == true) {
+                    val handles = handlesResponse.body()?.handles ?: emptyList()
+                    if (handles.isNotEmpty()) {
+                        val handle = handles[0].handle
+                        
+                        // Cache everything using SessionManager
+                        sessionManager.saveUserSession(user, handle)
+                        Log.i(TAG, "Successfully cached user session with handle: $handle")
+                        
+                        Toast.makeText(this@LoginActivity, "Login successful!", Toast.LENGTH_SHORT).show()
+                        navigateToMainApp()
+                    } else {
+                        Toast.makeText(this@LoginActivity, "No handles found for user. Please contact support.", Toast.LENGTH_LONG).show()
+                    }
+                } else {
+                    Toast.makeText(this@LoginActivity, "Failed to load user data. Please try again.", Toast.LENGTH_LONG).show()
+                }
+                
+            } catch (e: Exception) {
+                Log.e(TAG, "Error caching user data", e)
+                Toast.makeText(this@LoginActivity, "Error loading user data: ${e.message}", Toast.LENGTH_LONG).show()
+            } finally {
+                btnSubmit.isEnabled = true
+                btnSubmit.text = if (isSignUpMode) "Sign Up" else "Login"
+            }
         }
     }
 }
