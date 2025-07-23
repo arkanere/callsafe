@@ -20,10 +20,13 @@ import com.callsafe.androidapp.adapters.CallHistoryAdapter
 import com.callsafe.androidapp.adapters.IncomingCallsAdapter
 import com.callsafe.androidapp.models.CallHistoryItem
 import com.callsafe.androidapp.models.IncomingCall
+import com.callsafe.androidapp.models.FCMTokenRequest
+import com.callsafe.androidapp.network.RetrofitInstance
 import com.callsafe.androidapp.network.SocketManager
 import com.callsafe.androidapp.utils.RingtonePlayer
 import com.callsafe.androidapp.utils.SessionManager
 import com.callsafe.androidapp.webrtc.WebRTCManager
+import com.google.firebase.messaging.FirebaseMessaging
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.textview.MaterialTextView
@@ -106,6 +109,9 @@ class UserReceiveActivity : AppCompatActivity() {
         
         // CRITICAL FIX: Request microphone permission before connecting
         checkAndRequestAudioPermission()
+        
+        // Initialize FCM
+        initializeFCM()
     }
     
     override fun onDestroy() {
@@ -1258,5 +1264,75 @@ class UserReceiveActivity : AppCompatActivity() {
     
     private fun showError(message: String) {
         Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+    }
+    
+    // Initialize Firebase Cloud Messaging
+    private fun initializeFCM() {
+        Log.i(TAG, "🔥 Initializing Firebase Cloud Messaging")
+        
+        // Enable auto-initialization
+        FirebaseMessaging.getInstance().isAutoInitEnabled = true
+        
+        // Get FCM token
+        FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
+            if (!task.isSuccessful) {
+                Log.w(TAG, "❌ Fetching FCM registration token failed", task.exception)
+                return@addOnCompleteListener
+            }
+            
+            // Get new FCM registration token
+            val token = task.result
+            Log.i(TAG, "🎯 FCM Token received: ${token.take(20)}...")
+            
+            // Save token locally
+            sessionManager.saveFCMToken(token)
+            
+            // Send token to server
+            sendFCMTokenToServer(token)
+        }
+        
+        Log.i(TAG, "✅ FCM initialization completed")
+    }
+    
+    private fun sendFCMTokenToServer(token: String) {
+        Log.i(TAG, "📤 Sending FCM token to server")
+        
+        val userHandle = sessionManager.getUserHandle()
+        val sourceId = sessionManager.getSourceId()
+        
+        if (userHandle == null) {
+            Log.w(TAG, "⚠️ Cannot send FCM token - no user handle available")
+            return
+        }
+        
+        Log.i(TAG, "📤 FCM Token: ${token.take(20)}... for handle: $userHandle")
+        
+        // Send FCM token to server via API
+        lifecycleScope.launch {
+            try {
+                val request = FCMTokenRequest(
+                    handle = userHandle,
+                    fcmToken = token,
+                    platform = "android",
+                    sourceId = sourceId
+                )
+                
+                val apiService = RetrofitInstance.getApiService()
+                val response = apiService.updateFCMToken(request)
+                
+                if (response.isSuccessful) {
+                    Log.i(TAG, "✅ FCM token sent to server successfully")
+                    val responseBody = response.body()
+                    Log.i(TAG, "📋 Server response: ${responseBody?.message}")
+                } else {
+                    Log.e(TAG, "❌ Failed to send FCM token: ${response.code()} - ${response.message()}")
+                    val errorBody = response.errorBody()?.string()
+                    Log.e(TAG, "❌ Error details: $errorBody")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Error sending FCM token to server", e)
+                // Don't show error to user - this is a background operation
+            }
+        }
     }
 }

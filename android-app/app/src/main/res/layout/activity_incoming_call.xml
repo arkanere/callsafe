@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/gradient_purple_900"
+    android:gravity="center"
+    android:orientation="vertical"
+    android:padding="32dp">
+
+    <!-- Caller Avatar/Icon -->
+    <ImageView
+        android:id="@+id/iv_caller_avatar"
+        android:layout_width="120dp"
+        android:layout_height="120dp"
+        android:layout_marginBottom="24dp"
+        android:background="@drawable/circle_background"
+        android:padding="24dp"
+        android:src="@drawable/ic_person"
+        android:tint="@color/white" />
+
+    <!-- Incoming Call Label -->
+    <com.google.android.material.textview.MaterialTextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="8dp"
+        android:text="Incoming Call"
+        android:textColor="@color/white"
+        android:textSize="18sp"
+        android:textStyle="normal" />
+
+    <!-- Caller Name -->
+    <com.google.android.material.textview.MaterialTextView
+        android:id="@+id/tv_caller_name"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="8dp"
+        android:gravity="center"
+        android:text="Unknown Caller"
+        android:textColor="@color/white"
+        android:textSize="28sp"
+        android:textStyle="bold" />
+
+    <!-- Caller ID -->
+    <com.google.android.material.textview.MaterialTextView
+        android:id="@+id/tv_caller_id"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="64dp"
+        android:gravity="center"
+        android:text="ID: Unknown"
+        android:textColor="@color/white_70"
+        android:textSize="16sp" />
+
+    <!-- Call Actions -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:orientation="horizontal">
+
+        <!-- Decline Button -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_decline_call"
+            style="@style/Widget.Material3.Button.UnelevatedButton"
+            android:layout_width="80dp"
+            android:layout_height="80dp"
+            android:layout_marginEnd="64dp"
+            android:backgroundTint="@color/button_red_600"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            app:cornerRadius="40dp"
+            app:icon="@drawable/ic_call_end"
+            app:iconGravity="textStart"
+            app:iconPadding="0dp"
+            app:iconSize="32dp"
+            app:iconTint="@color/white" />
+
+        <!-- Accept Button -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_accept_call"
+            style="@style/Widget.Material3.Button.UnelevatedButton"
+            android:layout_width="80dp"
+            android:layout_height="80dp"
+            android:backgroundTint="@color/button_green_600"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            app:cornerRadius="40dp"
+            app:icon="@drawable/ic_call"
+            app:iconGravity="textStart"
+            app:iconPadding="0dp"
+            app:iconSize="32dp"
+            app:iconTint="@color/white" />
+
+    </LinearLayout>
+
+    <!-- Call Status -->
+    <com.google.android.material.textview.MaterialTextView
+        android:id="@+id/tv_call_status"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="32dp"
+        android:gravity="center"
+        android:text="Tap to answer"
+        android:textColor="@color/white_70"
+        android:textSize="14sp" />
+
+</LinearLayout>

@@ -1,6 +1,8 @@
 package com.callsafe.androidapp.network
 
 import com.callsafe.androidapp.models.AuthResponse
+import com.callsafe.androidapp.models.FCMTokenRequest
+import com.callsafe.androidapp.models.FCMTokenResponse
 import com.callsafe.androidapp.models.HandlesResponse
 import com.callsafe.androidapp.models.LoginRequest
 import com.callsafe.androidapp.models.SignupRequest
@@ -28,4 +30,7 @@ interface ApiService {
     
     @PUT("api/user/embed")
     suspend fun markAsEmbedded(@Body request: Map<String, Any>): Response<AuthResponse>
+    
+    @POST("api/fcm-token")
+    suspend fun updateFCMToken(@Body request: FCMTokenRequest): Response<FCMTokenResponse>
 }

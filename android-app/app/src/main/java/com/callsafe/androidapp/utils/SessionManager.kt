@@ -15,6 +15,7 @@ class SessionManager(context: Context) {
         private const val KEY_USER_HANDLE = "user_handle"
         private const val KEY_SOURCE_ID = "source_id"
         private const val KEY_LOGIN_TIMESTAMP = "login_timestamp"
+        private const val KEY_FCM_TOKEN = "fcm_token"
         private const val SESSION_DURATION = 30L * 24 * 60 * 60 * 1000 // 30 days in milliseconds
         
         @Volatile
@@ -109,6 +110,25 @@ class SessionManager(context: Context) {
                 putLong(KEY_LOGIN_TIMESTAMP, System.currentTimeMillis())
                 apply()
             }
+        }
+    }
+    
+    // FCM Token Management
+    fun saveFCMToken(token: String) {
+        with(sharedPreferences.edit()) {
+            putString(KEY_FCM_TOKEN, token)
+            apply()
+        }
+    }
+    
+    fun getFCMToken(): String? {
+        return sharedPreferences.getString(KEY_FCM_TOKEN, null)
+    }
+    
+    fun clearFCMToken() {
+        with(sharedPreferences.edit()) {
+            remove(KEY_FCM_TOKEN)
+            apply()
         }
     }
 }
