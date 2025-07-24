@@ -2,7 +2,6 @@ package com.callsafe.androidapp.service
 
 import android.content.Context
 import android.util.Log
-import com.callsafe.androidapp.fcm.FCMManager
 import com.callsafe.androidapp.models.*
 import com.callsafe.androidapp.network.SocketManager
 import com.callsafe.androidapp.utils.SessionManager

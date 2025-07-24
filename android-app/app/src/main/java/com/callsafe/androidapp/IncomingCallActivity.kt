@@ -102,8 +102,8 @@ class IncomingCallActivity : AppCompatActivity() {
     private fun initViews() {
         tvCallerName = findViewById(R.id.tv_caller_name)
         tvCallerId = findViewById(R.id.tv_caller_id)
-        btnAccept = findViewById(R.id.btn_accept_call)
-        btnDecline = findViewById(R.id.btn_decline_call)
+        btnAccept = findViewById(R.id.btn_accept)
+        btnDecline = findViewById(R.id.btn_decline)
     }
     
     private fun extractIntentData() {

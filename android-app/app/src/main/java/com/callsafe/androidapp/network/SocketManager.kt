@@ -21,6 +21,9 @@ class SocketManager private constructor() {
     // State tracking for reconnection  
     private var agentState = AgentState()
     
+    // FCM token for modern registration
+    private var fcmToken: String? = null
+    
     // Event listeners
     private val eventListeners = mutableMapOf<String, (Any?) -> Unit>()
     
@@ -252,13 +255,13 @@ class SocketManager private constructor() {
         when (agentState.registrationType) {
             "basic" -> {
                 Log.d(TAG, "🔄 Re-registering agent (basic)")
-                emit("agent_online", null)
+                emitInternal("agent_online", null)
             }
             "with_user" -> {
                 agentState.userId?.let { userId ->
                     Log.d(TAG, "🔄 Re-registering agent with user ID: $userId")
                     val data = JSONObject().apply { put("userId", userId) }
-                    emit("agent_online_with_user", data)
+                    emitInternal("agent_online_with_user", data)
                 }
             }
             "with_handle" -> {
@@ -266,17 +269,26 @@ class SocketManager private constructor() {
                     Log.d(TAG, "🔄 Re-registering agent with handle: $handle, sourceId: ${agentState.sourceId}")
                     val data = JSONObject().apply {
                         put("handle", handle)
+                        put("deviceType", "android")
+                        put("platform", "android")
                         agentState.sourceId?.let { put("sourceId", it) }
+                        fcmToken?.let { put("fcmToken", it) }
                     }
-                    emit("agent_online_with_handle", data)
+                    emitInternal("agent_register", data)
                 }
             }
         }
     }
     
-    // EXACTLY match website outgoing events
+    // Set FCM token for modern registration
+    fun setFCMToken(token: String?) {
+        Log.d(TAG, "📱 Setting FCM token: ${token?.take(20)}...")
+        fcmToken = token
+    }
+    
+    // Use modern agent registration
     fun goOnlineWithHandle(handle: String, sourceId: String?) {
-        Log.i(TAG, "📤 Going online with handle: $handle")
+        Log.i(TAG, "📤 Going online with handle: $handle using modern registration")
         agentState = AgentState(
             isAgentOnline = true,
             registrationType = "with_handle", 
@@ -285,15 +297,18 @@ class SocketManager private constructor() {
         )
         val data = JSONObject().apply {
             put("handle", handle)
+            put("deviceType", "android")
+            put("platform", "android")
             sourceId?.let { put("sourceId", it) }
+            fcmToken?.let { put("fcmToken", it) }
         }
-        emit("agent_online_with_handle", data)
+        emitInternal("agent_register", data)
     }
     
     fun goOffline() {
         Log.d(TAG, "📤 Emitting agent_offline")
         agentState = AgentState()
-        emit("agent_offline", null)
+        emitInternal("agent_offline", null)
     }
     
     fun acceptCall(callId: String, handle: String?, sourceId: String?) {
@@ -303,7 +318,7 @@ class SocketManager private constructor() {
             handle?.let { put("handle", it) }
             sourceId?.let { put("sourceId", it) }
         }
-        emit("accept_call", data)
+        emitInternal("accept_call", data)
     }
     
     fun declineCall(callId: String, handle: String?, sourceId: String?) {
@@ -313,7 +328,7 @@ class SocketManager private constructor() {
             handle?.let { put("handle", it) }
             sourceId?.let { put("sourceId", it) }
         }
-        emit("decline_call", data)
+        emitInternal("decline_call", data)
     }
     
     fun endCall(callId: String?, handle: String?, sourceId: String?, reason: String? = null) {
@@ -324,7 +339,7 @@ class SocketManager private constructor() {
             sourceId?.let { put("sourceId", it) }
             reason?.let { put("reason", it) }
         }
-        emit("call_ended", data)
+        emitInternal("call_ended", data)
     }
     
     fun sendAnswer(callId: String, answer: String, handle: String?, sourceId: String?) {
@@ -339,7 +354,7 @@ class SocketManager private constructor() {
             handle?.let { put("handle", it) }
             sourceId?.let { put("sourceId", it) }
         }
-        emit("answer", data)
+        emitInternal("answer", data)
     }
     
     fun sendIceCandidate(callId: String, candidate: IceCandidate, handle: String?, sourceId: String?) {
@@ -356,7 +371,7 @@ class SocketManager private constructor() {
             handle?.let { put("handle", it) }
             sourceId?.let { put("sourceId", it) }
         }
-        emit("ice_candidate", data)
+        emitInternal("ice_candidate", data)
     }
     
     // WebRTC state synchronization methods
@@ -367,7 +382,7 @@ class SocketManager private constructor() {
             handle?.let { put("handle", it) }
             sourceId?.let { put("sourceId", it) }
         }
-        emit("webrtc_connected", data)
+        emitInternal("webrtc_connected", data)
     }
     
     fun emitWebRTCFailed(callId: String, handle: String?, sourceId: String?, reason: String?) {
@@ -378,7 +393,7 @@ class SocketManager private constructor() {
             sourceId?.let { put("sourceId", it) }
             reason?.let { put("reason", it) }
         }
-        emit("webrtc_failed", data)
+        emitInternal("webrtc_failed", data)
     }
     
     fun emitWebRTCDisconnected(callId: String, handle: String?, sourceId: String?, reason: String?) {
@@ -389,10 +404,10 @@ class SocketManager private constructor() {
             sourceId?.let { put("sourceId", it) }
             reason?.let { put("reason", it) }
         }
-        emit("webrtc_disconnected", data)
+        emitInternal("webrtc_disconnected", data)
     }
     
-    private fun emit(event: String, data: JSONObject?) {
+    private fun emitInternal(event: String, data: JSONObject?) {
         if (socket?.connected() == true && isConnected) {
             socket?.emit(event, data)
         } else {
