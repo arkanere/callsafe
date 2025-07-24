@@ -288,27 +288,40 @@
     socket.on('call_request_cancelled', (data) => {
       console.log('📞 Call request cancelled:', data);
       
-      // Find the call details before removing it
-      const cancelledCall = incomingCalls.find(call => call.callId === data.callId);
+      // Find the call details - try by callId first, then by sourceId as fallback
+      let cancelledCall = null;
+      if (data.callId) {
+        cancelledCall = incomingCalls.find(call => call.callId === data.callId);
+      } else if (data.sourceId) {
+        // Fallback: find by sourceId when callId is not available
+        cancelledCall = incomingCalls.find(call => call.sourceId === data.sourceId);
+      }
       
       // Remove the cancelled call from incoming calls
-      if (data.callId) {
-        incomingCalls = incomingCalls.filter(call => call.callId !== data.callId);
+      if (cancelledCall) {
+        console.log('📞 Found cancelled call:', cancelledCall);
+        incomingCalls = incomingCalls.filter(call => 
+          data.callId ? call.callId !== data.callId : call.sourceId !== data.sourceId
+        );
+        
         // Stop ringtone if no more incoming calls
         if (incomingCalls.length === 0) {
+          console.log('🔇 Stopping ringtone - call request cancelled');
           stopRingtone();
         }
         
         // Log as missed call if customer cancelled during connecting
-        if (cancelledCall) {
-          addToCallHistory({
-            callId: data.callId,
-            duration: 0,
-            status: 'missed',
-            sourceId: cancelledCall.sourceId,
-            reason: data.reason || 'customer_cancelled'
-          });
-        }
+        addToCallHistory({
+          callId: cancelledCall.callId || 'cancelled-before-id',
+          duration: 0,
+          status: 'missed',
+          sourceId: cancelledCall.sourceId,
+          reason: data.reason || 'customer_cancelled_during_waiting'
+        });
+        
+        console.log('✅ Call request cancellation handled successfully');
+      } else {
+        console.log('⚠️ Could not find cancelled call in incoming calls list');
       }
     });
 

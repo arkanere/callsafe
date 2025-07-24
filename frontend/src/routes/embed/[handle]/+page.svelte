@@ -374,6 +374,11 @@
   }
 
   function endCall() {
+    console.log('=== END CALL CLICKED ===');
+    console.log('Current call state:', callState);
+    console.log('Call ID exists:', !!callState.callId);
+    console.log('Connection status:', connectionStatus);
+    
     // Clear any pending failure timeout when ending call
     if (webrtcFailureTimeout) {
       clearTimeout(webrtcFailureTimeout);
@@ -381,12 +386,20 @@
     }
     
     if (socket) {
-      // Always send both callId, handle, and sourceId - server will handle based on what's available
-      socket.endCall({ 
-        callId: callState.callId, 
-        handle: handle,
-        sourceId: sourceId
-      });
+      // If call doesn't have a callId yet (still connecting), cancel the call request
+      if (!callState.callId) {
+        console.log('📞 Cancelling call request - no callId assigned yet');
+        console.log('Handle:', handle, 'SourceId:', sourceId);
+        socket.cancelCallRequest(handle, sourceId);
+      } else {
+        // For calls with callId, send normal call_ended
+        console.log('📞 Ending established call with callId:', callState.callId);
+        socket.endCall({ 
+          callId: callState.callId, 
+          handle: handle,
+          sourceId: sourceId
+        });
+      }
     }
     if (webrtc) {
       webrtc.endCall();
@@ -395,6 +408,7 @@
     callState = { ...callState, status: 'ended' };
     isConnecting = false;
     connectionStatus = 'Call ended';
+    console.log('✅ Customer call cleanup completed');
   }
 
   function toggleMute() {
