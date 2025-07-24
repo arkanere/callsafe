@@ -288,40 +288,89 @@
     socket.on('call_request_cancelled', (data) => {
       console.log('📞 Call request cancelled:', data);
       
-      // Find the call details - try by callId first, then by sourceId as fallback
+      // Find the call details using priority matching system
       let cancelledCall = null;
+      let matchMethod = 'none';
+      
+      // METHOD 1: CallAttemptId matching (most reliable for connecting phase)
+      if (data.callAttemptId) {
+        // Note: We don't store callAttemptId in incomingCalls, but if callId matches, 
+        // it's the same call. Server should provide both for reliability.
+        console.log('📞 CallAttemptId provided:', data.callAttemptId);
+        matchMethod = 'callAttemptId';
+      }
+      
+      // METHOD 2: CallId matching (most reliable for accepted calls)
       if (data.callId) {
         cancelledCall = incomingCalls.find(call => call.callId === data.callId);
-      } else if (data.sourceId) {
-        // Fallback: find by sourceId when callId is not available
-        cancelledCall = incomingCalls.find(call => call.sourceId === data.sourceId);
+        if (cancelledCall) {
+          matchMethod = 'callId';
+          console.log('📞 Found call by callId:', data.callId);
+        } else {
+          console.log('📞 CallId not found in incoming calls:', data.callId);
+        }
+      }
+      
+      // METHOD 3: SourceId fallback (backward compatibility, less reliable)
+      if (!cancelledCall && data.sourceId) {
+        console.warn('📞 Using sourceId fallback matching (less reliable for multiple users)');
+        
+        const matchingCalls = incomingCalls.filter(call => call.sourceId === data.sourceId);
+        console.log('📞 Found', matchingCalls.length, 'calls with sourceId:', data.sourceId);
+        
+        if (matchingCalls.length === 1) {
+          // Single match - safe to use
+          cancelledCall = matchingCalls[0];
+          matchMethod = 'sourceId_single';
+          console.log('📞 Single sourceId match found:', cancelledCall.callId);
+        } else if (matchingCalls.length > 1) {
+          // Multiple matches - use most recent (still unreliable!)
+          cancelledCall = matchingCalls.reduce((latest, call) => 
+            call.timestamp > latest.timestamp ? call : latest
+          );
+          matchMethod = 'sourceId_multiple';
+          console.warn('📞 Multiple sourceId matches! Using most recent:', cancelledCall.callId, 
+                      'This may cancel wrong call if multiple users have same sourceId!');
+        } else {
+          console.error('📞 No calls found with sourceId:', data.sourceId);
+        }
       }
       
       // Remove the cancelled call from incoming calls
       if (cancelledCall) {
-        console.log('📞 Found cancelled call:', cancelledCall);
-        incomingCalls = incomingCalls.filter(call => 
-          data.callId ? call.callId !== data.callId : call.sourceId !== data.sourceId
-        );
+        console.log('📞 Cancelling call using method:', matchMethod, 'call:', {
+          callId: cancelledCall.callId,
+          sourceId: cancelledCall.sourceId,
+          timestamp: cancelledCall.timestamp
+        });
+        
+        // Remove the specific call (use callId for precision)
+        incomingCalls = incomingCalls.filter(call => call.callId !== cancelledCall.callId);
         
         // Stop ringtone if no more incoming calls
         if (incomingCalls.length === 0) {
-          console.log('🔇 Stopping ringtone - call request cancelled');
+          console.log('🔇 Stopping ringtone - no more incoming calls');
           stopRingtone();
         }
         
-        // Log as missed call if customer cancelled during connecting
+        // Log as missed call
         addToCallHistory({
-          callId: cancelledCall.callId || 'cancelled-before-id',
+          callId: cancelledCall.callId,
           duration: 0,
           status: 'missed',
           sourceId: cancelledCall.sourceId,
           reason: data.reason || 'customer_cancelled_during_waiting'
         });
         
-        console.log('✅ Call request cancellation handled successfully');
+        console.log('✅ Call request cancellation handled successfully via', matchMethod);
       } else {
-        console.log('⚠️ Could not find cancelled call in incoming calls list');
+        console.error('⚠️ Could not find cancelled call in incoming calls list', {
+          providedCallId: data.callId,
+          providedCallAttemptId: data.callAttemptId,
+          providedSourceId: data.sourceId,
+          currentIncomingCalls: incomingCalls.length,
+          incomingCallIds: incomingCalls.map(c => ({ callId: c.callId, sourceId: c.sourceId }))
+        });
       }
     });
 

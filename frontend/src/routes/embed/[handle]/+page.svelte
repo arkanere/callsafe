@@ -5,6 +5,7 @@
   import { SocketManager } from '$lib/socket.js';
   import { connectionMonitor } from '$lib/monitoring.js';
   import type { CallState } from '$lib/types/webrtc.js';
+  import { generateUUID } from '$lib/utils/uuid.js';
 
   let webrtc: WebRTCManager;
   let socket: SocketManager;
@@ -320,6 +321,13 @@
       return;
     }
     
+    // Generate unique callAttemptId for this call attempt
+    const callAttemptId = generateUUID();
+    console.log('🆔 Generated callAttemptId:', callAttemptId);
+    
+    // Update call state with callAttemptId
+    callState = { ...callState, callAttemptId };
+    
     console.log('🚀 Starting call process...');
     isConnecting = true;
     errorMessage = '';
@@ -343,10 +351,10 @@
       console.log('✅ Connected to signaling server');
       
       // Register as customer with handle
-      console.log('👤 Registering as customer with handle:', handle, 'sourceId:', sourceId);
+      console.log('👤 Registering as customer with handle:', handle, 'sourceId:', sourceId, 'callAttemptId:', callState.callAttemptId);
       connectionStatus = 'Looking for available agent...';
-      socket.connectAsCustomerWithHandle(handle, sourceId);
-      console.log('✅ Customer registration sent with handle:', handle, 'sourceId:', sourceId);
+      socket.connectAsCustomerWithHandle(handle, sourceId, callState.callAttemptId);
+      console.log('✅ Customer registration sent with handle:', handle, 'sourceId:', sourceId, 'callAttemptId:', callState.callAttemptId);
       
     } catch (error) {
       isConnecting = false;
@@ -389,8 +397,8 @@
       // If call doesn't have a callId yet (still connecting), cancel the call request
       if (!callState.callId) {
         console.log('📞 Cancelling call request - no callId assigned yet');
-        console.log('Handle:', handle, 'SourceId:', sourceId);
-        socket.cancelCallRequest(handle, sourceId);
+        console.log('Handle:', handle, 'SourceId:', sourceId, 'CallAttemptId:', callState.callAttemptId);
+        socket.cancelCallRequest(handle, sourceId, callState.callAttemptId);
       } else {
         // For calls with callId, send normal call_ended
         console.log('📞 Ending established call with callId:', callState.callId);
@@ -421,7 +429,7 @@
 
   function retryCall() {
     errorMessage = '';
-    callState = { ...callState, status: 'idle', isMuted: false };
+    callState = { ...callState, status: 'idle', isMuted: false, callAttemptId: undefined };
     isConnecting = false;
     connectionStatus = 'Disconnected';
     connectionRetryCount = 0;

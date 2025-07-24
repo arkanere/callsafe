@@ -1,6 +1,7 @@
 export interface CallState {
   status: 'idle' | 'connecting' | 'connected' | 'ended' | 'failed';
   callId?: string;
+  callAttemptId?: string; // Client-generated unique identifier for this call attempt
   isCustomer: boolean;
   isMuted: boolean;
   error?: string;

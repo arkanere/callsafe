@@ -649,10 +649,7 @@
             if (this.callState.isConnecting) return;
             
             try {
-                this.updateCallState({ 
-                    status: 'connecting', 
-                    isConnecting: true
-                });
+                this.updateCallState({ status: 'connecting', isConnecting: true });
                 
                 // Request microphone access
                 await this.initializeMedia();

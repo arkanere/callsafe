@@ -330,9 +330,9 @@ export class SocketManager {
     this.emit('customer_connect');
   }
 
-  connectAsCustomerWithHandle(handle: string, sourceId?: string): void {
-    console.log('📤 Emitting customer_connect_with_handle for handle:', handle, 'sourceId:', sourceId);
-    this.emit('customer_connect_with_handle', { handle, sourceId });
+  connectAsCustomerWithHandle(handle: string, sourceId?: string, callAttemptId?: string): void {
+    console.log('📤 Emitting customer_connect_with_handle for handle:', handle, 'sourceId:', sourceId, 'callAttemptId:', callAttemptId);
+    this.emit('customer_connect_with_handle', { handle, sourceId, callAttemptId });
   }
 
   endCall(data?: { callId?: string; handle?: string; sourceId?: string }): void {
@@ -340,9 +340,9 @@ export class SocketManager {
     this.emit('call_ended', data || {});
   }
 
-  cancelCallRequest(handle: string, sourceId?: string): void {
-    console.log('📤 Emitting cancel_call_request for handle:', handle, 'sourceId:', sourceId);
-    this.emit('cancel_call_request', { handle, sourceId });
+  cancelCallRequest(handle: string, sourceId?: string, callAttemptId?: string): void {
+    console.log('📤 Emitting cancel_call_request for handle:', handle, 'sourceId:', sourceId, 'callAttemptId:', callAttemptId);
+    this.emit('cancel_call_request', { handle, sourceId, callAttemptId });
   }
 
   // Agent methods

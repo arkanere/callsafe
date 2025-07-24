@@ -1088,18 +1088,25 @@ class UserReceiveActivity : AppCompatActivity() {
     private fun handleCallRequestCancelled(data: Any?) {
         Log.d(TAG, "🔍 Call request cancelled data: $data (${data?.javaClass?.simpleName})")
         
-        val callId: String
-        val reason: String
+        var callId: String = ""
+        var callAttemptId: String = ""
+        var sourceId: String = ""
+        var reason: String = "customer_cancelled"
         
+        // Parse cancellation data with callAttemptId support
         when (data) {
             is JSONObject -> {
-                callId = data.optString("callId")
+                callId = data.optString("callId", "")
+                callAttemptId = data.optString("callAttemptId", "")
+                sourceId = data.optString("sourceId", "")
                 reason = data.optString("reason", "customer_cancelled")
             }
             is String -> {
                 try {
                     val json = JSONObject(data)
-                    callId = json.optString("callId")
+                    callId = json.optString("callId", "")
+                    callAttemptId = json.optString("callAttemptId", "")
+                    sourceId = json.optString("sourceId", "")
                     reason = json.optString("reason", "customer_cancelled")
                 } catch (e: Exception) {
                     Log.e(TAG, "❌ Failed to parse call_request_cancelled data")
@@ -1108,6 +1115,8 @@ class UserReceiveActivity : AppCompatActivity() {
             }
             is Map<*, *> -> {
                 callId = data["callId"]?.toString() ?: ""
+                callAttemptId = data["callAttemptId"]?.toString() ?: ""
+                sourceId = data["sourceId"]?.toString() ?: ""
                 reason = data["reason"]?.toString() ?: "customer_cancelled"
             }
             else -> {
@@ -1116,26 +1125,80 @@ class UserReceiveActivity : AppCompatActivity() {
             }
         }
         
+        Log.d(TAG, "📞 Parsed cancellation data - callId: $callId, callAttemptId: $callAttemptId, sourceId: $sourceId, reason: $reason")
+        
         runOnUiThread {
-            val cancelledCall = incomingCalls.find { it.callId == callId }
+            var cancelledCall: IncomingCall? = null
+            var matchMethod = "none"
             
-            // Stop ringtone if call request is cancelled
-            if (cancelledCall != null) {
-                ringtonePlayer.stopRinging()
-                Log.d(TAG, "🔇 Ringtone stopped - call request cancelled")
+            // METHOD 1: Try callId first (most reliable)
+            if (callId.isNotEmpty()) {
+                cancelledCall = incomingCalls.find { it.callId == callId }
+                if (cancelledCall != null) {
+                    matchMethod = "callId"
+                    Log.d(TAG, "📞 Found call by callId: $callId")
+                } else {
+                    Log.d(TAG, "📞 CallId not found in incoming calls: $callId")
+                }
             }
             
-            incomingCalls.removeAll { it.callId == callId }
-            updateIncomingCallsUI()
+            // METHOD 2: Fallback to sourceId matching (less reliable)
+            if (cancelledCall == null && sourceId.isNotEmpty()) {
+                val matchingCalls = incomingCalls.filter { it.sourceId == sourceId }
+                Log.d(TAG, "📞 Found ${matchingCalls.size} calls with sourceId: $sourceId")
+                
+                when (matchingCalls.size) {
+                    1 -> {
+                        cancelledCall = matchingCalls[0]
+                        matchMethod = "sourceId_single"
+                        Log.d(TAG, "📞 Single sourceId match found: ${cancelledCall.callId}")
+                    }
+                    in 2..Int.MAX_VALUE -> {
+                        // Multiple matches - use most recent
+                        cancelledCall = matchingCalls.maxByOrNull { it.timestamp }
+                        matchMethod = "sourceId_multiple"
+                        Log.w(TAG, "📞 Multiple sourceId matches! Using most recent: ${cancelledCall?.callId}")
+                        Log.w(TAG, "⚠️ This may cancel wrong call if multiple users have same sourceId!")
+                    }
+                    else -> {
+                        Log.e(TAG, "📞 No calls found with sourceId: $sourceId")
+                    }
+                }
+            }
             
-            cancelledCall?.let {
+            // Handle cancellation
+            if (cancelledCall != null) {
+                Log.d(TAG, "📞 Cancelling call using method: $matchMethod, call: ${cancelledCall.callId}")
+                
+                // Stop ringtone if call request is cancelled
+                ringtonePlayer.stopRinging()
+                Log.d(TAG, "🔇 Ringtone stopped - call request cancelled")
+                
+                // Remove from incoming calls
+                incomingCalls.removeAll { it.callId == cancelledCall.callId }
+                updateIncomingCallsUI()
+                
+                // Add to call history
                 addToCallHistory(
-                    callId = callId,
+                    callId = cancelledCall.callId,
                     duration = 0,
                     status = "missed",
-                    sourceId = it.sourceId,
+                    sourceId = cancelledCall.sourceId,
                     reason = reason
                 )
+                
+                Log.d(TAG, "✅ Call request cancellation handled successfully via $matchMethod")
+            } else {
+                Log.e(TAG, "⚠️ Could not find cancelled call in incoming calls list")
+                Log.e(TAG, "Provided - callId: $callId, callAttemptId: $callAttemptId, sourceId: $sourceId")
+                Log.e(TAG, "Current incoming calls: ${incomingCalls.map { "callId=${it.callId}, sourceId=${it.sourceId}" }}")
+                
+                // Still stop ringtone as a safety measure if no incoming calls remain
+                if (incomingCalls.isEmpty()) {
+                    Log.d(TAG, "🔇 No incoming calls remaining - stopping ringtone as safety measure")
+                    ringtonePlayer.stopRinging()
+                }
+            }
             }
         }
     }
