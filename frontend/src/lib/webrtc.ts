@@ -10,6 +10,7 @@ export class WebRTCManager {
   private onStateChange?: (state: CallState) => void;
   private onRemoteStream?: (stream: MediaStream) => void;
   private onWebRTCStateChange?: (state: string, reason: string | null) => void;
+  private pendingIceCandidates: RTCIceCandidateInit[] = [];
 
   constructor(isCustomer: boolean = true) {
     this.callState = {
@@ -277,6 +278,9 @@ export class WebRTCManager {
     const answer = await this.peerConnection.createAnswer();
     await this.peerConnection.setLocalDescription(answer);
     
+    // Process any pending ICE candidates now that remote description is set
+    await this.processPendingIceCandidates();
+    
     return answer;
   }
 
@@ -287,6 +291,9 @@ export class WebRTCManager {
     
     console.log('Setting remote answer:', answer);
     await this.peerConnection.setRemoteDescription(answer);
+    
+    // Process any pending ICE candidates now that remote description is set
+    await this.processPendingIceCandidates();
   }
 
   async addIceCandidate(candidate: RTCIceCandidateInit | any): Promise<void> {
@@ -294,44 +301,78 @@ export class WebRTCManager {
       throw new Error('Peer connection not initialized');
     }
     
-    // Only add ICE candidates if we have a remote description
+    // Validate and normalize candidate format first
+    const normalizedCandidate = this.normalizeIceCandidate(candidate);
+    if (!normalizedCandidate) {
+      return; // Skip invalid candidates
+    }
+    
+    // If no remote description is set yet, queue the candidate
     if (!this.peerConnection.remoteDescription) {
-      console.warn('Cannot add ICE candidate - no remote description set yet');
+      console.log('📦 Queueing ICE candidate - remote description not set yet');
+      this.pendingIceCandidates.push(normalizedCandidate);
       return;
     }
     
-    // Validate and normalize candidate format
-    let normalizedCandidate: RTCIceCandidateInit;
-    
-    if (candidate && typeof candidate === 'object') {
-      // Handle both direct RTCIceCandidateInit and wrapped formats
-      if (candidate.candidate && candidate.sdpMid !== undefined && candidate.sdpMLineIndex !== undefined) {
-        // Already in correct format
-        normalizedCandidate = candidate;
-      } else if (candidate.candidate && candidate.candidate.candidate && candidate.candidate.sdpMid !== undefined) {
-        // Wrapped in candidate object (from Android)
-        normalizedCandidate = {
-          candidate: candidate.candidate.candidate,
-          sdpMid: candidate.candidate.sdpMid,
-          sdpMLineIndex: candidate.candidate.sdpMLineIndex,
-          usernameFragment: candidate.candidate.usernameFragment
-        };
-      } else {
-        console.warn('Invalid candidate format, skipping:', candidate);
-        return;
-      }
-    } else {
+    // Add the candidate immediately if remote description is available
+    await this.addIceCandidateImmediate(normalizedCandidate);
+  }
+
+  private normalizeIceCandidate(candidate: any): RTCIceCandidateInit | null {
+    if (!candidate || typeof candidate !== 'object') {
       console.warn('Candidate is not an object, skipping:', candidate);
+      return null;
+    }
+
+    // Handle both direct RTCIceCandidateInit and wrapped formats
+    if (candidate.candidate && candidate.sdpMid !== undefined && candidate.sdpMLineIndex !== undefined) {
+      // Already in correct format
+      return candidate;
+    } else if (candidate.candidate && candidate.candidate.candidate && candidate.candidate.sdpMid !== undefined) {
+      // Wrapped in candidate object (from Android)
+      return {
+        candidate: candidate.candidate.candidate,
+        sdpMid: candidate.candidate.sdpMid,
+        sdpMLineIndex: candidate.candidate.sdpMLineIndex,
+        usernameFragment: candidate.candidate.usernameFragment
+      };
+    } else {
+      console.warn('Invalid candidate format, skipping:', candidate);
+      return null;
+    }
+  }
+
+  private async addIceCandidateImmediate(candidate: RTCIceCandidateInit): Promise<void> {
+    if (!this.peerConnection) {
+      console.warn('Cannot add ICE candidate - peer connection not available');
       return;
     }
-    
+
     try {
-      await this.peerConnection.addIceCandidate(normalizedCandidate);
+      await this.peerConnection.addIceCandidate(candidate);
       console.log('✅ ICE candidate added successfully');
     } catch (error) {
       console.warn('Failed to add ICE candidate:', error);
       // Don't throw - ICE candidates can fail without breaking the call
     }
+  }
+
+  private async processPendingIceCandidates(): Promise<void> {
+    if (this.pendingIceCandidates.length === 0) {
+      return;
+    }
+
+    console.log(`📦 Processing ${this.pendingIceCandidates.length} pending ICE candidates`);
+    
+    // Process all pending candidates
+    const candidates = [...this.pendingIceCandidates];
+    this.pendingIceCandidates = []; // Clear the queue
+    
+    for (const candidate of candidates) {
+      await this.addIceCandidateImmediate(candidate);
+    }
+    
+    console.log('✅ All pending ICE candidates processed');
   }
 
   private setMobileAudioOutput(): void {
@@ -345,7 +386,23 @@ export class WebRTCManager {
         remoteAudio.setSinkId('communications').then(() => {
           console.log('✅ Audio output set to earpiece');
         }).catch((error) => {
-          console.log('⚠️ Could not set audio output:', error);
+          // Handle different error types appropriately
+          if (error.name === 'NotFoundError') {
+            console.log('📱 Audio output device not available on this device (normal on some browsers/devices)');
+          } else if (error.name === 'NotAllowedError') {
+            console.log('🔒 Audio output change not allowed by browser policy');
+          } else {
+            console.log('⚠️ Could not set audio output:', error.name, '-', error.message);
+          }
+          
+          // Fallback: ensure audio will still play through default output
+          try {
+            remoteAudio.play().catch(() => {
+              console.log('📱 Audio autoplay may require user interaction');
+            });
+          } catch (playError) {
+            console.log('📱 Audio playback setup failed:', playError.message);
+          }
         });
       }
     }
@@ -356,10 +413,12 @@ export class WebRTCManager {
         const audioContext = new AudioContext();
         // Request permission for audio on mobile
         if (audioContext.state === 'suspended') {
-          audioContext.resume();
+          audioContext.resume().catch((error) => {
+            console.log('📱 Audio context resume failed (may require user interaction):', error.message);
+          });
         }
       } catch (error) {
-        console.log('⚠️ Audio context setup failed:', error);
+        console.log('📱 Audio context setup failed:', error.message);
       }
     }
   }
@@ -401,6 +460,9 @@ export class WebRTCManager {
       this.peerConnection.close();
       this.peerConnection = null;
     }
+    
+    // Clear any pending ICE candidates
+    this.pendingIceCandidates = [];
     
     this.updateCallState({ status: 'ended' });
   }
