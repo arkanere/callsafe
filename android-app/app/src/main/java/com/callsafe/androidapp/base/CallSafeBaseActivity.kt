@@ -178,4 +178,46 @@ abstract class CallSafeBaseActivity : AppCompatActivity(), CallSafeServiceListen
     protected fun hasIncomingCalls(): Boolean = currentState.incomingCalls.isNotEmpty()
     
     protected fun getConnectionStatus(): String = currentState.connectionStatus
+    
+    // Multi-device support methods
+    
+    /**
+     * Called when multi-device state changes
+     * Override this to update UI based on multi-device coordination
+     */
+    protected open fun handleMultiDeviceStateChange(state: MultiDeviceCallState) {
+        currentMultiDeviceState = state
+        // Default implementation does nothing
+        // Subclasses should override to update UI
+    }
+    
+    /**
+     * Called when a call is accepted on another device
+     */
+    protected open fun handleCallAcceptedOnOtherDevice(callId: String, deviceType: String) {
+        Log.d(TAG, "📱 Call $callId accepted on $deviceType device")
+        // Default implementation does nothing
+    }
+    
+    // Multi-device helper methods
+    
+    protected fun isCallAcceptedOnOtherDevice(callId: String): Boolean {
+        return currentMultiDeviceState.callAcceptedByDevice != null && 
+               currentMultiDeviceState.callAcceptedByDevice != "android" &&
+               currentMultiDeviceState.handleBusyWithCall == callId
+    }
+    
+    protected fun getActiveCallDevice(): String? {
+        return when {
+            currentMultiDeviceState.localDeviceState.currentCall != null -> "android"
+            currentMultiDeviceState.callAcceptedByDevice != null -> currentMultiDeviceState.callAcceptedByDevice
+            else -> currentMultiDeviceState.otherDevicesActive.find { it.currentCallId != null }?.deviceType
+        }
+    }
+    
+    protected fun isHandleBusy(): Boolean {
+        return currentMultiDeviceState.handleBusyWithCall != null ||
+               currentMultiDeviceState.localDeviceState.currentCall != null ||
+               currentMultiDeviceState.otherDevicesActive.any { it.currentCallId != null }
+    }
 }
