@@ -335,7 +335,7 @@
     connectionMonitor.startConnectionAttempt();
     
     // Reset mute state for new call and set status to connecting immediately
-    callState = { ...callState, isMuted: false, status: 'connecting' };
+    callState = { ...callState, isMuted: false, status: 'connecting', callAttemptId };
 
     try {
       console.log('🎤 Requesting microphone permission...');

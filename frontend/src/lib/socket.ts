@@ -335,7 +335,7 @@ export class SocketManager {
     this.emit('customer_connect_with_handle', { handle, sourceId, callAttemptId });
   }
 
-  endCall(data?: { callId?: string; handle?: string; sourceId?: string }): void {
+  endCall(data?: { callId?: string; handle?: string; sourceId?: string; callAttemptId?: string }): void {
     console.log('📤 Emitting call_ended with data:', data);
     this.emit('call_ended', data || {});
   }
@@ -385,46 +385,46 @@ export class SocketManager {
     this.emit('agent_offline');
   }
 
-  acceptCall(callId: string, handle?: string, sourceId?: string): void {
-    console.log('📤 Emitting accept_call for:', callId, 'handle:', handle, 'sourceId:', sourceId);
-    this.emit('accept_call', { callId, handle, sourceId });
+  acceptCall(callId: string, handle?: string, sourceId?: string, callAttemptId?: string): void {
+    console.log('📤 Emitting accept_call for:', callId, 'handle:', handle, 'sourceId:', sourceId, 'callAttemptId:', callAttemptId);
+    this.emit('accept_call', { callId, handle, sourceId, callAttemptId });
   }
 
-  declineCall(callId: string, handle?: string, sourceId?: string): void {
-    console.log('📤 Emitting decline_call for:', callId, 'handle:', handle, 'sourceId:', sourceId);
-    this.emit('decline_call', { callId, handle, sourceId });
+  declineCall(callId: string, handle?: string, sourceId?: string, callAttemptId?: string): void {
+    console.log('📤 Emitting decline_call for:', callId, 'handle:', handle, 'sourceId:', sourceId, 'callAttemptId:', callAttemptId);
+    this.emit('decline_call', { callId, handle, sourceId, callAttemptId });
   }
 
   // WebRTC signaling methods
-  sendOffer(callId: string, offer: RTCSessionDescriptionInit, handle?: string, sourceId?: string): void {
-    console.log('📤 Emitting offer for:', callId, offer, 'handle:', handle, 'sourceId:', sourceId);
-    this.emit('offer', { callId, offer, handle, sourceId });
+  sendOffer(callId: string, offer: RTCSessionDescriptionInit, handle?: string, sourceId?: string, callAttemptId?: string): void {
+    console.log('📤 Emitting offer for:', callId, offer, 'handle:', handle, 'sourceId:', sourceId, 'callAttemptId:', callAttemptId);
+    this.emit('offer', { callId, offer, handle, sourceId, callAttemptId });
   }
 
-  sendAnswer(callId: string, answer: RTCSessionDescriptionInit, handle?: string, sourceId?: string): void {
-    console.log('📤 Emitting answer for:', callId, answer, 'handle:', handle, 'sourceId:', sourceId);
-    this.emit('answer', { callId, answer, handle, sourceId });
+  sendAnswer(callId: string, answer: RTCSessionDescriptionInit, handle?: string, sourceId?: string, callAttemptId?: string): void {
+    console.log('📤 Emitting answer for:', callId, answer, 'handle:', handle, 'sourceId:', sourceId, 'callAttemptId:', callAttemptId);
+    this.emit('answer', { callId, answer, handle, sourceId, callAttemptId });
   }
 
-  sendIceCandidate(callId: string, candidate: RTCIceCandidateInit, handle?: string, sourceId?: string): void {
-    console.log('📤 Emitting ice_candidate for:', callId, candidate, 'handle:', handle, 'sourceId:', sourceId);
-    this.emit('ice_candidate', { callId, candidate, handle, sourceId });
+  sendIceCandidate(callId: string, candidate: RTCIceCandidateInit, handle?: string, sourceId?: string, callAttemptId?: string): void {
+    console.log('📤 Emitting ice_candidate for:', callId, candidate, 'handle:', handle, 'sourceId:', sourceId, 'callAttemptId:', callAttemptId);
+    this.emit('ice_candidate', { callId, candidate, handle, sourceId, callAttemptId });
   }
 
   // WebRTC state synchronization methods
-  emitWebRTCConnected(callId: string, handle?: string, sourceId?: string): void {
-    console.log('📤 Emitting webrtc_connected for:', callId, 'handle:', handle, 'sourceId:', sourceId);
-    this.emit('webrtc_connected', { callId, handle, sourceId });
+  emitWebRTCConnected(callId: string, handle?: string, sourceId?: string, callAttemptId?: string): void {
+    console.log('📤 Emitting webrtc_connected for:', callId, 'handle:', handle, 'sourceId:', sourceId, 'callAttemptId:', callAttemptId);
+    this.emit('webrtc_connected', { callId, handle, sourceId, callAttemptId });
   }
 
-  emitWebRTCFailed(callId: string, handle?: string, sourceId?: string, reason?: string): void {
-    console.log('📤 Emitting webrtc_failed for:', callId, 'handle:', handle, 'sourceId:', sourceId, 'reason:', reason);
-    this.emit('webrtc_failed', { callId, handle, sourceId, reason });
+  emitWebRTCFailed(callId: string, handle?: string, sourceId?: string, callAttemptId?: string, reason?: string): void {
+    console.log('📤 Emitting webrtc_failed for:', callId, 'handle:', handle, 'sourceId:', sourceId, 'callAttemptId:', callAttemptId, 'reason:', reason);
+    this.emit('webrtc_failed', { callId, handle, sourceId, callAttemptId, reason });
   }
 
-  emitWebRTCDisconnected(callId: string, handle?: string, sourceId?: string, reason?: string): void {
-    console.log('📤 Emitting webrtc_disconnected for:', callId, 'handle:', handle, 'sourceId:', sourceId, 'reason:', reason);
-    this.emit('webrtc_disconnected', { callId, handle, sourceId, reason });
+  emitWebRTCDisconnected(callId: string, handle?: string, sourceId?: string, callAttemptId?: string, reason?: string): void {
+    console.log('📤 Emitting webrtc_disconnected for:', callId, 'handle:', handle, 'sourceId:', sourceId, 'callAttemptId:', callAttemptId, 'reason:', reason);
+    this.emit('webrtc_disconnected', { callId, handle, sourceId, callAttemptId, reason });
   }
 
   // Multi-device coordination methods

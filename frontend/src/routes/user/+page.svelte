@@ -12,7 +12,7 @@
   
   // Helper function to construct full URL from handle
   function getFullUrl(handle) {
-    return `https://callsafe.tech/user/call/${handle}`;
+    return `https://callsafe.tech/embed/${handle}`;
   }
   
   // Get user ID from localStorage (session management)
@@ -59,7 +59,7 @@
   function goToCustomer() {
     if (callSafeHandle) {
       const sourceIdParam = userData?.sourceId ? `?sourceId=${userData.sourceId}` : '';
-      goto(`/user/call/${callSafeHandle}${sourceIdParam}`);
+      goto(`/embed/${callSafeHandle}${sourceIdParam}`);
     } else {
       goto('/user/customer');
     }
