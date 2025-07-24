@@ -8,8 +8,10 @@ import android.content.Intent
 import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import com.callsafe.androidapp.IncomingCallActivity
+import com.callsafe.androidapp.IncomingCallActivityNew
 import com.callsafe.androidapp.R
+import com.callsafe.androidapp.service.CallSafeService
+import com.callsafe.androidapp.service.CallReceptionCoordinator
 import com.callsafe.androidapp.utils.SessionManager
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
@@ -79,6 +81,14 @@ class CallSafeFirebaseMessagingService : FirebaseMessagingService() {
                 Log.i(TAG, "🔚 Handling call ended notification")
                 handleCallEndedNotification(data)
             }
+            "call_cancelled" -> {
+                Log.i(TAG, "❌ Handling call cancelled notification")
+                handleCallCancelledNotification(data)
+            }
+            "call_answered_elsewhere" -> {
+                Log.i(TAG, "📱 Call answered on another device")
+                handleCallAnsweredElsewhereNotification(data)
+            }
             "missed_call" -> {
                 Log.i(TAG, "📵 Handling missed call notification")
                 handleMissedCallNotification(data)
@@ -103,11 +113,26 @@ class CallSafeFirebaseMessagingService : FirebaseMessagingService() {
             return
         }
         
-        // Show full-screen incoming call activity
-        showIncomingCallActivity(callId, sourceId, callerName)
-        
-        // Also show notification as backup
-        showIncomingCallNotification(callId, sourceId, callerName)
+        // Ensure CallSafe service is running when incoming call arrives
+        val sessionManager = SessionManager.getInstance(this)
+        if (sessionManager.isSessionValid()) {
+            Log.i(TAG, "🔗 Ensuring CallSafe service is running for incoming call")
+            CallSafeService.startService(this)
+            
+            // Check if call is still available before showing UI
+            validateCallStillAvailable(data) { isValid ->
+                if (isValid) {
+                    // Show full-screen incoming call activity
+                    showIncomingCallActivity(callId, sourceId, callerName)
+                    
+                    // Also show notification as backup
+                    showIncomingCallNotification(callId, sourceId, callerName)
+                } else {
+                    // Call was already accepted on web - show brief notification
+                    showCallAnsweredElsewhereNotification("web")
+                }
+            }
+        }
     }
     
     private fun handleCallEndedNotification(data: Map<String, String>) {
@@ -120,6 +145,32 @@ class CallSafeFirebaseMessagingService : FirebaseMessagingService() {
         
         // Could show a brief "Call ended" notification
         showSimpleNotification("Call Ended", "Your call has ended")
+    }
+    
+    private fun handleCallCancelledNotification(data: Map<String, String>) {
+        val callId = data["callId"] ?: ""
+        Log.i(TAG, "❌ Call cancelled notification for callId: $callId")
+        
+        // Cancel any existing call notifications
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.cancel(NOTIFICATION_ID)
+        
+        // Handle call cancellation from multi-device coordinator
+        // The service should already be handling this via socket events
+    }
+    
+    private fun handleCallAnsweredElsewhereNotification(data: Map<String, String>) {
+        val callId = data["callId"] ?: ""
+        val deviceType = data["deviceType"] ?: "web"
+        
+        Log.i(TAG, "📱 Call $callId answered on $deviceType device")
+        
+        // Cancel any existing call notifications
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.cancel(NOTIFICATION_ID)
+        
+        // Show brief notification that call was answered elsewhere
+        showCallAnsweredElsewhereNotification(deviceType)
     }
     
     private fun handleMissedCallNotification(data: Map<String, String>) {
@@ -144,7 +195,7 @@ class CallSafeFirebaseMessagingService : FirebaseMessagingService() {
     private fun showIncomingCallActivity(callId: String, sourceId: String, callerName: String) {
         Log.i(TAG, "🚀 Launching incoming call activity")
         
-        val intent = Intent(this, IncomingCallActivity::class.java).apply {
+        val intent = Intent(this, IncomingCallActivityNew::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or 
                    Intent.FLAG_ACTIVITY_CLEAR_TOP or 
                    Intent.FLAG_ACTIVITY_SINGLE_TOP
@@ -168,7 +219,7 @@ class CallSafeFirebaseMessagingService : FirebaseMessagingService() {
         Log.i(TAG, "🔔 Showing incoming call notification")
         
         // Intent to open incoming call activity
-        val intent = Intent(this, IncomingCallActivity::class.java).apply {
+        val intent = Intent(this, IncomingCallActivityNew::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             putExtra("callId", callId)
             putExtra("sourceId", sourceId)
@@ -224,6 +275,53 @@ class CallSafeFirebaseMessagingService : FirebaseMessagingService() {
         
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         notificationManager.notify(System.currentTimeMillis().toInt(), notification)
+    }
+    
+    private fun showCallAnsweredElsewhereNotification(deviceType: String) {
+        val deviceName = when (deviceType) {
+            "web" -> "web browser"
+            "desktop" -> "desktop app"
+            "android" -> "Android device"
+            else -> "another device"
+        }
+        
+        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_call) 
+            .setContentTitle("Call Answered")
+            .setContentText("Call answered on $deviceName")
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setAutoCancel(true)
+            .setTimeoutAfter(5000) // Auto-dismiss after 5 seconds
+            .build()
+        
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.notify(NOTIFICATION_ID + 2, notification)
+        
+        Log.i(TAG, "✅ Call answered elsewhere notification shown")
+    }
+    
+    private fun validateCallStillAvailable(callData: Map<String, String>, callback: (Boolean) -> Unit) {
+        val callId = callData["callId"]
+        if (callId == null) {
+            callback(false)
+            return
+        }
+        
+        Log.d(TAG, "🔍 Validating call availability via service: $callId")
+        
+        // For now, we'll assume the call is available since this is an FCM notification
+        // In a production system, you might want to make a quick API call to verify
+        // or check with the service if it's running
+        
+        // Try to get the service state to check if call is still valid
+        try {
+            // Simple validation - if we get FCM, assume call is available unless proven otherwise
+            // The service and multi-device coordinator will handle the actual validation
+            callback(true)
+        } catch (e: Exception) {
+            Log.w(TAG, "⚠️ Could not validate call availability, assuming available", e)
+            callback(true) // Err on the side of showing the call
+        }
     }
     
     private fun createNotificationChannel() {

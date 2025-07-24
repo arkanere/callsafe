@@ -64,7 +64,8 @@ class LoginActivity : AppCompatActivity() {
     }
     
     private fun navigateToMainApp() {
-        startActivity(Intent(this, UserReceiveActivity::class.java))
+        // Use the new service-based activity
+        startActivity(Intent(this, UserReceiveActivityNew::class.java))
         finish()
     }
     

@@ -27,8 +27,10 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="60dp"
                 app:cardBackgroundColor="@color/card_white"
-                app:cardCornerRadius="16dp"
-                app:cardElevation="8dp"
+                app:cardCornerRadius="20dp"
+                app:cardElevation="12dp"
+                app:strokeColor="@color/input_border_gray_300"
+                app:strokeWidth="1dp"
                 app:layout_constraintEnd_toEndOf="parent"
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintTop_toTopOf="parent"
@@ -38,7 +40,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="32dp">
+                    android:padding="36dp">
 
                     <com.google.android.material.textview.MaterialTextView
                         android:id="@+id/tv_title"
@@ -47,24 +49,26 @@
                         android:layout_gravity="center"
                         android:layout_marginBottom="8dp"
                         android:text="Login"
-                        android:textSize="28sp"
+                        android:textSize="32sp"
                         android:textStyle="bold"
-                        android:textColor="@color/text_gray_900" />
+                        android:textColor="@color/text_gray_900"
+                        android:fontFamily="sans-serif-medium" />
 
                     <com.google.android.material.textview.MaterialTextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_gravity="center"
-                        android:layout_marginBottom="32dp"
+                        android:layout_marginBottom="40dp"
                         android:text="Welcome to CallSafe"
-                        android:textSize="16sp"
-                        android:textColor="@color/text_gray_600" />
+                        android:textSize="18sp"
+                        android:textColor="@color/text_gray_600"
+                        android:fontFamily="sans-serif" />
 
                     <com.google.android.material.textfield.TextInputLayout
                         android:id="@+id/til_name"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginBottom="16dp"
+                        android:layout_marginBottom="20dp"
                         android:visibility="gone"
                         style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
                         app:boxBackgroundColor="@color/input_bg_gray_50"
@@ -79,7 +83,8 @@
                             android:hint="Full Name"
                             android:inputType="textPersonName"
                             android:textSize="16sp"
-                            android:textColor="@color/text_gray_900"
+                            android:textColor="@color/input_text_color"
+                            android:textColorHint="@color/input_hint_color"
                             android:background="@android:color/transparent" />
                     </com.google.android.material.textfield.TextInputLayout>
 
@@ -87,7 +92,7 @@
                         android:id="@+id/til_email"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginBottom="16dp"
+                        android:layout_marginBottom="20dp"
                         style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
                         app:boxBackgroundColor="@color/input_bg_gray_50"
                         app:boxStrokeColor="@color/input_focus_blue_500"
@@ -101,7 +106,8 @@
                             android:hint="Email Address"
                             android:inputType="textEmailAddress"
                             android:textSize="16sp"
-                            android:textColor="@color/text_gray_900"
+                            android:textColor="@color/input_text_color"
+                            android:textColorHint="@color/input_hint_color"
                             android:background="@android:color/transparent" />
                     </com.google.android.material.textfield.TextInputLayout>
 
@@ -109,7 +115,7 @@
                         android:id="@+id/til_password"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginBottom="16dp"
+                        android:layout_marginBottom="20dp"
                         style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
                         app:boxBackgroundColor="@color/input_bg_gray_50"
                         app:boxStrokeColor="@color/input_focus_blue_500"
@@ -124,7 +130,8 @@
                             android:hint="Password"
                             android:inputType="textPassword"
                             android:textSize="16sp"
-                            android:textColor="@color/text_gray_900"
+                            android:textColor="@color/input_text_color"
+                            android:textColorHint="@color/input_hint_color"
                             android:background="@android:color/transparent" />
                     </com.google.android.material.textfield.TextInputLayout>
 
@@ -132,7 +139,7 @@
                         android:id="@+id/til_confirm_password"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginBottom="24dp"
+                        android:layout_marginBottom="32dp"
                         android:visibility="gone"
                         style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
                         app:boxBackgroundColor="@color/input_bg_gray_50"
@@ -148,19 +155,24 @@
                             android:hint="Confirm Password"
                             android:inputType="textPassword"
                             android:textSize="16sp"
-                            android:textColor="@color/text_gray_900"
+                            android:textColor="@color/input_text_color"
+                            android:textColorHint="@color/input_hint_color"
                             android:background="@android:color/transparent" />
                     </com.google.android.material.textfield.TextInputLayout>
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btn_submit"
                         android:layout_width="match_parent"
-                        android:layout_height="56dp"
-                        android:layout_marginBottom="16dp"
+                        android:layout_height="60dp"
+                        android:layout_marginTop="8dp"
+                        android:layout_marginBottom="20dp"
                         android:text="Login"
-                        android:textSize="16sp"
+                        android:textSize="18sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/white"
                         android:backgroundTint="@color/button_blue_600"
-                        app:cornerRadius="12dp" />
+                        app:cornerRadius="16dp"
+                        app:elevation="4dp" />
 
                     <com.google.android.material.textview.MaterialTextView
                         android:id="@+id/tv_toggle_mode"

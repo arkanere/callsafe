@@ -1,9 +1,14 @@
 package com.callsafe.androidapp
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.os.PowerManager
+import android.provider.Settings
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -23,6 +28,8 @@ import com.callsafe.androidapp.models.IncomingCall
 import com.callsafe.androidapp.models.FCMTokenRequest
 import com.callsafe.androidapp.network.RetrofitInstance
 import com.callsafe.androidapp.network.SocketManager
+import com.callsafe.androidapp.service.CallSafeBackgroundService
+import com.callsafe.androidapp.utils.PermissionHelper
 import com.callsafe.androidapp.utils.RingtonePlayer
 import com.callsafe.androidapp.utils.SessionManager
 import com.callsafe.androidapp.webrtc.WebRTCManager
@@ -92,6 +99,9 @@ class UserReceiveActivity : AppCompatActivity() {
         webrtcManager = WebRTCManager(this)
         ringtonePlayer = RingtonePlayer(this)
         
+        // Check permissions for incoming calls
+        checkCallPermissions()
+        
         // Check if user has a valid session
         if (!sessionManager.isSessionValid()) {
             Toast.makeText(this, "Session expired. Please login again.", Toast.LENGTH_LONG).show()
@@ -118,8 +128,8 @@ class UserReceiveActivity : AppCompatActivity() {
         super.onDestroy()
         // Clean up on destroy
         
-        // Cleanup connection
-        socketManager.goOffline()
+        // Note: Don't disconnect socket here - background service maintains connection
+        // socketManager.goOffline() // Commented out - background service handles this
         
         // Clean up WebRTC
         webrtcManager.dispose()
@@ -130,22 +140,9 @@ class UserReceiveActivity : AppCompatActivity() {
         // Clean up call timer
         stopCallTimer()
         
-        // Remove all event listeners
-        socketManager.off("new_incoming_call")
-        socketManager.off("call_routed")
-        socketManager.off("offer")
-        socketManager.off("ice_candidate")
-        socketManager.off("call_ended")
-        socketManager.off("call_disconnected")
-        socketManager.off("call_cancelled")
-        socketManager.off("call_request_cancelled")
-        socketManager.off("customer_disconnected")
-        socketManager.off("network_error")
-        socketManager.off("reconnect_attempt")
-        socketManager.off("connection_failed")
-        socketManager.off("call_no_longer_available")
-        socketManager.off("agent_registered")
-        socketManager.off("missed_call")
+        // Note: Don't remove event listeners - background service needs them
+        // Event listeners will be managed by the background service
+        Log.i(TAG, "🔧 Preserving event listeners for background service")
     }
     
     private fun initViews() {
@@ -361,9 +358,60 @@ class UserReceiveActivity : AppCompatActivity() {
         // Load call history from local storage
         loadCallHistory()
         
-        // Connect to server with cached data
-        tvConnectionStatus.text = "Connecting to server..."
-        connectToServer()
+        // Start background service for always-on connectivity
+        startBackgroundService()
+        
+        // Wait for background service to establish connection instead of creating duplicate
+        tvConnectionStatus.text = "Starting background service..."
+        
+        // Check if already connected via background service
+        Handler(Looper.getMainLooper()).postDelayed({
+            checkBackgroundServiceConnection()
+        }, 2000)
+        
+        // Timeout fallback - if still connecting after 15 seconds, force reconnect
+        Handler(Looper.getMainLooper()).postDelayed({
+            if (tvConnectionStatus.text.toString().contains("connecting") || 
+                tvConnectionStatus.text.toString().contains("Connecting") ||
+                tvConnectionStatus.text.toString().contains("Please wait")) {
+                Log.w(TAG, "⚠️ Connection timeout - forcing reconnect")
+                tvConnectionStatus.text = "Connection timeout - retrying..."
+                
+                // Force disconnect and reconnect
+                socketManager.disconnect()
+                Handler(Looper.getMainLooper()).postDelayed({
+                    connectToServer()
+                }, 1000)
+            }
+        }, 15000)
+    }
+    
+    private fun checkBackgroundServiceConnection() {
+        // Check if SocketManager is already connected (via background service)
+        if (socketManager.isConnected()) {
+            Log.i(TAG, "✅ Background service already connected")
+            tvConnectionStatus.text = "Connected via background service"
+            isConnected = true
+            
+            // DON'T call goOnlineWithHandle() here - background service already did it
+            // Just update UI to ready state
+            tvConnectionStatus.text = "Ready to receive calls"
+        } else {
+            Log.i(TAG, "⚠️ Background service not connected yet, waiting...")
+            tvConnectionStatus.text = "Background service connecting..."
+            
+            // Wait a bit longer and check again, or fall back to direct connection
+            Handler(Looper.getMainLooper()).postDelayed({
+                if (socketManager.isConnected()) {
+                    Log.i(TAG, "✅ Background service connected while waiting")
+                    tvConnectionStatus.text = "Ready to receive calls"
+                    isConnected = true
+                } else {
+                    Log.i(TAG, "⚠️ Background service still not ready, creating fallback connection")
+                    connectToServer()
+                }
+            }, 3000)
+        }
     }
     
     private fun navigateToLogin() {
@@ -458,7 +506,7 @@ class UserReceiveActivity : AppCompatActivity() {
         }
         
         socketManager.on("agent_registered") { data ->
-            Log.i(TAG, "✅ AGENT REGISTERED - Ready for calls")
+            Log.i(TAG, "✅ AGENT REGISTERED - Ready for calls (from background service)")
             runOnUiThread {
                 tvConnectionStatus.text = "Ready to receive calls"
                 isConnected = true
@@ -501,6 +549,49 @@ class UserReceiveActivity : AppCompatActivity() {
         Log.i(TAG, "Connecting with handle: $handle")
         socketManager.goOnlineWithHandle(handle, sourceId.takeIf { it.isNotEmpty() })
         tvConnectionStatus.text = "Connecting - Please wait..."
+    }
+    
+    private fun startBackgroundService() {
+        Log.i(TAG, "🚀 Starting CallSafe background service")
+        
+        // Request battery optimization exemption for reliable background operation
+        requestBatteryOptimizationExemption()
+        
+        try {
+            CallSafeBackgroundService.startService(this)
+            tvConnectionStatus.text = "Background service started - Ready for calls"
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Failed to start background service", e)
+            tvConnectionStatus.text = "Failed to start background service"
+        }
+    }
+    
+    private fun requestBatteryOptimizationExemption() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+            val packageName = packageName
+            
+            if (!powerManager.isIgnoringBatteryOptimizations(packageName)) {
+                Log.i(TAG, "🔋 Requesting battery optimization exemption")
+                try {
+                    val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                        data = Uri.parse("package:$packageName")
+                    }
+                    startActivity(intent)
+                } catch (e: Exception) {
+                    Log.w(TAG, "⚠️ Could not request battery optimization exemption", e)
+                    // Fallback: Open battery optimization settings
+                    try {
+                        val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                        startActivity(intent)
+                    } catch (e2: Exception) {
+                        Log.w(TAG, "⚠️ Could not open battery optimization settings", e2)
+                    }
+                }
+            } else {
+                Log.i(TAG, "✅ Battery optimization already disabled")
+            }
+        }
     }
     
     
@@ -1317,8 +1408,8 @@ class UserReceiveActivity : AppCompatActivity() {
                     sourceId = sourceId
                 )
                 
-                val apiService = RetrofitInstance.getApiService()
-                val response = apiService.updateFCMToken(request)
+                val signalingApiService = RetrofitInstance.signalingApi
+                val response = signalingApiService.updateFCMToken(request)
                 
                 if (response.isSuccessful) {
                     Log.i(TAG, "✅ FCM token sent to server successfully")
@@ -1333,6 +1424,67 @@ class UserReceiveActivity : AppCompatActivity() {
                 Log.e(TAG, "❌ Error sending FCM token to server", e)
                 // Don't show error to user - this is a background operation
             }
+        }
+    }
+    
+    private fun checkCallPermissions() {
+        Log.i(TAG, "🔍 Checking call permissions")
+        
+        // Log current permission status
+        PermissionHelper.logPermissionStatus(this)
+        
+        // Check if full-screen notifications are enabled
+        if (!PermissionHelper.canUseFullScreenIntent(this)) {
+            Log.w(TAG, "⚠️ Full-screen notifications not enabled")
+            val message = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                "To receive incoming calls when the app is closed, please enable 'Display over other apps' permission in Settings."
+            } else {
+                "To receive incoming calls when the app is closed, please ensure notifications are enabled in Settings."
+            }
+            showPermissionDialog(
+                "Enable Call Notifications",
+                message,
+                "Open Settings"
+            ) {
+                PermissionHelper.openFullScreenIntentSettings(this)
+            }
+            return
+        }
+        
+        // Check if notifications are enabled
+        if (!PermissionHelper.canShowNotifications(this)) {
+            Log.w(TAG, "⚠️ Notifications not enabled")
+            showPermissionDialog(
+                "Enable Notifications",
+                "CallSafe needs notification permissions to show incoming calls.",
+                "Open Settings"
+            ) {
+                PermissionHelper.openNotificationSettings(this)
+            }
+            return
+        }
+        
+        // Check if overlay permission is granted (helpful but not critical)
+        if (!PermissionHelper.canDrawOverlays(this)) {
+            Log.w(TAG, "⚠️ Overlay permission not granted - may affect call display")
+        }
+        
+        Log.i(TAG, "✅ All critical permissions are granted")
+    }
+    
+    private fun showPermissionDialog(title: String, message: String, buttonText: String, onAction: () -> Unit) {
+        runOnUiThread {
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle(title)
+                .setMessage(message)
+                .setPositiveButton(buttonText) { _, _ ->
+                    onAction()
+                }
+                .setNegativeButton("Later") { dialog, _ ->
+                    dialog.dismiss()
+                }
+                .setCancelable(false)
+                .show()
         }
     }
 }

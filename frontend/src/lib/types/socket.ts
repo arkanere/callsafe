@@ -23,6 +23,7 @@ export interface ServerEvents {
   agent_registered: (data: { agentId: string; handle?: string; sourceId?: string }) => void;
   call_request_cancelled: (data: { handle: string; reason: string }) => void;
   handle_not_found: () => void;
+  missed_call: (data: { callId: string; sourceId?: string; reason?: string }) => void;
 }
 
 export interface ErrorEvents {
@@ -43,9 +44,36 @@ export interface WebRTCSignalingEvents {
   ice_candidate: (data: { callId: string; candidate: RTCIceCandidateInit }) => void;
 }
 
+// Multi-device coordination events
+export interface MultiDeviceEvents {
+  // Device status events
+  device_registered: (data: { handle: string; deviceType: 'android' | 'web'; online: boolean; fcmToken?: string }) => void;
+  device_status_changed: (data: { handle: string; deviceType: 'android' | 'web'; online: boolean }) => void;
+  handle_busy_state_changed: (data: { handle: string; busy: boolean; callId?: string; acceptedBy?: 'android' | 'web' }) => void;
+  
+  // Multi-device call coordination
+  call_accepted_elsewhere: (data: { callId: string; handle: string; acceptedBy: 'android' | 'web'; deviceId?: string }) => void;
+  call_ended_elsewhere: (data: { callId: string; handle: string; endedBy: 'android' | 'web'; reason?: string }) => void;
+  
+  // Device synchronization
+  sync_handle_state: (data: { 
+    handle: string; 
+    devices: {
+      android?: { online: boolean; fcmToken?: string; socketConnected?: boolean };
+      web?: { online: boolean; socketConnected?: boolean };
+    };
+    callState: {
+      status: 'available' | 'busy' | 'ringing';
+      currentCallId?: string;
+      acceptedBy?: 'android' | 'web';
+    };
+  }) => void;
+}
+
 export type AllSocketEvents = CustomerEvents & 
   AgentEvents & 
   ServerEvents & 
   ErrorEvents & 
   MonitoringEvents & 
-  WebRTCSignalingEvents;
+  WebRTCSignalingEvents &
+  MultiDeviceEvents;

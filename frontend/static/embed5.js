@@ -1,8 +1,8 @@
 (function() {
     'use strict';
     
-    // CallSafe Multi-Device Aware Widget
-    class MultiDeviceCallWidget {
+    // CallSafe Embed Widget (Modal Version)
+    class CallSafeWidget {
         constructor(config) {
             this.config = {
                 handle: config.handle || '',
@@ -19,24 +19,16 @@
             this.remoteAudio = null;
             this.isModalOpen = false;
             
-            // Multi-device state
-            this.handleState = {
-                devices: { android: null, web: null },
-                callState: { status: 'available' },
-                lastUpdated: null
-            };
-            
             // Timer variables
             this.currentCallStartTime = null;
             this.callDuration = 0;
             this.durationInterval = null;
             
             this.callState = {
-                status: 'idle', // idle, checking, connecting, connected, ended, failed
+                status: 'idle', // idle, connecting, connected, ended, failed
                 callId: null,
                 isMuted: false,
-                isConnecting: false,
-                error: null
+                isConnecting: false
             };
             
             this.init();
@@ -49,12 +41,12 @@
         }
         
         createStyles() {
-            if (document.getElementById('callsafe-embed5-styles')) return;
+            if (document.getElementById('callsafe-embed4-styles')) return;
             
             const styles = document.createElement('style');
-            styles.id = 'callsafe-embed5-styles';
+            styles.id = 'callsafe-embed4-styles';
             styles.textContent = `
-                .callsafe-widget5 {
+                .callsafe-widget4 {
                     position: fixed;
                     bottom: 20px;
                     right: 20px;
@@ -62,7 +54,7 @@
                     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
                 }
                 
-                .callsafe-trigger5 {
+                .callsafe-trigger4 {
                     height: 50px;
                     padding: 0 20px;
                     border-radius: 25px;
@@ -78,32 +70,22 @@
                     position: relative;
                 }
                 
-                .callsafe-trigger5:hover {
-                    transform: scale(1.05);
+                .callsafe-trigger4:hover {
+                    transform: scale(1.1);
                     box-shadow: 0 6px 25px rgba(59, 130, 246, 0.6);
                 }
                 
-                .callsafe-trigger5.checking {
+                .callsafe-trigger4.connecting {
                     background: linear-gradient(135deg, #f59e0b, #d97706);
                     animation: pulse 2s infinite;
                 }
                 
-                .callsafe-trigger5.connecting {
-                    background: linear-gradient(135deg, #f59e0b, #d97706);
-                    animation: pulse 2s infinite;
-                }
-                
-                .callsafe-trigger5.connected {
+                .callsafe-trigger4.connected {
                     background: linear-gradient(135deg, #10b981, #059669);
                 }
                 
-                .callsafe-trigger5.failed {
+                .callsafe-trigger4.failed {
                     background: linear-gradient(135deg, #ef4444, #dc2626);
-                }
-                
-                .callsafe-trigger5.busy {
-                    background: linear-gradient(135deg, #ef4444, #dc2626);
-                    cursor: not-allowed;
                 }
                 
                 @keyframes pulse {
@@ -112,7 +94,7 @@
                     100% { transform: scale(1); }
                 }
                 
-                .callsafe-trigger5 svg {
+                .callsafe-trigger4 svg {
                     width: 20px;
                     height: 20px;
                     fill: white;
@@ -152,7 +134,7 @@
                     background: white;
                     border-radius: 16px;
                     width: 90%;
-                    max-width: 420px;
+                    max-width: 400px;
                     max-height: 90vh;
                     overflow: hidden;
                     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
@@ -244,11 +226,6 @@
                     background: linear-gradient(135deg, #3b82f6, #1e40af);
                 }
                 
-                .callsafe-status-icon.checking {
-                    background: linear-gradient(135deg, #f59e0b, #d97706);
-                    animation: pulse 2s infinite;
-                }
-                
                 .callsafe-status-icon.connecting {
                     background: linear-gradient(135deg, #f59e0b, #d97706);
                     animation: pulse 2s infinite;
@@ -259,10 +236,6 @@
                 }
                 
                 .callsafe-status-icon.failed {
-                    background: linear-gradient(135deg, #ef4444, #dc2626);
-                }
-                
-                .callsafe-status-icon.busy {
                     background: linear-gradient(135deg, #ef4444, #dc2626);
                 }
                 
@@ -297,27 +270,6 @@
                     font-size: 14px;
                     color: #6b7280;
                     margin-bottom: 16px;
-                }
-                
-                .callsafe-device-info {
-                    background: #f8fafc;
-                    border-radius: 8px;
-                    padding: 12px;
-                    margin-bottom: 16px;
-                    border-left: 4px solid #3b82f6;
-                }
-                
-                .callsafe-device-info-title {
-                    font-size: 12px;
-                    font-weight: 600;
-                    color: #374151;
-                    margin-bottom: 4px;
-                }
-                
-                .callsafe-device-info-text {
-                    font-size: 11px;
-                    color: #6b7280;
-                    line-height: 1.4;
                 }
                 
                 .callsafe-start-btn {
@@ -410,31 +362,70 @@
                     background: #dc2626;
                 }
                 
+                .callsafe-tooltip {
+                    position: absolute;
+                    bottom: 75px;
+                    right: 0;
+                    background: rgba(0, 0, 0, 0.8);
+                    color: white;
+                    padding: 8px 12px;
+                    border-radius: 6px;
+                    font-size: 12px;
+                    white-space: nowrap;
+                    opacity: 0;
+                    transform: translateY(10px);
+                    transition: all 0.3s ease;
+                    pointer-events: none;
+                }
+                
+                .callsafe-tooltip::after {
+                    content: '';
+                    position: absolute;
+                    top: 100%;
+                    right: 20px;
+                    border: 4px solid transparent;
+                    border-top-color: rgba(0, 0, 0, 0.8);
+                }
+                
+                .callsafe-trigger4:hover .callsafe-tooltip {
+                    opacity: 1;
+                    transform: translateY(0);
+                }
+                
                 @media (max-width: 640px) {
-                    .callsafe-widget5 {
+                    .callsafe-widget4 {
                         bottom: 15px;
                         right: 15px;
                     }
                     
-                    .callsafe-trigger5 {
+                    .callsafe-trigger4 {
                         height: 44px;
                         padding: 0 12px;
                         border-radius: 22px;
                         gap: 6px;
                     }
                     
-                    .callsafe-trigger5 svg {
+                    .callsafe-trigger4 svg {
                         width: 16px;
                         height: 16px;
                     }
                     
                     .callsafe-text {
                         font-size: 12px;
+                        font-weight: 600;
                     }
                     
                     .callsafe-modal-content {
                         width: 95%;
                         max-width: 350px;
+                    }
+                    
+                    .callsafe-modal-header {
+                        padding: 20px 20px 0 20px;
+                    }
+                    
+                    .callsafe-modal-body {
+                        padding: 0 20px 20px 20px;
                     }
                 }
             `;
@@ -445,14 +436,14 @@
         createWidget() {
             // Create trigger button
             this.widget = document.createElement('div');
-            this.widget.className = 'callsafe-widget5';
+            this.widget.className = 'callsafe-widget4';
             
             this.widget.innerHTML = `
-                <button class="callsafe-trigger5">
+                <button class="callsafe-trigger4">
                     <svg class="callsafe-icon" viewBox="0 0 24 24">
                         <path d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
                     </svg>
-                    <span class="callsafe-text">Call Now</span>
+                    <span class="callsafe-text">Call Anonymously</span>
                 </button>
             `;
             
@@ -484,15 +475,10 @@
                     
                     <div class="callsafe-modal-header">
                         <h2 class="callsafe-modal-title">CallSafe</h2>
-                        <p class="callsafe-modal-subtitle">Secure Business Communication</p>
+                        <p class="callsafe-modal-subtitle">Anonymous Business Calling</p>
                     </div>
                     
                     <div class="callsafe-modal-body">
-                        <div class="callsafe-device-info" style="display: none;">
-                            <div class="callsafe-device-info-title">Multi-Device Support</div>
-                            <div class="callsafe-device-info-text">This business can receive calls on mobile app and web. Your call will be answered on the first available device.</div>
-                        </div>
-                        
                         <div class="callsafe-call-status">
                             <div class="callsafe-status-icon idle">
                                 <svg viewBox="0 0 24 24">
@@ -501,20 +487,13 @@
                                 <div class="callsafe-spinner" style="display: none;"></div>
                             </div>
                             <div class="callsafe-status">Ready to Call</div>
-                            <div class="callsafe-status-message">Click to start your call</div>
+                            <div class="callsafe-status-message">Connecting to support...</div>
                             <div class="callsafe-timer" style="display: none;">00:00</div>
                         </div>
                         
-                        <button class="callsafe-start-btn">
-                            <svg viewBox="0 0 24 24" style="width: 20px; height: 20px; fill: currentColor;">
-                                <path d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
-                            </svg>
-                            Start Call
-                        </button>
-                        
                         <button class="callsafe-retry-btn" style="display: none;">
                             <svg viewBox="0 0 24 24" style="width: 20px; height: 20px; fill: currentColor;">
-                                <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                                <path d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
                             </svg>
                             Try Again
                         </button>
@@ -531,17 +510,19 @@
         }
         
         bindEvents() {
-            const trigger = this.widget.querySelector('.callsafe-trigger5');
+            const trigger = this.widget.querySelector('.callsafe-trigger4');
             const closeBtn = this.modal.querySelector('.callsafe-close');
-            const startBtn = this.modal.querySelector('.callsafe-start-btn');
             const retryBtn = this.modal.querySelector('.callsafe-retry-btn');
             const muteBtn = this.modal.querySelector('.callsafe-btn.mute');
             const endBtn = this.modal.querySelector('.callsafe-btn.end');
             
-            trigger.addEventListener('click', () => this.handleTriggerClick());
+            trigger.addEventListener('click', () => this.handleStartCall());
             closeBtn.addEventListener('click', () => this.closeModal());
-            startBtn.addEventListener('click', () => this.startCall());
-            retryBtn.addEventListener('click', () => this.retryCall());
+            retryBtn.addEventListener('click', () => {
+                // Reset state and start call directly (modal already open)
+                this.updateCallState({ status: 'idle', error: null, isConnecting: false, callId: null });
+                this.startCall();
+            });
             muteBtn.addEventListener('click', () => this.toggleMute());
             endBtn.addEventListener('click', () => this.endCall());
             
@@ -553,61 +534,6 @@
             });
         }
         
-        async handleTriggerClick() {
-            // First check if handle is busy
-            await this.checkHandleStatus();
-            
-            // Open modal
-            this.openModal();
-        }
-        
-        async checkHandleStatus() {
-            console.log('🔍 Checking handle status for:', this.config.handle);
-            this.updateCallState({ status: 'checking' });
-            
-            try {
-                // Try to get handle status from API
-                const response = await fetch(`${this.config.baseUrl}/api/handle/${this.config.handle}/status`);
-                
-                if (response.ok) {
-                    const data = await response.json();
-                    this.handleState = data;
-                    
-                    console.log('📱 Handle state:', this.handleState);
-                    
-                    // Update UI based on handle state
-                    if (this.handleState.callState.status === 'busy') {
-                        this.updateCallState({ 
-                            status: 'busy',
-                            error: `Business is currently on another call (${this.handleState.callState.acceptedBy} device)`
-                        });
-                        return;
-                    }
-                    
-                    // Show multi-device info if multiple devices available
-                    const deviceCount = Object.keys(this.handleState.devices).filter(key => 
-                        this.handleState.devices[key]?.online
-                    ).length;
-                    
-                    if (deviceCount > 1) {
-                        const deviceInfo = this.modal.querySelector('.callsafe-device-info');
-                        if (deviceInfo) {
-                            deviceInfo.style.display = 'block';
-                        }
-                    }
-                    
-                } else {
-                    console.log('⚠️ Could not get handle status, proceeding with call');
-                }
-                
-                this.updateCallState({ status: 'idle' });
-                
-            } catch (error) {
-                console.log('⚠️ Error checking handle status:', error);
-                this.updateCallState({ status: 'idle' });
-            }
-        }
-        
         openModal() {
             this.isModalOpen = true;
             document.body.style.overflow = 'hidden';
@@ -615,9 +541,9 @@
             
             // Focus management for accessibility
             setTimeout(() => {
-                const startBtn = this.modal.querySelector('.callsafe-start-btn');
-                if (startBtn && startBtn.style.display !== 'none') {
-                    startBtn.focus();
+                const closeBtn = this.modal.querySelector('.callsafe-close');
+                if (closeBtn) {
+                    closeBtn.focus();
                 }
             }, 100);
         }
@@ -628,6 +554,7 @@
                 return;
             }
             
+            // Stop timer and reset call state when closing modal
             this.stopCallTimer();
             this.updateCallState({ 
                 status: 'idle', 
@@ -641,8 +568,21 @@
             this.modal.classList.remove('show');
             
             // Return focus to trigger button
-            const trigger = this.widget.querySelector('.callsafe-trigger5');
+            const trigger = this.widget.querySelector('.callsafe-trigger4');
             if (trigger) trigger.focus();
+        }
+        
+        async handleStartCall() {
+            if (this.callState.isConnecting) return;
+            
+            // Reset call state for fresh attempt
+            this.updateCallState({ status: 'idle', error: null, isConnecting: false });
+            
+            // Open modal to show call progress
+            this.openModal();
+            
+            // Start the call immediately
+            await this.startCall();
         }
         
         async startCall() {
@@ -685,7 +625,7 @@
         connectToSignaling() {
             return new Promise((resolve, reject) => {
                 try {
-                    // Use Socket.IO library if available, otherwise load it
+                    // Use Socket.IO library if available, otherwise fallback to WebSocket
                     if (window.io) {
                         this.socket = window.io(this.config.signalingUrl, {
                             autoConnect: true,
@@ -693,6 +633,7 @@
                             transports: ['websocket', 'polling']
                         });
                     } else {
+                        // Load Socket.IO dynamically
                         this.loadSocketIO().then(() => {
                             this.socket = window.io(this.config.signalingUrl, {
                                 autoConnect: true,
@@ -750,11 +691,7 @@
                     });
                 } catch (error) {
                     console.error('Failed to create offer:', error);
-                    this.updateCallState({ 
-                        status: 'failed', 
-                        isConnecting: false, 
-                        error: 'Failed to create call offer' 
-                    });
+                    this.updateCallState({ status: 'failed', isConnecting: false, error: 'Failed to create call offer' });
                 }
             });
             
@@ -765,11 +702,7 @@
                     this.updateCallState({ status: 'connected' });
                 } catch (error) {
                     console.error('Failed to set remote answer:', error);
-                    this.updateCallState({ 
-                        status: 'failed', 
-                        isConnecting: false, 
-                        error: 'Failed to connect to agent' 
-                    });
+                    this.updateCallState({ status: 'failed', isConnecting: false, error: 'Failed to connect to agent' });
                 }
             });
             
@@ -778,38 +711,6 @@
                     await this.peerConnection.addIceCandidate(data.candidate);
                 } catch (error) {
                     console.error('Failed to add ICE candidate:', error);
-                }
-            });
-            
-            // Multi-device coordination events
-            this.socket.on('call_accepted_elsewhere', (data) => {
-                console.log('📞 Call accepted elsewhere:', data);
-                
-                if (data.handle === this.config.handle && data.callId === this.callState.callId) {
-                    this.updateCallState({
-                        status: 'ended',
-                        error: `Call answered on ${data.acceptedBy} device`,
-                        callId: null,
-                        isConnecting: false
-                    });
-                    
-                    // Clean up
-                    this.cleanup();
-                }
-            });
-            
-            this.socket.on('handle_busy_state_changed', (data) => {
-                console.log('📞 Handle busy state changed:', data);
-                
-                if (data.handle === this.config.handle) {
-                    if (data.busy && !this.callState.callId) {
-                        // Handle became busy while we were trying to call
-                        this.updateCallState({
-                            status: 'busy',
-                            error: `Business is now on another call (${data.acceptedBy} device)`,
-                            isConnecting: false
-                        });
-                    }
                 }
             });
             
@@ -829,9 +730,30 @@
                 });
             });
             
+            this.socket.on('call_disconnected', () => {
+                this.updateCallState({ status: 'ended' });
+            });
+            
             this.socket.on('call_ended', (data) => {
                 console.log('📞 Call ended by agent/server:', data);
-                this.cleanup();
+                
+                // Clean up WebRTC connection immediately to prevent "connection lost" message
+                if (this.peerConnection) {
+                    this.peerConnection.close();
+                    this.peerConnection = null;
+                }
+                
+                if (this.localStream) {
+                    this.localStream.getTracks().forEach(track => track.stop());
+                    this.localStream = null;
+                }
+                
+                // Clean up socket connection so "Try Again" can establish fresh connection
+                if (this.socket) {
+                    this.socket.disconnect();
+                    this.socket = null;
+                }
+                
                 this.updateCallState({ 
                     status: 'ended',
                     error: 'Call ended by agent',
@@ -890,11 +812,7 @@
                 if (state === 'connected') {
                     this.updateCallState({ status: 'connected' });
                 } else if (state === 'failed' || state === 'disconnected') {
-                    this.updateCallState({ 
-                        status: 'failed', 
-                        isConnecting: false, 
-                        error: 'Connection lost' 
-                    });
+                    this.updateCallState({ status: 'failed', isConnecting: false, error: 'Connection lost' });
                 }
             };
         }
@@ -951,7 +869,25 @@
             }
         }
         
-        cleanup() {
+        endCall() {
+            if (this.socket) {
+                if (this.callState.callId) {
+                    this.socket.emit('call_ended', {
+                        callId: this.callState.callId,
+                        handle: this.config.handle,
+                        sourceId: this.config.sourceId
+                    });
+                } else if (this.callState.status === 'connecting') {
+                    // Cancel connection attempt if no callId yet
+                    this.socket.emit('cancel_call_request', {
+                        handle: this.config.handle,
+                        sourceId: this.config.sourceId
+                    });
+                }
+                this.socket.disconnect();
+                this.socket = null;
+            }
+            
             if (this.peerConnection) {
                 this.peerConnection.close();
                 this.peerConnection = null;
@@ -962,25 +898,7 @@
                 this.localStream = null;
             }
             
-            this.stopCallTimer();
-        }
-        
-        endCall() {
-            if (this.socket) {
-                if (this.callState.callId) {
-                    this.socket.emit('call_ended', {
-                        callId: this.callState.callId,
-                        handle: this.config.handle,
-                        sourceId: this.config.sourceId
-                    });
-                }
-                this.socket.disconnect();
-                this.socket = null;
-            }
-            
-            this.cleanup();
-            
-            // Update state to allow modal closing
+            // Update state to allow modal closing, but don't update UI
             this.callState = { 
                 status: 'idle', 
                 callId: null, 
@@ -992,75 +910,65 @@
             this.closeModal();
         }
         
-        retryCall() {
-            this.updateCallState({ 
-                status: 'idle', 
-                error: null, 
-                isConnecting: false, 
-                callId: null 
-            });
-            this.startCall();
-        }
-        
         updateCallState(updates) {
             this.callState = { ...this.callState, ...updates };
             this.updateUI();
         }
         
         updateUI() {
-            const trigger = this.widget?.querySelector('.callsafe-trigger5');
-            const statusIcon = this.modal?.querySelector('.callsafe-status-icon');
-            const statusText = this.modal?.querySelector('.callsafe-status');
-            const statusMessage = this.modal?.querySelector('.callsafe-status-message');
-            const timerElement = this.modal?.querySelector('.callsafe-timer');
-            const startBtn = this.modal?.querySelector('.callsafe-start-btn');
-            const retryBtn = this.modal?.querySelector('.callsafe-retry-btn');
-            const controls = this.modal?.querySelector('.callsafe-controls');
+            const trigger = this.widget?.querySelector('.callsafe-trigger4');
+            const tooltip = this.widget?.querySelector('.callsafe-tooltip');
+            
+            // Modal elements (check if modal exists)
+            if (!this.modal) return;
+            
+            const statusIcon = this.modal.querySelector('.callsafe-status-icon');
+            const statusText = this.modal.querySelector('.callsafe-status');
+            const statusMessage = this.modal.querySelector('.callsafe-status-message');
+            const timerElement = this.modal.querySelector('.callsafe-timer');
+            const retryBtn = this.modal.querySelector('.callsafe-retry-btn');
+            const controls = this.modal.querySelector('.callsafe-controls');
             const iconSvg = statusIcon?.querySelector('svg');
             const spinner = statusIcon?.querySelector('.callsafe-spinner');
             
+            // Return early if critical elements don't exist
             if (!trigger || !statusIcon || !statusText || !statusMessage) return;
             
             // Reset classes
-            trigger.className = 'callsafe-trigger5';
+            trigger.className = 'callsafe-trigger4';
             statusIcon.className = 'callsafe-status-icon';
             
             switch (this.callState.status) {
                 case 'idle':
+                    // Stop timer
                     this.stopCallTimer();
                     
-                    trigger.classList.add('idle');
+                    // Trigger button
+                    trigger.title = 'Start a call';
+                    if (tooltip) tooltip.textContent = 'Start a call';
+                    
+                    // Modal
                     statusIcon.classList.add('idle');
                     statusText.textContent = 'Ready to Call';
-                    statusMessage.textContent = 'Click to start your call';
+                    statusMessage.textContent = 'Ready to start your call';
                     if (timerElement) timerElement.style.display = 'none';
-                    if (startBtn) startBtn.style.display = 'flex';
                     if (retryBtn) retryBtn.style.display = 'none';
                     if (controls) controls.style.display = 'none';
                     if (iconSvg) iconSvg.style.display = 'block';
                     if (spinner) spinner.style.display = 'none';
                     break;
                     
-                case 'checking':
-                    trigger.classList.add('checking');
-                    statusIcon.classList.add('checking');
-                    statusText.textContent = 'Checking Availability...';
-                    statusMessage.textContent = 'Verifying business availability';
-                    if (timerElement) timerElement.style.display = 'none';
-                    if (startBtn) startBtn.style.display = 'none';
-                    if (retryBtn) retryBtn.style.display = 'none';
-                    if (controls) controls.style.display = 'none';
-                    if (iconSvg) iconSvg.style.display = 'none';
-                    if (spinner) spinner.style.display = 'block';
-                    break;
-                    
                 case 'connecting':
+                    // Trigger button
                     trigger.classList.add('connecting');
+                    trigger.title = 'Connecting...';
+                    if (tooltip) tooltip.textContent = 'Connecting...';
+                    
+                    // Modal
                     statusIcon.classList.add('connecting');
                     statusText.textContent = 'Connecting...';
                     statusMessage.textContent = 'Looking for available agent';
                     if (timerElement) timerElement.style.display = 'none';
-                    if (startBtn) startBtn.style.display = 'none';
                     if (retryBtn) retryBtn.style.display = 'none';
                     if (controls) controls.style.display = 'flex';
                     if (iconSvg) iconSvg.style.display = 'none';
@@ -1068,50 +976,44 @@
                     break;
                     
                 case 'connected':
+                    // Trigger button
                     trigger.classList.add('connected');
-                    statusIcon.classList.add('connected');
-                    statusText.textContent = 'Connected to Agent';
-                    statusMessage.textContent = 'You are now speaking with an agent';
+                    trigger.title = 'Call in progress';
+                    if (tooltip) tooltip.textContent = 'Call in progress';
                     
+                    // Start timer if not already started
                     if (!this.durationInterval) {
                         this.startCallTimer();
                     }
                     
+                    // Modal
+                    statusIcon.classList.add('connected');
+                    statusText.textContent = 'Connected to Agent';
+                    statusMessage.textContent = 'You are now speaking with an agent';
                     if (timerElement) {
                         timerElement.style.display = 'block';
                         timerElement.textContent = this.formatDuration(this.callDuration);
                     }
-                    if (startBtn) startBtn.style.display = 'none';
                     if (retryBtn) retryBtn.style.display = 'none';
                     if (controls) controls.style.display = 'flex';
                     if (iconSvg) iconSvg.style.display = 'block';
                     if (spinner) spinner.style.display = 'none';
                     break;
                     
-                case 'busy':
-                    this.stopCallTimer();
-                    
-                    trigger.classList.add('busy');
-                    statusIcon.classList.add('busy');
-                    statusText.textContent = 'Business is Busy';
-                    statusMessage.textContent = this.callState.error || 'Business is currently on another call';
-                    if (timerElement) timerElement.style.display = 'none';
-                    if (startBtn) startBtn.style.display = 'none';
-                    if (retryBtn) retryBtn.style.display = 'block';
-                    if (controls) controls.style.display = 'none';
-                    if (iconSvg) iconSvg.style.display = 'block';
-                    if (spinner) spinner.style.display = 'none';
-                    break;
-                    
                 case 'failed':
+                    // Stop timer
                     this.stopCallTimer();
                     
+                    // Trigger button
                     trigger.classList.add('failed');
+                    trigger.title = this.callState.error || 'Call failed';
+                    if (tooltip) tooltip.textContent = 'Call failed - Try again';
+                    
+                    // Modal
                     statusIcon.classList.add('failed');
                     statusText.textContent = 'Call Failed';
                     statusMessage.textContent = this.callState.error || 'Unable to connect. Please try again.';
                     if (timerElement) timerElement.style.display = 'none';
-                    if (startBtn) startBtn.style.display = 'none';
                     if (retryBtn) retryBtn.style.display = 'block';
                     if (controls) controls.style.display = 'none';
                     if (iconSvg) iconSvg.style.display = 'block';
@@ -1119,14 +1021,19 @@
                     break;
                     
                 case 'ended':
+                    // Stop timer
                     this.stopCallTimer();
                     
+                    // Trigger button
                     trigger.classList.add('failed');
+                    trigger.title = 'Call ended';
+                    if (tooltip) tooltip.textContent = 'Call ended - Try again';
+                    
+                    // Modal - show ended state with retry option
                     statusIcon.classList.add('failed');
                     statusText.textContent = 'Call Ended';
                     statusMessage.textContent = this.callState.error || 'Call has been ended';
                     if (timerElement) timerElement.style.display = 'none';
-                    if (startBtn) startBtn.style.display = 'none';
                     if (retryBtn) retryBtn.style.display = 'block';
                     if (controls) controls.style.display = 'none';
                     if (iconSvg) iconSvg.style.display = 'block';
@@ -1153,7 +1060,7 @@
         
         destroy() {
             this.endCall();
-            this.stopCallTimer();
+            this.stopCallTimer(); // Ensure timer is stopped
             if (this.widget) {
                 this.widget.remove();
             }
@@ -1163,7 +1070,7 @@
             if (this.remoteAudio) {
                 this.remoteAudio.remove();
             }
-            const styles = document.getElementById('callsafe-embed5-styles');
+            const styles = document.getElementById('callsafe-embed4-styles');
             if (styles) {
                 styles.remove();
             }
@@ -1172,14 +1079,14 @@
     
     // Auto-initialize widgets from script tags
     function initializeWidgets() {
-        const scripts = document.querySelectorAll('script[src*="embed5.js"]');
+        const scripts = document.querySelectorAll('script[src*="embed4.js"]');
         
         scripts.forEach(script => {
             const handle = script.getAttribute('data-handle');
             const sourceId = script.getAttribute('data-source-id');
             
             if (!handle) {
-                console.warn('CallSafe embed5: data-handle attribute is required');
+                console.warn('CallSafe embed4: data-handle attribute is required');
                 return;
             }
             
@@ -1187,7 +1094,7 @@
             if (script.dataset.initialized) return;
             script.dataset.initialized = 'true';
             
-            new MultiDeviceCallWidget({
+            new CallSafeWidget({
                 handle: handle,
                 sourceId: sourceId || '',
                 baseUrl: script.getAttribute('data-base-url') || 'https://callsafe.tech',
@@ -1203,7 +1110,7 @@
         initializeWidgets();
     }
     
-    // Expose MultiDeviceCallWidget for manual initialization
-    window.MultiDeviceCallWidget = MultiDeviceCallWidget;
+    // Expose CallSafeWidget for manual initialization
+    window.CallSafeWidget4 = CallSafeWidget;
     
 })();

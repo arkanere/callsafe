@@ -42,6 +42,13 @@ class SocketManager private constructor() {
                 INSTANCE ?: SocketManager().also { INSTANCE = it }
             }
         }
+        
+        // Method to reset instance (useful for testing or cleanup)
+        @Synchronized
+        fun resetInstance() {
+            INSTANCE?.shutdown()
+            INSTANCE = null
+        }
     }
     
     fun connect(callback: (Boolean, String?) -> Unit) {
@@ -393,16 +400,32 @@ class SocketManager private constructor() {
         }
     }
     
+    // Public emit method for external components
+    fun emit(event: String, data: JSONObject?) {
+        Log.d(TAG, "📤 Public emit: $event")
+        if (socket?.connected() == true && isConnected) {
+            socket?.emit(event, data)
+        } else {
+            Log.w(TAG, "❌ Cannot emit $event: not connected")
+        }
+    }
+    
     // Event subscription methods
     fun on(event: String, listener: (Any?) -> Unit) {
+        Log.d(TAG, "📝 Registering listener for event: '$event'")
         eventListeners[event] = listener
+        Log.d(TAG, "✅ Listener registered. Total listeners: ${eventListeners.size}")
+        Log.d(TAG, "🔑 All registered events: ${eventListeners.keys}")
     }
     
     fun off(event: String) {
-        eventListeners.remove(event)
+        Log.d(TAG, "🗑️ Removing listener for event: '$event'")
+        val removed = eventListeners.remove(event)
+        Log.d(TAG, "✅ Listener removed: $removed. Remaining listeners: ${eventListeners.size}")
+        Log.d(TAG, "🔑 Remaining events: ${eventListeners.keys}")
     }
     
-    // Connection status
+    // Connection status check
     fun isConnected(): Boolean {
         return isConnected && socket?.connected() == true
     }

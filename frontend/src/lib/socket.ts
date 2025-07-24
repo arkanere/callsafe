@@ -1,6 +1,7 @@
 import { io, type Socket } from 'socket.io-client';
 import { browser } from '$app/environment';
 import type { AllSocketEvents } from './types/socket.js';
+import { multiDeviceCoordinator } from './stores/multi-device.js';
 
 export class SocketManager {
   private socket: Socket | null = null;
@@ -138,6 +139,10 @@ export class SocketManager {
       this.triggerCallback('handle_not_found');
     });
 
+    this.socket.on('missed_call', (data) => {
+      this.triggerCallback('missed_call', data);
+    });
+
     // Handle WebRTC signaling events
     this.socket.on('offer', (data) => {
       this.triggerCallback('offer', data);
@@ -176,8 +181,75 @@ export class SocketManager {
       this.triggerCallback('call_request_cancelled', data);
     });
 
-    this.socket.on('missed_call', (data) => {
-      this.triggerCallback('missed_call', data);
+    // Multi-device coordination events
+    this.setupMultiDeviceEventHandlers();
+  }
+
+  private setupMultiDeviceEventHandlers(): void {
+    if (!this.socket) return;
+
+    // Device registration and status events
+    this.socket.on('device_registered', (data) => {
+      console.log('📱 Device registered:', data);
+      multiDeviceCoordinator.registerDevice(data.handle, data.deviceType, {
+        fcmToken: data.fcmToken,
+        socketConnected: data.online
+      });
+      this.triggerCallback('device_registered', data);
+    });
+
+    this.socket.on('device_status_changed', (data) => {
+      console.log('📱 Device status changed:', data);
+      multiDeviceCoordinator.updateHandleState(data.handle, {
+        type: 'device_update',
+        deviceType: data.deviceType,
+        deviceData: { online: data.online }
+      });
+      this.triggerCallback('device_status_changed', data);
+    });
+
+    // Handle busy state changes
+    this.socket.on('handle_busy_state_changed', (data) => {
+      console.log('📞 Handle busy state changed:', data);
+      multiDeviceCoordinator.updateCallState(data.handle, {
+        status: data.busy ? 'busy' : 'available',
+        currentCallId: data.callId,
+        acceptedBy: data.acceptedBy
+      });
+      this.triggerCallback('handle_busy_state_changed', data);
+    });
+
+    // Multi-device call coordination
+    this.socket.on('call_accepted_elsewhere', (data) => {
+      console.log('📞 Call accepted elsewhere:', data);
+      multiDeviceCoordinator.updateCallState(data.handle, {
+        status: 'busy',
+        currentCallId: data.callId,
+        acceptedBy: data.acceptedBy
+      });
+      this.triggerCallback('call_accepted_elsewhere', data);
+    });
+
+    this.socket.on('call_ended_elsewhere', (data) => {
+      console.log('📞 Call ended elsewhere:', data);
+      multiDeviceCoordinator.updateCallState(data.handle, {
+        status: 'available',
+        currentCallId: undefined,
+        acceptedBy: undefined
+      });
+      this.triggerCallback('call_ended_elsewhere', data);
+    });
+
+    // Full state synchronization
+    this.socket.on('sync_handle_state', (data) => {
+      console.log('🔄 Syncing handle state:', data);
+      multiDeviceCoordinator.syncHandleState({
+        handle: data.handle,
+        devices: data.devices,
+        callState: data.callState,
+        lastUpdated: new Date()
+      });
+      this.triggerCallback('sync_handle_state', data);
     });
   }
 
@@ -353,6 +425,36 @@ export class SocketManager {
   emitWebRTCDisconnected(callId: string, handle?: string, sourceId?: string, reason?: string): void {
     console.log('📤 Emitting webrtc_disconnected for:', callId, 'handle:', handle, 'sourceId:', sourceId, 'reason:', reason);
     this.emit('webrtc_disconnected', { callId, handle, sourceId, reason });
+  }
+
+  // Multi-device coordination methods
+  registerDevice(handle: string, deviceType: 'android' | 'web', fcmToken?: string): void {
+    console.log('📤 Emitting register_device for handle:', handle, 'deviceType:', deviceType);
+    this.emit('register_device', { handle, deviceType, fcmToken });
+    
+    // Update local state
+    multiDeviceCoordinator.registerDevice(handle, deviceType, {
+      fcmToken,
+      socketConnected: true
+    });
+  }
+
+  unregisterDevice(handle: string, deviceType: 'android' | 'web'): void {
+    console.log('📤 Emitting unregister_device for handle:', handle, 'deviceType:', deviceType);
+    this.emit('unregister_device', { handle, deviceType });
+    
+    // Update local state
+    multiDeviceCoordinator.unregisterDevice(handle, deviceType);
+  }
+
+  requestHandleState(handle: string): void {
+    console.log('📤 Requesting handle state for:', handle);
+    this.emit('request_handle_state', { handle });
+  }
+
+  checkHandleBusyState(handle: string): void {
+    console.log('📤 Checking handle busy state for:', handle);
+    this.emit('check_handle_busy_state', { handle });
   }
 
   // Generic emit method

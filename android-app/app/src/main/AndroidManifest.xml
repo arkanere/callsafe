@@ -20,6 +20,11 @@
     <uses-permission android:name="android.permission.TURN_SCREEN_ON" />
     <uses-permission android:name="android.permission.SHOW_WHEN_LOCKED" />
     <uses-permission android:name="android.permission.DISABLE_KEYGUARD" />
+    
+    <!-- Background Service Permissions -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <application
         android:allowBackup="true"
@@ -55,9 +60,23 @@
             android:name=".UserReceiveActivity"
             android:exported="false" />
             
+        <!-- NEW: Service-based UserReceive Activity -->
+        <activity
+            android:name=".UserReceiveActivityNew"
+            android:exported="false" />
+            
         <!-- Incoming Call Activity -->
         <activity
             android:name=".IncomingCallActivity"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:theme="@style/Theme.CallSafe.IncomingCall" />
+            
+        <!-- NEW: Service-based Incoming Call Activity -->
+        <activity
+            android:name=".IncomingCallActivityNew"
             android:exported="false"
             android:launchMode="singleTask"
             android:showWhenLocked="true"
@@ -72,6 +91,31 @@
                 <action android:name="com.google.firebase.MESSAGING_EVENT" />
             </intent-filter>
         </service>
+        
+        <!-- NEW: Central CallSafe Service -->
+        <service
+            android:name=".service.CallSafeService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="phoneCall" />
+            
+        <!-- OLD: Background Service for maintaining connection (will be removed) -->
+        <service
+            android:name=".service.CallSafeBackgroundService"
+            android:enabled="false"
+            android:exported="false"
+            android:foregroundServiceType="phoneCall" />
+            
+        <!-- Boot Receiver to start service on boot -->
+        <receiver
+            android:name=".receiver.BootReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter android:priority="1000">
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </receiver>
         
         <!-- Firebase default notification icon -->
         <meta-data

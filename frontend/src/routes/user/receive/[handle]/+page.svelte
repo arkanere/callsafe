@@ -6,6 +6,16 @@
   import { SocketManager } from '$lib/socket.js';
   import { connectionMonitor } from '$lib/monitoring.js';
   import type { CallState } from '$lib/types/webrtc.js';
+  import { 
+    setCurrentHandle, 
+    clearCurrentHandle, 
+    currentHandleState, 
+    currentDevices, 
+    currentCallState, 
+    isCurrentHandleBusy, 
+    availableDevices,
+    multiDeviceCoordinator 
+  } from '$lib/stores/multi-device.js';
 
   let webrtc: WebRTCManager;
   let socket: SocketManager;
@@ -33,8 +43,9 @@
   // Extract sourceId from URL query parameters (optional for agents)
   $: sourceId = $page.url.searchParams.get('sourceId') || '';
   
-  // Reactive statement to load call history when handle changes
+  // Set current handle in multi-device store
   $: if (handle) {
+    setCurrentHandle(handle);
     console.log('📝 Handle changed:', handle, 'loading call history...');
     loadCallHistory();
   }
@@ -45,6 +56,13 @@
       socketConnected = socket.getConnectionStatus();
     }
   }
+
+  // Multi-device reactive states
+  $: handleState = $currentHandleState;
+  $: devices = $currentDevices;
+  $: handleCallState = $currentCallState;
+  $: handleBusy = $isCurrentHandleBusy;
+  $: deviceList = $availableDevices;
 
   onMount(() => {
     webrtc = new WebRTCManager(false);
@@ -60,6 +78,7 @@
       webrtc.endCall();
     }
     if (socket) {
+      socket.unregisterDevice(handle, 'web');
       socket.goOffline();
       socket.disconnect();
     }
@@ -68,6 +87,8 @@
     }
     // Stop ringtone when component is destroyed
     stopRingtone();
+    // Clear current handle from store
+    clearCurrentHandle();
   });
 
   async function connectToServer() {
@@ -84,10 +105,12 @@
       // Initialize media for agent
       await webrtc.initializeMedia({ audio: true, video: false });
       
-      // Automatically go online if handle is available
+      // Automatically go online and register web device if handle is available
       if (handle) {
         console.log('👤 Agent automatically going online with handle:', handle, 'sourceId:', sourceId);
         socket.goOnlineWithHandle(handle, sourceId);
+        socket.registerDevice(handle, 'web'); // Register as web device
+        socket.requestHandleState(handle); // Request current handle state
         isOnline = true;
         connectionStatus = 'Online - Waiting for calls';
         errorMessage = '';
@@ -358,6 +381,64 @@
         stopRingtone();
       }
     });
+
+    // Multi-device coordination events
+    socket.on('call_accepted_elsewhere', (data) => {
+      console.log('📞 Call accepted elsewhere:', data);
+      
+      if (data.handle === handle) {
+        // Remove call from incoming calls
+        incomingCalls = incomingCalls.filter(call => call.callId !== data.callId);
+        
+        // Stop ringtone
+        if (incomingCalls.length === 0) {
+          stopRingtone();
+        }
+        
+        // Show notification
+        connectionStatus = `Call answered on ${data.acceptedBy} device`;
+        
+        // Add to call history as handled by other device
+        addToCallHistory({
+          callId: data.callId,
+          duration: 0,
+          status: 'completed',
+          sourceId: data.sourceId,
+          reason: `answered_on_${data.acceptedBy}`
+        });
+      }
+    });
+
+    socket.on('call_ended_elsewhere', (data) => {
+      console.log('📞 Call ended elsewhere:', data);
+      
+      if (data.handle === handle) {
+        connectionStatus = `Call ended on ${data.endedBy} device`;
+      }
+    });
+
+    socket.on('device_status_changed', (data) => {
+      console.log('📱 Device status changed:', data);
+      
+      if (data.handle === handle) {
+        // Status updates are automatically handled by the store
+        if (data.deviceType === 'android') {
+          connectionStatus = `Android app ${data.online ? 'connected' : 'disconnected'}`;
+        }
+      }
+    });
+
+    socket.on('handle_busy_state_changed', (data) => {
+      console.log('📞 Handle busy state changed:', data);
+      
+      if (data.handle === handle) {
+        if (data.busy && data.acceptedBy !== 'web') {
+          connectionStatus = `Handle busy - call in progress on ${data.acceptedBy} device`;
+        } else if (!data.busy) {
+          connectionStatus = 'Online - Waiting for calls';
+        }
+      }
+    });
   }
 
   function toggleOnlineStatus() {
@@ -373,6 +454,7 @@
 
     if (isOnline) {
       socket.goOffline();
+      socket.unregisterDevice(handle, 'web');
       isOnline = false;
       connectionStatus = 'Offline';
       // Stop ringtone when going offline
@@ -380,6 +462,8 @@
     } else {
       console.log('👤 Agent going online with handle:', handle, 'sourceId:', sourceId);
       socket.goOnlineWithHandle(handle, sourceId);
+      socket.registerDevice(handle, 'web');
+      socket.requestHandleState(handle);
       isOnline = true;
       connectionStatus = 'Online - Waiting for calls';
       errorMessage = '';
@@ -854,7 +938,70 @@
       </div>
     {/if}
 
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <!-- Device Status Panel -->
+      <div class="bg-white rounded-2xl shadow-xl p-6">
+        <h2 class="text-xl font-semibold text-gray-800 mb-4">Device Status</h2>
+        
+        <div class="space-y-4">
+          <!-- Web Device (Current) -->
+          <div class="flex items-center justify-between p-3 rounded-lg bg-blue-50">
+            <div class="flex items-center">
+              <div class="w-3 h-3 rounded-full bg-green-500 mr-3"></div>
+              <div>
+                <div class="font-semibold text-gray-800">💻 Web Dashboard</div>
+                <div class="text-sm text-blue-600">You (Online)</div>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Android Device -->
+          {#if devices.android}
+            <div class="flex items-center justify-between p-3 rounded-lg {devices.android.online ? 'bg-green-50' : 'bg-gray-50'}">
+              <div class="flex items-center">
+                <div class="w-3 h-3 rounded-full {devices.android.online ? 'bg-green-500' : 'bg-gray-400'} mr-3"></div>
+                <div>
+                  <div class="font-semibold text-gray-800">📱 Android App</div>
+                  <div class="text-sm {devices.android.online ? 'text-green-600' : 'text-gray-500'}">
+                    {devices.android.online ? 'Online' : 'Offline'}
+                    {#if devices.android.online && devices.android.socketConnected}
+                      (Connected)
+                    {:else if devices.android.online}
+                      (FCM Only)
+                    {/if}
+                  </div>
+                </div>
+              </div>
+            </div>
+          {:else}
+            <div class="flex items-center justify-between p-3 rounded-lg bg-gray-50">
+              <div class="flex items-center">
+                <div class="w-3 h-3 rounded-full bg-gray-400 mr-3"></div>
+                <div>
+                  <div class="font-semibold text-gray-800">📱 Android App</div>
+                  <div class="text-sm text-gray-500">Not registered</div>
+                </div>
+              </div>
+            </div>
+          {/if}
+          
+          <!-- Handle Status -->
+          <div class="mt-4 pt-4 border-t border-gray-200">
+            <div class="flex items-center justify-between">
+              <span class="text-sm font-medium text-gray-600">Handle Status:</span>
+              <span class="text-sm font-semibold {handleBusy ? 'text-red-600' : 'text-green-600'}">
+                {handleBusy ? 'Busy' : 'Available'}
+              </span>
+            </div>
+            {#if handleCallState?.acceptedBy && handleCallState.acceptedBy !== 'web'}
+              <div class="text-xs text-gray-500 mt-1">
+                Call in progress on {handleCallState.acceptedBy} device
+              </div>
+            {/if}
+          </div>
+        </div>
+      </div>
+
       <!-- Current Call Panel -->
       <div class="bg-white rounded-2xl shadow-xl p-6">
         <h2 class="text-xl font-semibold text-gray-800 mb-4">Current Call</h2>
