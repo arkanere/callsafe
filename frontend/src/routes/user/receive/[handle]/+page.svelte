@@ -108,8 +108,8 @@
       webrtc.endCall();
     }
     if (socket) {
-      socket.emit('unregister_device', { handle, deviceType: 'web' });
-      socket.emit('agent_offline');
+      socket.emit('device.unregister', { handle, deviceType: 'web' });
+      socket.emit('device.offline', { handle });
       socket.disconnect();
     }
     if (durationInterval) {
@@ -140,9 +140,8 @@
         
         // Automatically go online and register web device
         console.log('👤 Agent automatically going online with handle:', handle);
-        socket.emit('agent_online_with_handle', { handle, sourceId });
-        socket.emit('register_device', { handle, deviceType: 'web' });
-        socket.emit('request_handle_state', { handle });
+        socket.emit('device.register', { handle, sourceId, deviceType: 'web' });
+        socket.emit('device.sync_request', { handle });
         isOnline = true;
         connectionStatus = 'Online - Waiting for calls';
         errorMessage = '';
@@ -230,18 +229,18 @@
       handleLegacyIncomingCall(data);
     });
 
-    socket.on('agent_registered', (data) => {
-      console.log('✅ Agent successfully registered:', data);
+    socket.on('device.registered', (data) => {
+      console.log('✅ Device successfully registered:', data);
       connectionStatus = 'Registered - Ready to receive calls';
       isOnline = true;
     });
 
-    socket.on('call_no_longer_available', (data) => {
-      console.log('📞 Call no longer available:', data);
+    socket.on('call.terminated', (data) => {
+      console.log('📞 Call terminated:', data);
       removeIncomingCall(data.callId);
     });
 
-    socket.on('missed_call', (data) => {
+    socket.on('call.missed', (data) => {
       console.log('📞 Missed call notification:', data);
       addToCallHistory({
         callId: data.callId,
@@ -252,15 +251,15 @@
       });
     });
 
-    // Legacy WebRTC signaling (unchanged)
-    socket.on('offer', async (data) => {
+    // WebRTC signaling (rationalized events)
+    socket.on('webrtc.offer', async (data) => {
       console.log('📥 Received offer from customer:', data);
       if (callStateMachine) {
         const state = callStateMachine.getCurrentState();
         if (state.identifier.callId === data.callId) {
           try {
             const answer = await webrtc.createAnswer(data.callId, data.offer);
-            socket.emit('answer', { callId: data.callId, answer, handle, sourceId: data.sourceId });
+            socket.emit('webrtc.answer', { callId: data.callId, answer, handle, sourceId: data.sourceId });
           } catch (error) {
             console.error('❌ Failed to create answer:', error);
             errorMessage = 'Failed to answer call';
@@ -270,7 +269,7 @@
       }
     });
 
-    socket.on('ice_candidate', async (data) => {
+    socket.on('webrtc.ice_candidate', async (data) => {
       console.log('🧊 Received ICE candidate (agent):', data);
       try {
         await webrtc.addIceCandidate(data.candidate);
@@ -482,7 +481,7 @@
       callStateMachine.transition('AGENT_ACCEPTED');
       
       // Send accept message to server
-      socket.emit('accept_call', { callId, handle, sourceId: incomingCall.sourceId });
+      socket.emit('call.accept', { callId, handle, sourceId: incomingCall.sourceId });
       console.log('📤 Accept call message sent to server');
       
       // Remove from incoming calls and stop ringtone
@@ -503,7 +502,7 @@
     const incomingCall = incomingCalls.find(call => call.callId === callId);
     const sourceId = incomingCall?.sourceId;
     
-    socket.emit('decline_call', { callId, handle, sourceId });
+    socket.emit('call.decline', { callId, handle, sourceId });
     console.log('📤 Decline call message sent to server');
     
     // Add declined call to history
@@ -554,7 +553,7 @@
       
       // Send end call to server
       if (callId && !callId.startsWith('temp_')) {
-        socket.emit('call_ended', { 
+        socket.emit('call.terminate', { 
           callId: callId, 
           handle: handle, 
           sourceId: state.identifier.sourceId,
@@ -595,13 +594,13 @@
       
       // Emit UI control change (rationalized)
       const state = callStateMachine.getCurrentState();
-      socket.emitUIControlChange(
-        state.identifier.callId, 
-        handle, 
-        'mute', 
-        isMuted, 
-        state.identifier.sourceId
-      );
+      socket.emit('ui.control_change', {
+        callId: state.identifier.callId,
+        handle: handle,
+        control: 'mute',
+        value: isMuted,
+        sourceId: state.identifier.sourceId
+      });
     }
   }
 
@@ -617,15 +616,14 @@
     }
 
     if (isOnline) {
-      socket.emit('agent_offline');
-      socket.emit('unregister_device', { handle, deviceType: 'web' });
+      socket.emit('device.offline', { handle });
+      socket.emit('device.unregister', { handle, deviceType: 'web' });
       isOnline = false;
       connectionStatus = 'Offline';
       stopRingtone();
     } else {
-      socket.emit('agent_online_with_handle', { handle, sourceId });
-      socket.emit('register_device', { handle, deviceType: 'web' });
-      socket.emit('request_handle_state', { handle });
+      socket.emit('device.register', { handle, sourceId, deviceType: 'web' });
+      socket.emit('device.sync_request', { handle });
       isOnline = true;
       connectionStatus = 'Online - Waiting for calls';
       errorMessage = '';

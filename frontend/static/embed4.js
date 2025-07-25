@@ -739,13 +739,14 @@
                 reject(new Error('Connection failed'));
             });
             
-            this.socket.on('call_accepted', async (data) => {
+            this.socket.on('call.state_changed', async (data) => {
+                if (data.current?.phase === 'connecting') {
                 console.log('🎉 Call accepted by agent');
                 try {
                     this.callState.callId = data.callId;
                     await this.createPeerConnection();
                     const offer = await this.createOffer();
-                    this.socket.emit('offer', {
+                    this.socket.emit('webrtc.offer', {
                         callId: data.callId,
                         offer: offer,
                         handle: this.config.handle,
@@ -761,7 +762,7 @@
                 }
             });
             
-            this.socket.on('answer', async (data) => {
+            this.socket.on('webrtc.answer', async (data) => {
                 console.log('📥 Received answer from agent');
                 try {
                     await this.peerConnection.setRemoteDescription(data.answer);
@@ -776,7 +777,7 @@
                 }
             });
             
-            this.socket.on('ice_candidate', async (data) => {
+            this.socket.on('webrtc.ice_candidate', async (data) => {
                 console.log('🧊 Received ICE candidate');
                 try {
                     await this.peerConnection.addIceCandidate(data.candidate);
@@ -785,7 +786,7 @@
                 }
             });
             
-            this.socket.on('call_ended', () => {
+            this.socket.on('call.terminated', () => {
                 console.log('📞 Call ended by agent');
                 this.updateCallState({ 
                     status: 'ended', 
@@ -795,17 +796,19 @@
                 this.cleanup();
             });
             
-            this.socket.on('call_timeout', () => {
-                console.log('⏰ Call timed out');
-                this.updateCallState({ 
-                    status: 'failed', 
-                    isConnecting: false,
-                    error: 'No agent available. Please try again later.'
-                });
-                this.cleanup();
+            this.socket.on('call.error', (data) => {
+                if (data.code === 'CALL_TIMEOUT') {
+                    console.log('⏰ Call timed out');
+                    this.updateCallState({ 
+                        status: 'failed', 
+                        isConnecting: false,
+                        error: 'No agent available. Please try again later.'
+                    });
+                    this.cleanup();
+                }
             });
             
-            this.socket.on('no_agents_available', () => {
+            this.socket.on('routing.no_agents', () => {
                 console.log('👥 No agents available');
                 this.updateCallState({ 
                     status: 'failed', 
@@ -815,7 +818,7 @@
                 this.cleanup();
             });
             
-            this.socket.on('handle_busy', (data) => {
+            this.socket.on('routing.handle_busy', (data) => {
                 console.log('📞 Handle is busy:', data);
                 this.updateCallState({ 
                     status: 'busy', 
@@ -827,7 +830,7 @@
         }
         
         registerAsCustomer() {
-            this.socket.emit('customer_connect_with_handle', {
+            this.socket.emit('call.initiate', {
                 handle: this.config.handle,
                 sourceId: this.config.sourceId,
                 callAttemptId: this.generateCallAttemptId()
@@ -864,7 +867,7 @@
             // Handle ICE candidates
             this.peerConnection.onicecandidate = (event) => {
                 if (event.candidate && this.socket) {
-                    this.socket.emit('ice_candidate', {
+                    this.socket.emit('webrtc.ice_candidate', {
                         callId: this.callState.callId,
                         candidate: event.candidate,
                         handle: this.config.handle,
@@ -941,7 +944,7 @@
         
         endCall() {
             if (this.socket && this.callState.callId) {
-                this.socket.emit('call_ended', {
+                this.socket.emit('call.terminate', {
                     callId: this.callState.callId,
                     handle: this.config.handle,
                     sourceId: this.config.sourceId

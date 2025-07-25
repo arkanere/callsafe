@@ -188,23 +188,18 @@ export class SocketManager {
       this.triggerRationalizedHandler('routing.handle_busy', event);
     });
 
-    // WebRTC signaling (direct handling)
-    this.socket.on('offer', (data) => {
-      this.triggerRationalizedHandler('offer', data);
+    // WebRTC signaling (rationalized events)
+    this.socket.on('webrtc.offer', (data) => {
+      this.triggerRationalizedHandler('webrtc.offer', data);
     });
 
-    this.socket.on('answer', (data) => {
-      this.triggerRationalizedHandler('answer', data);
+    this.socket.on('webrtc.answer', (data) => {
+      this.triggerRationalizedHandler('webrtc.answer', data);
     });
 
-    this.socket.on('ice_candidate', (data) => {
-      this.triggerRationalizedHandler('ice_candidate', data);
+    this.socket.on('webrtc.ice_candidate', (data) => {
+      this.triggerRationalizedHandler('webrtc.ice_candidate', data);
     });
-  }
-
-
-    // Multi-device coordination events
-    this.setupMultiDeviceEventHandlers();
   }
 
   private setupMultiDeviceEventHandlers(): void {
@@ -329,96 +324,97 @@ export class SocketManager {
     
     if (this.agentState.registrationType === 'with_handle' && this.agentState.handle) {
       console.log('🔄 Re-registering agent with handle:', this.agentState.handle, 'sourceId:', this.agentState.sourceId);
-      this.emit('agent_online_with_handle', { 
+      this.emit('device.register', { 
         handle: this.agentState.handle, 
-        sourceId: this.agentState.sourceId 
+        sourceId: this.agentState.sourceId,
+        deviceType: 'web'
       });
     }
   }
 
   // Customer methods
   connectAsCustomerWithHandle(handle: string, sourceId?: string, callAttemptId?: string): void {
-    console.log('📤 Emitting customer_connect_with_handle for handle:', handle, 'sourceId:', sourceId, 'callAttemptId:', callAttemptId);
-    this.emit('customer_connect_with_handle', { handle, sourceId, callAttemptId });
+    console.log('📤 Emitting call.initiate for handle:', handle, 'sourceId:', sourceId, 'callAttemptId:', callAttemptId);
+    this.emit('call.initiate', { handle, sourceId, callAttemptId });
   }
 
   endCall(data?: { callId?: string; handle?: string; sourceId?: string; callAttemptId?: string }): void {
-    console.log('📤 Emitting call_ended with data:', data);
-    this.emit('call_ended', data || {});
+    console.log('📤 Emitting call.terminate with data:', data);
+    this.emit('call.terminate', data || {});
   }
 
   cancelCallRequest(handle: string, sourceId?: string, callAttemptId?: string): void {
-    console.log('📤 Emitting cancel_call_request for handle:', handle, 'sourceId:', sourceId, 'callAttemptId:', callAttemptId);
-    this.emit('cancel_call_request', { handle, sourceId, callAttemptId });
+    console.log('📤 Emitting call.cancel for handle:', handle, 'sourceId:', sourceId, 'callAttemptId:', callAttemptId);
+    this.emit('call.cancel', { handle, sourceId, callAttemptId });
   }
 
   // Agent methods
   goOnlineWithHandle(handle: string, sourceId?: string): void {
-    console.log('📤 Emitting agent_online_with_handle for handle:', handle, 'sourceId:', sourceId);
+    console.log('📤 Emitting device.register for handle:', handle, 'sourceId:', sourceId);
     this.agentState = {
       isAgentOnline: true,
       registrationType: 'with_handle',
       handle,
       sourceId
     };
-    this.emit('agent_online_with_handle', { handle, sourceId });
+    this.emit('device.register', { handle, sourceId, deviceType: 'web' });
   }
 
   goOffline(): void {
-    console.log('📤 Emitting agent_offline');
+    console.log('📤 Emitting device.offline');
     this.agentState = {
       isAgentOnline: false,
       registrationType: 'none'
     };
-    this.emit('agent_offline');
+    this.emit('device.offline', { handle: this.agentState.handle });
   }
 
   acceptCall(callId: string, handle?: string, sourceId?: string, callAttemptId?: string): void {
-    console.log('📤 Emitting accept_call for:', callId, 'handle:', handle, 'sourceId:', sourceId, 'callAttemptId:', callAttemptId);
-    this.emit('accept_call', { callId, handle, sourceId, callAttemptId });
+    console.log('📤 Emitting call.accept for:', callId, 'handle:', handle, 'sourceId:', sourceId, 'callAttemptId:', callAttemptId);
+    this.emit('call.accept', { callId, handle, sourceId, callAttemptId });
   }
 
   declineCall(callId: string, handle?: string, sourceId?: string, callAttemptId?: string): void {
-    console.log('📤 Emitting decline_call for:', callId, 'handle:', handle, 'sourceId:', sourceId, 'callAttemptId:', callAttemptId);
-    this.emit('decline_call', { callId, handle, sourceId, callAttemptId });
+    console.log('📤 Emitting call.decline for:', callId, 'handle:', handle, 'sourceId:', sourceId, 'callAttemptId:', callAttemptId);
+    this.emit('call.decline', { callId, handle, sourceId, callAttemptId });
   }
 
   // WebRTC signaling methods
   sendOffer(callId: string, offer: RTCSessionDescriptionInit, handle?: string, sourceId?: string, callAttemptId?: string): void {
-    console.log('📤 Emitting offer for:', callId, offer, 'handle:', handle, 'sourceId:', sourceId, 'callAttemptId:', callAttemptId);
-    this.emit('offer', { callId, offer, handle, sourceId, callAttemptId });
+    console.log('📤 Emitting webrtc.offer for:', callId, offer, 'handle:', handle, 'sourceId:', sourceId, 'callAttemptId:', callAttemptId);
+    this.emit('webrtc.offer', { callId, offer, handle, sourceId, callAttemptId });
   }
 
   sendAnswer(callId: string, answer: RTCSessionDescriptionInit, handle?: string, sourceId?: string, callAttemptId?: string): void {
-    console.log('📤 Emitting answer for:', callId, answer, 'handle:', handle, 'sourceId:', sourceId, 'callAttemptId:', callAttemptId);
-    this.emit('answer', { callId, answer, handle, sourceId, callAttemptId });
+    console.log('📤 Emitting webrtc.answer for:', callId, answer, 'handle:', handle, 'sourceId:', sourceId, 'callAttemptId:', callAttemptId);
+    this.emit('webrtc.answer', { callId, answer, handle, sourceId, callAttemptId });
   }
 
   sendIceCandidate(callId: string, candidate: RTCIceCandidateInit, handle?: string, sourceId?: string, callAttemptId?: string): void {
-    console.log('📤 Emitting ice_candidate for:', callId, candidate, 'handle:', handle, 'sourceId:', sourceId, 'callAttemptId:', callAttemptId);
-    this.emit('ice_candidate', { callId, candidate, handle, sourceId, callAttemptId });
+    console.log('📤 Emitting webrtc.ice_candidate for:', callId, candidate, 'handle:', handle, 'sourceId:', sourceId, 'callAttemptId:', callAttemptId);
+    this.emit('webrtc.ice_candidate', { callId, candidate, handle, sourceId, callAttemptId });
   }
 
   // WebRTC state synchronization methods
   emitWebRTCConnected(callId: string, handle?: string, sourceId?: string, callAttemptId?: string): void {
-    console.log('📤 Emitting webrtc_connected for:', callId, 'handle:', handle, 'sourceId:', sourceId, 'callAttemptId:', callAttemptId);
-    this.emit('webrtc_connected', { callId, handle, sourceId, callAttemptId });
+    console.log('📤 Emitting webrtc.connected for:', callId, 'handle:', handle, 'sourceId:', sourceId, 'callAttemptId:', callAttemptId);
+    this.emit('webrtc.connected', { callId, handle, sourceId, callAttemptId });
   }
 
   emitWebRTCFailed(callId: string, handle?: string, sourceId?: string, callAttemptId?: string, reason?: string): void {
-    console.log('📤 Emitting webrtc_failed for:', callId, 'handle:', handle, 'sourceId:', sourceId, 'callAttemptId:', callAttemptId, 'reason:', reason);
-    this.emit('webrtc_failed', { callId, handle, sourceId, callAttemptId, reason });
+    console.log('📤 Emitting webrtc.failed for:', callId, 'handle:', handle, 'sourceId:', sourceId, 'callAttemptId:', callAttemptId, 'reason:', reason);
+    this.emit('webrtc.failed', { callId, handle, sourceId, callAttemptId, reason });
   }
 
   emitWebRTCDisconnected(callId: string, handle?: string, sourceId?: string, callAttemptId?: string, reason?: string): void {
-    console.log('📤 Emitting webrtc_disconnected for:', callId, 'handle:', handle, 'sourceId:', sourceId, 'callAttemptId:', callAttemptId, 'reason:', reason);
-    this.emit('webrtc_disconnected', { callId, handle, sourceId, callAttemptId, reason });
+    console.log('📤 Emitting webrtc.disconnected for:', callId, 'handle:', handle, 'sourceId:', sourceId, 'callAttemptId:', callAttemptId, 'reason:', reason);
+    this.emit('webrtc.disconnected', { callId, handle, sourceId, callAttemptId, reason });
   }
 
   // Multi-device coordination methods
   registerDevice(handle: string, deviceType: 'android' | 'web', fcmToken?: string): void {
-    console.log('📤 Emitting register_device for handle:', handle, 'deviceType:', deviceType);
-    this.emit('register_device', { handle, deviceType, fcmToken });
+    console.log('📤 Emitting device.register for handle:', handle, 'deviceType:', deviceType);
+    this.emit('device.register', { handle, deviceType, fcmToken });
     
     // Update local state
     multiDeviceCoordinator.registerDevice(handle, deviceType, {
@@ -428,8 +424,8 @@ export class SocketManager {
   }
 
   unregisterDevice(handle: string, deviceType: 'android' | 'web'): void {
-    console.log('📤 Emitting unregister_device for handle:', handle, 'deviceType:', deviceType);
-    this.emit('unregister_device', { handle, deviceType });
+    console.log('📤 Emitting device.unregister for handle:', handle, 'deviceType:', deviceType);
+    this.emit('device.unregister', { handle, deviceType });
     
     // Update local state
     multiDeviceCoordinator.unregisterDevice(handle, deviceType);
@@ -437,7 +433,7 @@ export class SocketManager {
 
   requestHandleState(handle: string): void {
     console.log('📤 Requesting handle state for:', handle);
-    this.emit('request_handle_state', { handle });
+    this.emit('device.sync_request', { handle });
   }
 
   checkHandleBusyState(handle: string): void {

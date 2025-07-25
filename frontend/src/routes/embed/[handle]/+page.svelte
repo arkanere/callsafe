@@ -127,7 +127,7 @@
             connectionRetryCount = 0;
           }
           callStateMachine.updateWebRTCQuality('good');
-          socket.emit('webrtc_connected', { callId: callState.identifier.callId, handle, sourceId });
+          socket.emit('webrtc.connected', { callId: callState.identifier.callId, handle, sourceId });
           break;
           
         case 'webrtc_failed':
@@ -149,7 +149,7 @@
             
             setTimeout(() => {
               if (CallStateMachineHelper.isCallActive(callStateMachine)) {
-                socket.emit('webrtc_failed', { callId: callState.identifier.callId, handle, sourceId, reason });
+                socket.emit('webrtc.failed', { callId: callState.identifier.callId, handle, sourceId, reason });
               }
             }, WEBRTC_FAILURE_DELAY);
           }
@@ -157,7 +157,7 @@
           
         case 'webrtc_disconnected':
           callStateMachine.updateWebRTCQuality('poor');
-          socket.emit('webrtc_disconnected', { callId: callState.identifier.callId, handle, sourceId, reason });
+          socket.emit('webrtc.disconnected', { callId: callState.identifier.callId, handle, sourceId, reason });
           break;
       }
     });
@@ -192,13 +192,13 @@
     socket.on('routing.no_agents', handleNoAgents);
     socket.on('routing.handle_busy', handleHandleBusy);
 
-    // Legacy WebRTC signaling (unchanged)
-    socket.on('offer', async (data) => {
+    // WebRTC signaling (rationalized events)
+    socket.on('webrtc.offer', async (data) => {
       console.log('📥 Received offer from agent:', data);
       // Legacy handler remains the same
     });
 
-    socket.on('answer', async (data) => {
+    socket.on('webrtc.answer', async (data) => {
       console.log('📥 Received answer from agent:', data);
       try {
         await webrtc.setRemoteAnswer(data.answer);
@@ -212,7 +212,7 @@
       }
     });
 
-    socket.on('ice_candidate', async (data) => {
+    socket.on('webrtc.ice_candidate', async (data) => {
       console.log('🧊 Received ICE candidate:', data);
       try {
         await webrtc.addIceCandidate(data.candidate);
@@ -428,10 +428,10 @@
       // Transition to routing phase
       callStateMachine.transition('ROUTE_CALL');
       
-      // Register as customer with handle
+      // Register as customer with handle (using rationalized event)
       connectionStatus = 'Looking for available agent...';
-      socket.emit('customer_connect_with_handle', { handle, sourceId, callAttemptId });
-      console.log('✅ Customer registration sent');
+      socket.emit('call.initiate', { handle, sourceId, callAttemptId });
+      console.log('✅ Customer call initiation sent');
       
     } catch (error) {
       console.error('❌ Failed to start call:', error);
@@ -468,7 +468,7 @@
       console.log('📞 Creating WebRTC offer for call:', callId);
       const offer = await webrtc.createOffer(callId);
       console.log('📤 Sending offer to agent:', offer);
-      socket.emit('offer', { callId, offer, handle, sourceId });
+      socket.emit('webrtc.offer', { callId, offer, handle, sourceId });
     } catch (error) {
       console.error('❌ Failed to create offer:', error);
       errorMessage = 'Failed to create call offer';
@@ -492,11 +492,11 @@
       if (!state.identifier.callId || state.identifier.callId.startsWith('temp_')) {
         // Call hasn't been assigned a server callId yet
         console.log('📞 Cancelling call request - no server callId assigned yet');
-        socket.emit('cancel_call_request', { handle, sourceId, callAttemptId: state.identifier.sessionId });
+        socket.emit('call.cancel', { handle, sourceId, callAttemptId: state.identifier.sessionId });
       } else {
         // Call has server callId, send normal end call
         console.log('📞 Ending established call with callId:', state.identifier.callId);
-        socket.emit('call_ended', { 
+        socket.emit('call.terminate', { 
           callId: state.identifier.callId, 
           handle: handle,
           sourceId: sourceId
@@ -530,13 +530,13 @@
       
       // Emit UI control change (rationalized)
       const state = callStateMachine.getCurrentState();
-      socket.emitUIControlChange(
-        state.identifier.callId, 
-        handle, 
-        'mute', 
-        isMuted, 
-        state.identifier.sourceId
-      );
+      socket.emit('ui.control_change', {
+        callId: state.identifier.callId,
+        handle: handle,
+        control: 'mute',
+        value: isMuted,
+        sourceId: state.identifier.sourceId
+      });
       
       console.log('🔇 Mute state updated:', isMuted ? 'muted' : 'unmuted');
     }
