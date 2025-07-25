@@ -277,11 +277,6 @@
   function handleCallStateChanged(event: CallStateChangedEvent) {
     console.log('🎯 Call state changed (agent):', event);
     
-    // If this is our current call, update the state machine
-    if (callStateMachine && callStateMachine.getCurrentState().identifier.callId === event.callId) {
-      // State machine will be updated by server events
-    }
-    
     if (event.changes.includes('phase')) {
       const phase = event.current.phase;
       

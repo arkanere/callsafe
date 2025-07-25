@@ -168,6 +168,13 @@ export class CallStateMachine {
     this.emitStateChanged(previousState, this.state, ['device_context']);
   }
 
+  updateCallId(newCallId: string): void {
+    const previousState = { ...this.state };
+    this.state.identifier = { ...this.state.identifier, callId: newCallId };
+
+    this.emitStateChanged(previousState, this.state, ['call_id']);
+  }
+
   // Force termination (for cleanup scenarios)
   forceTerminate(reason: string, initiator: 'customer' | 'agent' | 'system'): void {
     const success = this.transition('FORCE_END');

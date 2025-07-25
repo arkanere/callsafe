@@ -234,8 +234,6 @@
   function handleCallStateChanged(event: CallStateChangedEvent) {
     console.log('🎯 Call state changed:', event);
     
-    // CallStateMachine handles call ID updates internally through server events
-    
     if (event.changes.includes('phase')) {
       const phase = event.current.phase;
       
@@ -388,13 +386,12 @@
     
     try {
       // Generate unique identifiers
-      const callAttemptId = generateUUID();
+      const callAttemptId = generateUUID(); // Customer generates the real call ID
       const sessionId = generateUUID();
-      const tempCallId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       
       // Create call identifier
       const identifier = createCallIdentifier(
-        tempCallId, // Temporary ID that will be replaced by server
+        callAttemptId, // callAttemptId becomes the real call ID
         handle,
         sessionId,
         sourceId
