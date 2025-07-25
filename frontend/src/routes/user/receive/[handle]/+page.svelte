@@ -465,7 +465,8 @@
       
       // Transition through proper states for agent accepting a call
       callStateMachine.transition('ROUTE_CALL'); // Move to routing
-      callStateMachine.transition('AGENT_ACCEPT'); // Accept the call
+      callStateMachine.transition('AGENTS_FOUND'); // Move to ringing (agents found)
+      callStateMachine.transition('AGENT_ACCEPTED'); // Accept the call
       
       // Send accept message to server
       socket.emit('call.accept', { callId, handle, sourceId: incomingCall.sourceId });

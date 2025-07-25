@@ -234,11 +234,7 @@
   function handleCallStateChanged(event: CallStateChangedEvent) {
     console.log('🎯 Call state changed:', event);
     
-    // Update call ID if server provided a real one
-    if (callStateMachine && event.callId && event.callId !== callStateMachine.getCurrentState().identifier.callId) {
-      callStateMachine.updateCallId(event.callId);
-      console.log('🔄 Updated call ID from server:', event.callId);
-    }
+    // CallStateMachine handles call ID updates internally through server events
     
     if (event.changes.includes('phase')) {
       const phase = event.current.phase;
