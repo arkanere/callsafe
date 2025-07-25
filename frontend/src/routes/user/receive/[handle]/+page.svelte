@@ -17,6 +17,7 @@
   } from '$lib/call-state-machine.js';
   import type { 
     CallPhase,
+    CallQuality,
     CallStateChangedEvent,
     CallTerminatedEvent,
     CallErrorEvent,
@@ -85,10 +86,39 @@
   $: handleBusy = $isCurrentHandleBusy;
   $: deviceList = $availableDevices;
 
+  // Reactive state variables that will trigger UI updates
+  let currentPhase: CallPhase = 'terminated';
+  let uiControls = { muteAvailable: false, endCallAvailable: false, muteState: false };
+  let webrtcQuality: CallQuality = 'good';
+  let stateUpdateCounter = 0; // This will trigger reactivity when incremented
+
   // Reactive state derived from call state machine
-  $: if (callStateMachine) {
+  $: if (callStateMachine && stateUpdateCounter >= 0) {
     const state = callStateMachine.getCurrentState();
+    currentPhase = state.phase;
+    uiControls = state.uiControls;
+    webrtcQuality = state.webrtcQuality;
     callDuration = CallStateMachineHelper.getCallDuration(callStateMachine);
+    
+    // Update connection status based on phase
+    if (currentPhase === 'connecting') {
+      connectionStatus = 'Connecting to customer...';
+    } else if (currentPhase === 'active') {
+      connectionStatus = 'Call in progress';
+    }
+  }
+  
+  // Function to trigger UI updates when state machine changes
+  function updateUI() {
+    stateUpdateCounter++;
+  }
+  
+  function getAgentCallPhase(): CallPhase {
+    return currentPhase;
+  }
+
+  function getAgentUIControls() {
+    return uiControls;
   }
 
   onMount(() => {
@@ -167,6 +197,7 @@
       if (state.status === 'connected') {
         connectionMonitor.recordConnectionSuccess();
         callStateMachine.transition('WEBRTC_CONNECTED');
+        updateUI(); // Trigger UI reactivity
         if (previousPhase !== 'active') {
           startCallTimer();
         }
@@ -174,6 +205,7 @@
         connectionMonitor.recordConnectionFailure(state.error || 'Unknown error');
         errorMessage = state.error || 'Call failed';
         callStateMachine.transition('WEBRTC_FAILED');
+        updateUI(); // Trigger UI reactivity
         stopCallTimer();
       } else if (state.status === 'ended') {
         stopCallTimer();
@@ -452,10 +484,12 @@
       // Set up state machine event handlers
       callStateMachine.on('call.state_changed', (event) => {
         console.log('🎯 Agent state machine event:', event);
+        updateUI(); // Trigger UI reactivity
       });
       
       callStateMachine.on('call.terminated', (event) => {
         console.log('🔚 Agent state machine terminated:', event);
+        updateUI(); // Trigger UI reactivity
       });
       
       // Transition through proper states for agent accepting a call

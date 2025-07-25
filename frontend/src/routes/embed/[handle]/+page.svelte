@@ -17,6 +17,7 @@
   } from '$lib/call-state-machine.js';
   import type { 
     CallPhase,
+    CallQuality,
     CallStateChangedEvent,
     CallTerminatedEvent,
     CallErrorEvent,
@@ -39,6 +40,12 @@
   let connectionRetryCount = 0;
   let handle = '';
   let sourceId = '';
+  
+  // Reactive state variables that will trigger UI updates
+  let currentPhase: CallPhase = 'terminated';
+  let uiControls = { muteAvailable: false, endCallAvailable: false, muteState: false };
+  let webrtcQuality: CallQuality = 'good';
+  let stateUpdateCounter = 0; // This will trigger reactivity when incremented
 
   // Constants
   const MAX_RETRY_ATTEMPTS = 2;
@@ -49,10 +56,18 @@
   $: sourceId = $page.url.searchParams.get('sourceId') || '';
 
   // Reactive state derived from call state machine
-  $: if (callStateMachine) {
+  $: if (callStateMachine && stateUpdateCounter >= 0) {
     const state = callStateMachine.getCurrentState();
+    currentPhase = state.phase;
+    uiControls = state.uiControls;
+    webrtcQuality = state.webrtcQuality;
     isConnecting = ['routing', 'ringing', 'connecting'].includes(state.phase);
     connectionStatus = getConnectionStatusMessage(state.phase);
+  }
+  
+  // Function to trigger UI updates when state machine changes
+  function updateUI() {
+    stateUpdateCounter++;
   }
 
   onMount(() => {
@@ -91,11 +106,13 @@
       if (state.status === 'connected') {
         connectionMonitor.recordConnectionSuccess();
         callStateMachine.transition('WEBRTC_CONNECTED');
+        updateUI(); // Trigger UI reactivity
         connectionStatus = '';
       } else if (state.status === 'failed') {
         connectionMonitor.recordConnectionFailure(state.error || 'Unknown error');
         errorMessage = state.error || 'Call failed';
         callStateMachine.transition('WEBRTC_FAILED');
+        updateUI(); // Trigger UI reactivity
       } else if (state.status === 'connecting') {
         console.log('🔄 WebRTC connecting...');
       }
@@ -406,10 +423,12 @@
       // Set up state machine event handlers
       callStateMachine.on('call.state_changed', (event) => {
         console.log('🎯 State machine event:', event);
+        updateUI(); // Trigger UI reactivity
       });
       
       callStateMachine.on('call.terminated', (event) => {
         console.log('🔚 State machine terminated:', event);
+        updateUI(); // Trigger UI reactivity
       });
       
       console.log('🚀 Starting call process...');
@@ -583,16 +602,12 @@
     }
   }
 
-  function getCurrentPhase(): CallPhase {
-    return callStateMachine?.getPhase() || 'terminated';
+  function getCallPhase(): CallPhase {
+    return currentPhase;
   }
 
-  function getUIControls() {
-    return callStateMachine?.getUIControls() || { 
-      muteAvailable: false, 
-      endCallAvailable: false, 
-      muteState: false 
-    };
+  function getCallUIControls() {
+    return uiControls;
   }
 </script>
 
@@ -612,11 +627,11 @@
     <!-- Call Status -->
     <div class="mb-6">
       <div class="flex items-center justify-center mb-4">
-        <div class="w-4 h-4 rounded-full mr-2 {getCurrentPhase() === 'active' ? 'bg-green-500' : 
-                                               ['connecting', 'routing', 'ringing'].includes(getCurrentPhase()) ? 'bg-yellow-500 animate-pulse' : 
-                                               getCurrentPhase() === 'terminated' && errorMessage ? 'bg-red-500' : 
+        <div class="w-4 h-4 rounded-full mr-2 {getCallPhase() === 'active' ? 'bg-green-500' : 
+                                               ['connecting', 'routing', 'ringing'].includes(getCallPhase()) ? 'bg-yellow-500 animate-pulse' : 
+                                               getCallPhase() === 'terminated' && errorMessage ? 'bg-red-500' : 
                                                'bg-gray-400'}"></div>
-        <span class="text-sm font-medium {getStatusColor(getCurrentPhase())}">
+        <span class="text-sm font-medium {getStatusColor(getCallPhase())}">
           {connectionStatus}
         </span>
       </div>
@@ -640,7 +655,7 @@
 
     <!-- Main Call Interface -->
     <div class="space-y-4">
-      {#if getCurrentPhase() === 'terminated' || getCurrentPhase() === 'initializing'}
+      {#if getCallPhase() === 'terminated' || getCallPhase() === 'initializing'}
         <button
           on:click={startCall}
           disabled={isConnecting || !handle}
@@ -668,7 +683,7 @@
             Try Again
           </button>
         {/if}
-      {:else if ['routing', 'ringing', 'connecting'].includes(getCurrentPhase())}
+      {:else if ['routing', 'ringing', 'connecting'].includes(getCallPhase())}
         <div class="text-center py-4">
           <div class="animate-pulse">
             <div class="w-16 h-16 bg-yellow-200 rounded-full mx-auto mb-4 flex items-center justify-center">
@@ -676,7 +691,7 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
               </svg>
             </div>
-            <p class="text-gray-600 mb-4">{getConnectionStatusMessage(getCurrentPhase())}</p>
+            <p class="text-gray-600 mb-4">{getConnectionStatusMessage(getCallPhase())}</p>
           </div>
         </div>
 
@@ -684,10 +699,10 @@
         <div class="flex space-x-4">
           <button
             on:click={toggleMute}
-            disabled={!getUIControls().muteAvailable}
-            class="flex-1 {getUIControls().muteState ? 'bg-red-600 hover:bg-red-700' : 'bg-gray-600 hover:bg-gray-700'} disabled:bg-gray-300 text-white font-semibold py-3 px-4 rounded-xl transition-colors duration-200 flex items-center justify-center"
+            disabled={!getCallUIControls().muteAvailable}
+            class="flex-1 {getCallUIControls().muteState ? 'bg-red-600 hover:bg-red-700' : 'bg-gray-600 hover:bg-gray-700'} disabled:bg-gray-300 text-white font-semibold py-3 px-4 rounded-xl transition-colors duration-200 flex items-center justify-center"
           >
-            {#if getUIControls().muteState}
+            {#if getCallUIControls().muteState}
               <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" clip-rule="evenodd"/>
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"/>
@@ -703,7 +718,7 @@
 
           <button
             on:click={endCall}
-            disabled={!getUIControls().endCallAvailable}
+            disabled={!getCallUIControls().endCallAvailable}
             class="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-gray-300 text-white font-semibold py-3 px-4 rounded-xl transition-colors duration-200 flex items-center justify-center"
           >
             <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -712,7 +727,7 @@
             End Call
           </button>
         </div>
-      {:else if getCurrentPhase() === 'active'}
+      {:else if getCallPhase() === 'active'}
         <div class="text-center py-4">
           <div class="w-16 h-16 bg-green-200 rounded-full mx-auto mb-4 flex items-center justify-center">
             <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -726,9 +741,9 @@
         <div class="flex space-x-4">
           <button
             on:click={toggleMute}
-            class="flex-1 {getUIControls().muteState ? 'bg-red-600 hover:bg-red-700' : 'bg-gray-600 hover:bg-gray-700'} text-white font-semibold py-3 px-4 rounded-xl transition-colors duration-200 flex items-center justify-center"
+            class="flex-1 {getCallUIControls().muteState ? 'bg-red-600 hover:bg-red-700' : 'bg-gray-600 hover:bg-gray-700'} text-white font-semibold py-3 px-4 rounded-xl transition-colors duration-200 flex items-center justify-center"
           >
-            {#if getUIControls().muteState}
+            {#if getCallUIControls().muteState}
               <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" clip-rule="evenodd"/>
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"/>
@@ -759,8 +774,8 @@
     {#if import.meta.env.DEV && callStateMachine}
       <div class="mt-8 p-4 bg-gray-100 rounded-lg text-xs">
         <p><strong>Debug:</strong></p>
-        <p>Phase: {getCurrentPhase()}</p>
-        <p>UI Controls: {JSON.stringify(getUIControls())}</p>
+        <p>Phase: {getCallPhase()}</p>
+        <p>UI Controls: {JSON.stringify(getCallUIControls())}</p>
         <p>WebRTC Quality: {callStateMachine.getCurrentState().webrtcQuality}</p>
       </div>
     {/if}
