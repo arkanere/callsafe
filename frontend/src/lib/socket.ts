@@ -12,6 +12,7 @@ export class SocketManager {
   private maxReconnectDelay = 16000; // Max 16 seconds
   private serverUrl: string;
   private rationalizedHandlers: Map<string, Function[]> = new Map();
+  private legacyCallbacks: Map<string, Function[]> = new Map();
   
   // State tracking for reconnection
   private agentState: {
@@ -188,6 +189,12 @@ export class SocketManager {
       this.triggerRationalizedHandler('routing.handle_busy', event);
     });
 
+    // Device events
+    this.socket.on('device.registered', (data) => {
+      console.log('📱 Device registered:', data);
+      this.triggerRationalizedHandler('device.registered', data);
+    });
+
     // WebRTC signaling (rationalized events)
     this.socket.on('webrtc.offer', (data) => {
       this.triggerRationalizedHandler('webrtc.offer', data);
@@ -205,69 +212,9 @@ export class SocketManager {
   private setupMultiDeviceEventHandlers(): void {
     if (!this.socket) return;
 
-    // Device registration and status events
-    this.socket.on('device_registered', (data) => {
-      console.log('📱 Device registered:', data);
-      multiDeviceCoordinator.registerDevice(data.handle, data.deviceType, {
-        fcmToken: data.fcmToken,
-        socketConnected: data.online
-      });
-      this.triggerCallback('device_registered', data);
-    });
-
-    this.socket.on('device_status_changed', (data) => {
-      console.log('📱 Device status changed:', data);
-      multiDeviceCoordinator.updateHandleState(data.handle, {
-        type: 'device_update',
-        deviceType: data.deviceType,
-        deviceData: { online: data.online }
-      });
-      this.triggerCallback('device_status_changed', data);
-    });
-
-    // Handle busy state changes
-    this.socket.on('handle_busy_state_changed', (data) => {
-      console.log('📞 Handle busy state changed:', data);
-      multiDeviceCoordinator.updateCallState(data.handle, {
-        status: data.busy ? 'busy' : 'available',
-        currentCallId: data.callId,
-        acceptedBy: data.acceptedBy
-      });
-      this.triggerCallback('handle_busy_state_changed', data);
-    });
-
-    // Multi-device call coordination
-    this.socket.on('call_accepted_elsewhere', (data) => {
-      console.log('📞 Call accepted elsewhere:', data);
-      multiDeviceCoordinator.updateCallState(data.handle, {
-        status: 'busy',
-        currentCallId: data.callId,
-        acceptedBy: data.acceptedBy
-      });
-      this.triggerCallback('call_accepted_elsewhere', data);
-    });
-
-    this.socket.on('call_ended_elsewhere', (data) => {
-      console.log('📞 Call ended elsewhere:', data);
-      multiDeviceCoordinator.updateCallState(data.handle, {
-        status: 'available',
-        currentCallId: undefined,
-        acceptedBy: undefined
-      });
-      this.triggerCallback('call_ended_elsewhere', data);
-    });
-
-    // Full state synchronization
-    this.socket.on('sync_handle_state', (data) => {
-      console.log('🔄 Syncing handle state:', data);
-      multiDeviceCoordinator.syncHandleState({
-        handle: data.handle,
-        devices: data.devices,
-        callState: data.callState,
-        lastUpdated: new Date()
-      });
-      this.triggerCallback('sync_handle_state', data);
-    });
+    // Since we're using pure rationalized events, we only need device coordination through the rationalized system
+    // Multi-device coordination is handled through device.* events
+    console.log('📱 Multi-device coordination using rationalized events only');
   }
 
   private triggerRationalizedHandler(event: string, data: any): void {
@@ -283,15 +230,16 @@ export class SocketManager {
     }
   }
 
+
   private async handleReconnection(): Promise<void> {
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
       console.error('Max reconnection attempts reached');
-      this.triggerCallback('connection_failed', 'Max reconnection attempts reached');
+      // Connection failed - using rationalized event system only
       return;
     }
 
     this.reconnectAttempts++;
-    this.triggerCallback('reconnect_attempt', this.reconnectAttempts);
+    console.log(`🔄 Reconnection attempt ${this.reconnectAttempts}`);
     
     console.log(`Reconnection attempt ${this.reconnectAttempts} in ${this.reconnectDelay}ms`);
     

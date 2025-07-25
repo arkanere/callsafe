@@ -222,33 +222,12 @@
     
     // Routing events for new incoming calls
     socket.on('routing.call_routed', handleIncomingCall);
-
-    // Legacy events for incoming calls (backward compatibility)
-    socket.on('new_incoming_call', (data) => {
-      console.log('📞 New incoming call (legacy):', data);
-      handleLegacyIncomingCall(data);
-    });
-
+    
+    // Device events
     socket.on('device.registered', (data) => {
       console.log('✅ Device successfully registered:', data);
       connectionStatus = 'Registered - Ready to receive calls';
       isOnline = true;
-    });
-
-    socket.on('call.terminated', (data) => {
-      console.log('📞 Call terminated:', data);
-      removeIncomingCall(data.callId);
-    });
-
-    socket.on('call.missed', (data) => {
-      console.log('📞 Missed call notification:', data);
-      addToCallHistory({
-        callId: data.callId,
-        duration: 0,
-        status: 'missed',
-        sourceId: data.sourceId,
-        reason: data.reason || 'missed_call'
-      });
     });
 
     // WebRTC signaling (rationalized events)
@@ -408,16 +387,11 @@
 
   function handleIncomingCall(event: any) {
     console.log('📞 Incoming call routed:', event);
-    // This would be sent when a call is routed to this agent
-    // For now, we'll use the legacy handler
-  }
-
-  function handleLegacyIncomingCall(data: any) {
-    console.log('📞 New incoming call received:', data);
+    
     const call = {
-      callId: data.callId,
+      callId: event.callId,
       timestamp: Date.now(),
-      sourceId: data.sourceId,
+      sourceId: event.sourceId || '',
       handle: handle
     };
     
