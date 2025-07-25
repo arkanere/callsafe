@@ -383,10 +383,11 @@
       // Generate unique identifiers
       const callAttemptId = generateUUID();
       const sessionId = generateUUID();
+      const tempCallId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       
       // Create call identifier
       const identifier = createCallIdentifier(
-        '', // Will be set by server
+        tempCallId, // Temporary ID that will be replaced by server
         handle,
         sessionId,
         sourceId
@@ -421,9 +422,6 @@
       connectionStatus = 'Connecting to signaling server...';
       await socket.connect();
       console.log('✅ Connected to signaling server');
-      
-      // Update call identifier with generated callId (will be updated by server)
-      identifier.callId = `temp_${Date.now()}`;
       
       // Transition to routing phase
       callStateMachine.transition('ROUTE_CALL');

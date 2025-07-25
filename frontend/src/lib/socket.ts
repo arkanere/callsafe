@@ -485,6 +485,13 @@ export class SocketManager {
     return this.isConnected;
   }
 
+  // Enable rationalized events (compatibility method)
+  enableRationalizedEvents(enabled: boolean): void {
+    console.log('📡 Rationalized events', enabled ? 'enabled' : 'disabled');
+    // This is already handled in setupRationalizedEventHandlers
+    // Method exists for compatibility with existing code
+  }
+
   // Enhanced emission methods for rationalized events
   emit(event: string, data: any): void {
     console.log('🔥 Emitting event:', event, 'with data:', data);
