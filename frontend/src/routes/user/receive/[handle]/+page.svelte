@@ -189,7 +189,12 @@
     webrtc.setIceCandidateHandler((candidate) => {
       if (callStateMachine) {
         const state = callStateMachine.getCurrentState();
-        socket.sendIceCandidate(state.identifier.callId, candidate, handle, state.identifier.sourceId);
+        socket.emit('webrtc.ice_candidate', {
+          callId: state.identifier.callId,
+          candidate: candidate,
+          handle: handle,
+          sourceId: state.identifier.sourceId
+        });
       }
     });
   }
@@ -237,14 +242,21 @@
         const state = callStateMachine.getCurrentState();
         if (state.identifier.callId === data.callId) {
           try {
+            // Ensure WebRTC is ready to process the offer
+            await webrtc.initializeMedia({ audio: true, video: false });
             const answer = await webrtc.createAnswer(data.callId, data.offer);
             socket.emit('webrtc.answer', { callId: data.callId, answer, handle, sourceId: data.sourceId });
+            console.log('📤 Sent answer to customer');
           } catch (error) {
             console.error('❌ Failed to create answer:', error);
             errorMessage = 'Failed to answer call';
             callStateMachine.transition('WEBRTC_FAILED');
           }
+        } else {
+          console.log('❌ Call ID mismatch - ignoring offer');
         }
+      } else {
+        console.log('❌ No active call state machine - ignoring offer');
       }
     });
 
@@ -439,7 +451,7 @@
       // Create device context
       const deviceContext = createDeviceContext('web', 'browser', true);
       
-      // Initialize call state machine
+      // Initialize call state machine for agent (start in ringing state for incoming call)
       callStateMachine = createCallStateMachine(identifier, deviceContext, false);
       
       // Set up state machine event handlers
@@ -451,8 +463,9 @@
         console.log('🔚 Agent state machine terminated:', event);
       });
       
-      // Transition to connecting phase
-      callStateMachine.transition('AGENT_ACCEPTED');
+      // Transition through proper states for agent accepting a call
+      callStateMachine.transition('ROUTE_CALL'); // Move to routing
+      callStateMachine.transition('AGENT_ACCEPT'); // Accept the call
       
       // Send accept message to server
       socket.emit('call.accept', { callId, handle, sourceId: incomingCall.sourceId });

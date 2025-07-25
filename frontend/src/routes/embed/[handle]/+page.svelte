@@ -110,7 +110,12 @@
     webrtc.setIceCandidateHandler((candidate) => {
       if (callStateMachine) {
         const state = callStateMachine.getCurrentState();
-        socket.sendIceCandidate(state.identifier.callId, candidate, handle, sourceId);
+        socket.emit('webrtc.ice_candidate', {
+          callId: state.identifier.callId,
+          candidate: candidate,
+          handle: handle,
+          sourceId: sourceId
+        });
       }
     });
 
@@ -228,6 +233,12 @@
 
   function handleCallStateChanged(event: CallStateChangedEvent) {
     console.log('🎯 Call state changed:', event);
+    
+    // Update call ID if server provided a real one
+    if (callStateMachine && event.callId && event.callId !== callStateMachine.getCurrentState().identifier.callId) {
+      callStateMachine.updateCallId(event.callId);
+      console.log('🔄 Updated call ID from server:', event.callId);
+    }
     
     if (event.changes.includes('phase')) {
       const phase = event.current.phase;
