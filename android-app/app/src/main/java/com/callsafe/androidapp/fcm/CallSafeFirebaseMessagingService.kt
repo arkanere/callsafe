@@ -38,11 +38,20 @@ class CallSafeFirebaseMessagingService : FirebaseMessagingService() {
         val sessionManager = SessionManager.getInstance(this)
         sessionManager.saveFCMToken(token)
         
-        // Send token to server if user is logged in
+        // CRITICAL: Send token to server if user is logged in
         if (sessionManager.isSessionValid()) {
             val userHandle = sessionManager.getUserHandle()
             Log.i(TAG, "📤 Sending FCM token to server for handle: $userHandle")
-            // TODO: Send token to server via API call
+            
+            // CRITICAL: Also update the SocketManager with new token
+            try {
+                val socketManager = com.callsafe.androidapp.network.SocketManager.getInstance()
+                socketManager.setFCMToken(token)
+                Log.i(TAG, "✅ FCM token updated in SocketManager")
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Failed to update SocketManager with FCM token", e)
+            }
+            
             sendTokenToServer(token, userHandle)
         } else {
             Log.w(TAG, "⚠️ User not logged in, will send token later")
@@ -195,7 +204,7 @@ class CallSafeFirebaseMessagingService : FirebaseMessagingService() {
     private fun showIncomingCallActivity(callId: String, sourceId: String, callerName: String) {
         Log.i(TAG, "🚀 Launching incoming call activity")
         
-        val intent = Intent(this, IncomingCallActivityNew::class.java).apply {
+        val intent = Intent(this, IncomingCallActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or 
                    Intent.FLAG_ACTIVITY_CLEAR_TOP or 
                    Intent.FLAG_ACTIVITY_SINGLE_TOP
@@ -219,7 +228,7 @@ class CallSafeFirebaseMessagingService : FirebaseMessagingService() {
         Log.i(TAG, "🔔 Showing incoming call notification")
         
         // Intent to open incoming call activity
-        val intent = Intent(this, IncomingCallActivityNew::class.java).apply {
+        val intent = Intent(this, IncomingCallActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             putExtra("callId", callId)
             putExtra("sourceId", sourceId)
@@ -345,31 +354,45 @@ class CallSafeFirebaseMessagingService : FirebaseMessagingService() {
     }
     
     private fun sendTokenToServer(token: String, handle: String?) {
-        // TODO: Implement API call to send FCM token to server
-        // This should be called whenever:
-        // 1. New token is received
-        // 2. User logs in
-        // 3. User changes handle
+        if (handle == null) {
+            Log.w(TAG, "⚠️ Cannot send FCM token - no handle available")
+            return
+        }
         
-        Log.i(TAG, "📤 TODO: Send FCM token to server")
+        Log.i(TAG, "📤 Implementing FCM token API call to server")
         Log.i(TAG, "🎯 Token: ${token.take(20)}...")
         Log.i(TAG, "👤 Handle: $handle")
         
-        // Example implementation:
-        /*
-        val apiService = RetrofitClient.getApiService()
-        lifecycleScope.launch {
-            try {
-                val response = apiService.updateFCMToken(handle, token)
-                if (response.isSuccessful) {
-                    Log.i(TAG, "✅ FCM token sent to server successfully")
-                } else {
-                    Log.e(TAG, "❌ Failed to send FCM token: ${response.errorBody()}")
+        // Use the SignalingApiService for FCM token registration
+        try {
+            val signalingApiService = com.callsafe.androidapp.network.RetrofitInstance.getSignalingApiService()
+            
+            // Create request using proper FCMTokenRequest model
+            val request = com.callsafe.androidapp.models.FCMTokenRequest(
+                handle = handle,
+                fcmToken = token,
+                platform = "android",
+                sourceId = SessionManager.getInstance(this).getSourceId()
+            )
+            
+            // Use coroutine for async API call
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                try {
+                    val response = signalingApiService.updateFCMToken(request)
+                    if (response.isSuccessful) {
+                        Log.i(TAG, "✅ FCM token sent to signaling server successfully via API")
+                        Log.i(TAG, "✅ Response: ${response.body()}")
+                    } else {
+                        Log.e(TAG, "❌ Failed to send FCM token via signaling API: ${response.code()} - ${response.message()}")
+                        Log.e(TAG, "❌ Response body: ${response.errorBody()?.string()}")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ Exception during FCM token API call", e)
                 }
-            } catch (e: Exception) {
-                Log.e(TAG, "❌ Error sending FCM token", e)
             }
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Exception setting up FCM token API call", e)
         }
-        */
     }
 }

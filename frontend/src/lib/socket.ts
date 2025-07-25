@@ -1,6 +1,6 @@
 import { io, type Socket } from 'socket.io-client';
 import { browser } from '$app/environment';
-import type { AllSocketEvents } from './types/socket.js';
+import type { RationalizedEventHandlers, AllRationalizedEvents } from './types/rationalized-events.js';
 import { multiDeviceCoordinator } from './stores/multi-device.js';
 
 export class SocketManager {
@@ -11,13 +11,12 @@ export class SocketManager {
   private reconnectDelay = 1000; // Start with 1 second
   private maxReconnectDelay = 16000; // Max 16 seconds
   private serverUrl: string;
-  private connectionCallbacks: Map<string, (data?: any) => void> = new Map();
+  private rationalizedHandlers: Map<string, Function[]> = new Map();
   
   // State tracking for reconnection
   private agentState: {
     isAgentOnline: boolean;
-    registrationType: 'none' | 'basic' | 'with_user' | 'with_handle';
-    userId?: number;
+    registrationType: 'none' | 'with_handle';
     handle?: string;
     sourceId?: string;
   } = {
@@ -110,76 +109,99 @@ export class SocketManager {
   private setupEventHandlers(): void {
     if (!this.socket) return;
 
-    // Handle server events
-    this.socket.on('new_incoming_call', (data) => {
-      this.triggerCallback('new_incoming_call', data);
+    this.setupRationalizedEventHandlers();
+    this.setupMultiDeviceEventHandlers();
+  }
+
+  private setupRationalizedEventHandlers(): void {
+    if (!this.socket) return;
+
+    console.log('📡 Setting up rationalized event handlers');
+
+    // Core call lifecycle events
+    this.socket.on('call.state_changed', (event) => {
+      console.log('📞 Call state changed:', event);
+      this.triggerRationalizedHandler('call.state_changed', event);
     });
 
-    this.socket.on('call_accepted', (data) => {
-      this.triggerCallback('call_accepted', data);
+    this.socket.on('call.terminated', (event) => {
+      console.log('📞 Call terminated:', event);
+      this.triggerRationalizedHandler('call.terminated', event);
     });
 
-    this.socket.on('call_routed', (data) => {
-      this.triggerCallback('call_routed', data);
+    this.socket.on('call.error', (event) => {
+      console.log('⚠️ Call error:', event);
+      this.triggerRationalizedHandler('call.error', event);
     });
 
-    this.socket.on('call_ended', (callId) => {
-      this.triggerCallback('call_ended', callId);
+    // UI control events
+    this.socket.on('ui.control_changed', (event) => {
+      console.log('🎛️ UI control changed:', event);
+      this.triggerRationalizedHandler('ui.control_changed', event);
     });
 
-    this.socket.on('no_agents_available', () => {
-      this.triggerCallback('no_agents_available');
+    this.socket.on('ui.state_sync', (event) => {
+      console.log('🔄 UI state sync:', event);
+      this.triggerRationalizedHandler('ui.state_sync', event);
     });
 
-    this.socket.on('call_timeout', (callId) => {
-      this.triggerCallback('call_timeout', callId);
+    // Device coordination events
+    this.socket.on('device.call_accepted', (event) => {
+      console.log('📱 Device call accepted:', event);
+      this.triggerRationalizedHandler('device.call_accepted', event);
     });
 
-    this.socket.on('handle_not_found', () => {
-      this.triggerCallback('handle_not_found');
+    this.socket.on('device.call_ended', (event) => {
+      console.log('📱 Device call ended:', event);
+      this.triggerRationalizedHandler('device.call_ended', event);
     });
 
-    this.socket.on('missed_call', (data) => {
-      this.triggerCallback('missed_call', data);
+    this.socket.on('device.status_changed', (event) => {
+      console.log('📱 Device status changed:', event);
+      this.triggerRationalizedHandler('device.status_changed', event);
     });
 
-    // Handle WebRTC signaling events
+    this.socket.on('device.sync_required', (event) => {
+      console.log('🔄 Device sync required:', event);
+      this.triggerRationalizedHandler('device.sync_required', event);
+    });
+
+    // WebRTC events
+    this.socket.on('webrtc.state_changed', (event) => {
+      console.log('🌐 WebRTC state changed:', event);
+      this.triggerRationalizedHandler('webrtc.state_changed', event);
+    });
+
+    // Routing events
+    this.socket.on('routing.call_routed', (event) => {
+      console.log('🚦 Call routed:', event);
+      this.triggerRationalizedHandler('routing.call_routed', event);
+    });
+
+    this.socket.on('routing.no_agents', (event) => {
+      console.log('🚫 No agents available:', event);
+      this.triggerRationalizedHandler('routing.no_agents', event);
+    });
+
+    this.socket.on('routing.handle_busy', (event) => {
+      console.log('📞 Handle busy:', event);
+      this.triggerRationalizedHandler('routing.handle_busy', event);
+    });
+
+    // WebRTC signaling (direct handling)
     this.socket.on('offer', (data) => {
-      this.triggerCallback('offer', data);
+      this.triggerRationalizedHandler('offer', data);
     });
 
     this.socket.on('answer', (data) => {
-      this.triggerCallback('answer', data);
+      this.triggerRationalizedHandler('answer', data);
     });
 
     this.socket.on('ice_candidate', (data) => {
-      this.triggerCallback('ice_candidate', data);
+      this.triggerRationalizedHandler('ice_candidate', data);
     });
+  }
 
-    // Handle error events
-    this.socket.on('network_error', (error) => {
-      this.triggerCallback('network_error', error);
-    });
-
-    this.socket.on('turn_server_failed', (error) => {
-      this.triggerCallback('turn_server_failed', error);
-    });
-
-    this.socket.on('call_disconnected', (reason) => {
-      this.triggerCallback('call_disconnected', reason);
-    });
-
-    this.socket.on('call_no_longer_available', (data) => {
-      this.triggerCallback('call_no_longer_available', data);
-    });
-
-    this.socket.on('agent_registered', (data) => {
-      this.triggerCallback('agent_registered', data);
-    });
-
-    this.socket.on('call_request_cancelled', (data) => {
-      this.triggerCallback('call_request_cancelled', data);
-    });
 
     // Multi-device coordination events
     this.setupMultiDeviceEventHandlers();
@@ -253,10 +275,16 @@ export class SocketManager {
     });
   }
 
-  private triggerCallback(event: string, data?: any): void {
-    const callback = this.connectionCallbacks.get(event);
-    if (callback) {
-      callback(data);
+  private triggerRationalizedHandler(event: string, data: any): void {
+    const handlers = this.rationalizedHandlers.get(event);
+    if (handlers) {
+      handlers.forEach(handler => {
+        try {
+          handler(data);
+        } catch (error) {
+          console.error(`[SocketManager] Error in rationalized handler for ${event}:`, error);
+        }
+      });
     }
   }
 
@@ -299,37 +327,16 @@ export class SocketManager {
 
     console.log('🔄 Restoring agent state after reconnection:', this.agentState);
     
-    switch (this.agentState.registrationType) {
-      case 'basic':
-        console.log('🔄 Re-registering agent (basic)');
-        this.emit('agent_online');
-        break;
-      
-      case 'with_user':
-        if (this.agentState.userId) {
-          console.log('🔄 Re-registering agent with user ID:', this.agentState.userId);
-          this.emit('agent_online_with_user', { userId: this.agentState.userId });
-        }
-        break;
-      
-      case 'with_handle':
-        if (this.agentState.handle) {
-          console.log('🔄 Re-registering agent with handle:', this.agentState.handle, 'sourceId:', this.agentState.sourceId);
-          this.emit('agent_online_with_handle', { 
-            handle: this.agentState.handle, 
-            sourceId: this.agentState.sourceId 
-          });
-        }
-        break;
+    if (this.agentState.registrationType === 'with_handle' && this.agentState.handle) {
+      console.log('🔄 Re-registering agent with handle:', this.agentState.handle, 'sourceId:', this.agentState.sourceId);
+      this.emit('agent_online_with_handle', { 
+        handle: this.agentState.handle, 
+        sourceId: this.agentState.sourceId 
+      });
     }
   }
 
   // Customer methods
-  connectAsCustomer(): void {
-    console.log('📤 Emitting customer_connect (no handle)');
-    this.emit('customer_connect');
-  }
-
   connectAsCustomerWithHandle(handle: string, sourceId?: string, callAttemptId?: string): void {
     console.log('📤 Emitting customer_connect_with_handle for handle:', handle, 'sourceId:', sourceId, 'callAttemptId:', callAttemptId);
     this.emit('customer_connect_with_handle', { handle, sourceId, callAttemptId });
@@ -346,25 +353,6 @@ export class SocketManager {
   }
 
   // Agent methods
-  goOnline(): void {
-    console.log('📤 Emitting agent_online');
-    this.agentState = {
-      isAgentOnline: true,
-      registrationType: 'basic'
-    };
-    this.emit('agent_online');
-  }
-
-  goOnlineWithUser(userId: number): void {
-    console.log('📤 Emitting agent_online_with_user for user ID:', userId);
-    this.agentState = {
-      isAgentOnline: true,
-      registrationType: 'with_user',
-      userId
-    };
-    this.emit('agent_online_with_user', { userId });
-  }
-
   goOnlineWithHandle(handle: string, sourceId?: string): void {
     console.log('📤 Emitting agent_online_with_handle for handle:', handle, 'sourceId:', sourceId);
     this.agentState = {
@@ -470,18 +458,63 @@ export class SocketManager {
     }
   }
 
-  // Event subscription methods
-  on<K extends keyof AllSocketEvents>(event: K, callback: AllSocketEvents[K]): void {
-    this.connectionCallbacks.set(event, callback);
+  // Event subscription methods (Rationalized only)
+  on<K extends keyof RationalizedEventHandlers>(
+    event: K, 
+    handler: RationalizedEventHandlers[K]
+  ): void {
+    if (!this.rationalizedHandlers.has(event)) {
+      this.rationalizedHandlers.set(event, []);
+    }
+    this.rationalizedHandlers.get(event)?.push(handler);
   }
 
-  off(event: string): void {
-    this.connectionCallbacks.delete(event);
+  off(event: string, handler?: Function): void {
+    if (!handler) {
+      this.rationalizedHandlers.delete(event);
+      return;
+    }
+
+    const handlers = this.rationalizedHandlers.get(event);
+    if (handlers) {
+      const index = handlers.indexOf(handler);
+      if (index > -1) {
+        handlers.splice(index, 1);
+      }
+    }
   }
 
   // Connection status
   getConnectionStatus(): boolean {
     return this.isConnected;
+  }
+
+  // Enhanced emission methods for rationalized events
+  emit(event: string, data: any): void {
+    console.log('🔥 Emitting event:', event, 'with data:', data);
+    console.log('Socket exists:', !!this.socket, 'Connected:', this.isConnected);
+    
+    if (this.socket && this.isConnected) {
+      this.socket.emit(event, data);
+      console.log('✅ Event emitted successfully');
+    } else {
+      console.warn(`❌ Cannot emit ${event}: socket not connected`);
+    }
+  }
+
+  // UI Control methods (rationalized)
+  emitUIControlChange(callId: string, handle: string, controlType: 'mute' | 'end_call', newState: boolean | 'triggered', sourceId?: string): void {
+    this.emit('ui.control_changed', {
+      type: 'ui.control_changed',
+      callId,
+      handle,
+      controlType,
+      newState,
+      source: 'user_action',
+      phase: 'active', // Will be updated by state machine
+      deviceContext: { deviceType: 'web', deviceId: 'browser', isLocalDevice: true },
+      sourceId
+    });
   }
 
   // Cleanup
@@ -491,6 +524,6 @@ export class SocketManager {
       this.socket = null;
     }
     this.isConnected = false;
-    this.connectionCallbacks.clear();
+    this.rationalizedHandlers.clear();
   }
 }

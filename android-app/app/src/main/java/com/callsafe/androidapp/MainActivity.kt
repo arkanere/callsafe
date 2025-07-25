@@ -39,6 +39,9 @@ class MainActivity : AppCompatActivity() {
         initViews()
         setupClickListeners()
         loadUserCredentials()
+        
+        // CRITICAL: Auto-start service for logged-in users so they can receive calls
+        startCallSafeServiceIfNeeded()
     }
     
     private fun initViews() {
@@ -53,6 +56,14 @@ class MainActivity : AppCompatActivity() {
     
     private fun setupClickListeners() {
         btnReceiveCalls.setOnClickListener {
+            // CRITICAL: Start the CallSafe service when user wants to receive calls
+            try {
+                com.callsafe.androidapp.service.CallSafeService.startService(this)
+                android.util.Log.i("MainActivity", "✅ CallSafe service started")
+            } catch (e: Exception) {
+                android.util.Log.e("MainActivity", "❌ Failed to start CallSafe service", e)
+            }
+            
             startActivity(Intent(this, UserReceiveActivity::class.java))
         }
         
@@ -97,5 +108,15 @@ class MainActivity : AppCompatActivity() {
         // Navigate back to login
         startActivity(Intent(this, LoginActivity::class.java))
         finish()
+    }
+    
+    private fun startCallSafeServiceIfNeeded() {
+        try {
+            android.util.Log.i("MainActivity", "🚀 Auto-starting CallSafe service for logged-in user")
+            com.callsafe.androidapp.service.CallSafeService.startService(this)
+            android.util.Log.i("MainActivity", "✅ CallSafe service auto-started successfully")
+        } catch (e: Exception) {
+            android.util.Log.e("MainActivity", "❌ Failed to auto-start CallSafe service", e)
+        }
     }
 }

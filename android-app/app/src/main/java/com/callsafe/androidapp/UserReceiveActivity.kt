@@ -355,13 +355,6 @@ class UserReceiveActivity : AppCompatActivity() {
         handle = userHandle
         sourceId = userSourceId ?: ""
         
-        // Set FCM token in SocketManager if available
-        val cachedFCMToken = sessionManager.getFCMToken()
-        if (cachedFCMToken != null) {
-            Log.i(TAG, "📱 Setting cached FCM token in SocketManager: ${cachedFCMToken.take(20)}...")
-            socketManager.setFCMToken(cachedFCMToken)
-        }
-        
         // Load call history from local storage
         loadCallHistory()
         
@@ -1206,6 +1199,7 @@ class UserReceiveActivity : AppCompatActivity() {
                     ringtonePlayer.stopRinging()
                 }
             }
+            }
         }
     }
     
@@ -1446,9 +1440,6 @@ class UserReceiveActivity : AppCompatActivity() {
             
             // Save token locally
             sessionManager.saveFCMToken(token)
-            
-            // Set token in SocketManager for modern registration
-            socketManager.setFCMToken(token)
             
             // Send token to server
             sendFCMTokenToServer(token)

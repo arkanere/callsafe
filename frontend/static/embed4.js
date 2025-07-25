@@ -777,6 +777,7 @@
             });
             
             this.socket.on('ice_candidate', async (data) => {
+                console.log('🧊 Received ICE candidate');
                 try {
                     await this.peerConnection.addIceCandidate(data.candidate);
                 } catch (error) {
@@ -784,71 +785,57 @@
                 }
             });
             
-            // Multi-device coordination events
-            this.socket.on('call_accepted_elsewhere', (data) => {
-                console.log('📞 Call accepted elsewhere:', data);
-                
-                if (data.handle === this.config.handle && data.callId === this.callState.callId) {
-                    this.updateCallState({
-                        status: 'ended',
-                        error: `Call answered on ${data.acceptedBy} device`,
-                        callId: null,
-                        isConnecting: false
-                    });
-                    
-                    // Clean up
-                    this.cleanup();
-                }
-            });
-            
-            this.socket.on('handle_busy_state_changed', (data) => {
-                console.log('📞 Handle busy state changed:', data);
-                
-                if (data.handle === this.config.handle) {
-                    if (data.busy && !this.callState.callId) {
-                        // Handle became busy while we were trying to call
-                        this.updateCallState({
-                            status: 'busy',
-                            error: `Business is now on another call (${data.acceptedBy} device)`,
-                            isConnecting: false
-                        });
-                    }
-                }
-            });
-            
-            this.socket.on('no_agents_available', () => {
+            this.socket.on('call_ended', () => {
+                console.log('📞 Call ended by agent');
                 this.updateCallState({ 
-                    status: 'failed', 
+                    status: 'ended', 
                     isConnecting: false,
-                    error: 'No agents available. Please try again later.' 
+                    error: 'Call ended by agent'
                 });
+                this.cleanup();
             });
             
             this.socket.on('call_timeout', () => {
+                console.log('⏰ Call timed out');
                 this.updateCallState({ 
                     status: 'failed', 
                     isConnecting: false,
-                    error: 'Call timeout. Please try again.' 
+                    error: 'No agent available. Please try again later.'
                 });
+                this.cleanup();
             });
             
-            this.socket.on('call_ended', (data) => {
-                console.log('📞 Call ended by agent/server:', data);
-                this.cleanup();
+            this.socket.on('no_agents_available', () => {
+                console.log('👥 No agents available');
                 this.updateCallState({ 
-                    status: 'ended',
-                    error: 'Call ended by agent',
-                    callId: null,
-                    isConnecting: false
+                    status: 'failed', 
+                    isConnecting: false,
+                    error: 'All representatives are currently busy. Please try again in a few minutes.'
                 });
+                this.cleanup();
+            });
+            
+            this.socket.on('handle_busy', (data) => {
+                console.log('📞 Handle is busy:', data);
+                this.updateCallState({ 
+                    status: 'busy', 
+                    isConnecting: false,
+                    error: `Business is currently busy (${data.acceptedBy} device). Please try again later.`
+                });
+                this.cleanup();
             });
         }
         
         registerAsCustomer() {
             this.socket.emit('customer_connect_with_handle', {
                 handle: this.config.handle,
-                sourceId: this.config.sourceId
+                sourceId: this.config.sourceId,
+                callAttemptId: this.generateCallAttemptId()
             });
+        }
+        
+        generateCallAttemptId() {
+            return `call_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         }
         
         async createPeerConnection() {
@@ -857,25 +844,26 @@
                 { urls: 'stun:stun1.l.google.com:19302' }
             ];
             
-            this.peerConnection = new RTCPeerConnection({
-                iceServers: iceServers,
-                iceCandidatePoolSize: 10
-            });
+            this.peerConnection = new RTCPeerConnection({ iceServers });
             
             // Add local stream
-            this.localStream.getTracks().forEach(track => {
-                this.peerConnection.addTrack(track, this.localStream);
-            });
+            if (this.localStream) {
+                this.localStream.getTracks().forEach(track => {
+                    this.peerConnection.addTrack(track, this.localStream);
+                });
+            }
             
             // Handle remote stream
             this.peerConnection.ontrack = (event) => {
-                console.log('📺 Remote stream received');
-                this.remoteAudio.srcObject = event.streams[0];
+                console.log('📺 Received remote stream');
+                if (this.remoteAudio && event.streams[0]) {
+                    this.remoteAudio.srcObject = event.streams[0];
+                }
             };
             
             // Handle ICE candidates
             this.peerConnection.onicecandidate = (event) => {
-                if (event.candidate && this.callState.callId) {
+                if (event.candidate && this.socket) {
                     this.socket.emit('ice_candidate', {
                         callId: this.callState.callId,
                         candidate: event.candidate,
@@ -887,16 +875,17 @@
             
             // Handle connection state changes
             this.peerConnection.onconnectionstatechange = () => {
-                const state = this.peerConnection.connectionState;
-                console.log('WebRTC connection state:', state);
+                console.log('🔗 Connection state:', this.peerConnection.connectionState);
                 
-                if (state === 'connected') {
+                if (this.peerConnection.connectionState === 'connected') {
                     this.updateCallState({ status: 'connected' });
-                } else if (state === 'failed' || state === 'disconnected') {
+                    this.startCallTimer();
+                } else if (this.peerConnection.connectionState === 'failed' || 
+                          this.peerConnection.connectionState === 'disconnected') {
                     this.updateCallState({ 
                         status: 'failed', 
-                        isConnecting: false, 
-                        error: 'Connection lost' 
+                        isConnecting: false,
+                        error: 'Connection failed'
                     });
                 }
             };
@@ -908,6 +897,32 @@
             return offer;
         }
         
+        startCallTimer() {
+            this.currentCallStartTime = Date.now();
+            this.durationInterval = setInterval(() => {
+                this.callDuration = Math.floor((Date.now() - this.currentCallStartTime) / 1000);
+                this.updateTimer();
+            }, 1000);
+        }
+        
+        stopCallTimer() {
+            if (this.durationInterval) {
+                clearInterval(this.durationInterval);
+                this.durationInterval = null;
+            }
+            this.currentCallStartTime = null;
+            this.callDuration = 0;
+        }
+        
+        updateTimer() {
+            const timer = this.modal.querySelector('.callsafe-timer');
+            if (timer) {
+                const minutes = Math.floor(this.callDuration / 60);
+                const seconds = this.callDuration % 60;
+                timer.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            }
+        }
+        
         toggleMute() {
             if (!this.localStream) return;
             
@@ -917,44 +932,49 @@
                 this.callState.isMuted = !audioTrack.enabled;
                 
                 const muteBtn = this.modal.querySelector('.callsafe-btn.mute');
-                muteBtn.textContent = this.callState.isMuted ? 'Unmute' : 'Mute';
-                muteBtn.classList.toggle('active', this.callState.isMuted);
-            }
-        }
-        
-        startCallTimer() {
-            this.currentCallStartTime = Date.now();
-            this.durationInterval = setInterval(() => {
-                if (this.currentCallStartTime) {
-                    this.callDuration = Math.floor((Date.now() - this.currentCallStartTime) / 1000);
-                    this.updateTimerDisplay();
+                if (muteBtn) {
+                    muteBtn.textContent = this.callState.isMuted ? 'Unmute' : 'Mute';
+                    muteBtn.classList.toggle('active', this.callState.isMuted);
                 }
-            }, 1000);
-        }
-        
-        stopCallTimer() {
-            if (this.durationInterval) {
-                clearInterval(this.durationInterval);
             }
-            this.currentCallStartTime = null;
-            this.callDuration = 0;
-            this.durationInterval = null;
         }
         
-        formatDuration(seconds) {
-            const mins = Math.floor(seconds / 60);
-            const secs = seconds % 60;
-            return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-        }
-        
-        updateTimerDisplay() {
-            const timerElement = this.modal.querySelector('.callsafe-timer');
-            if (timerElement) {
-                timerElement.textContent = this.formatDuration(this.callDuration);
+        endCall() {
+            if (this.socket && this.callState.callId) {
+                this.socket.emit('call_ended', {
+                    callId: this.callState.callId,
+                    handle: this.config.handle,
+                    sourceId: this.config.sourceId
+                });
             }
+            
+            this.updateCallState({ 
+                status: 'ended', 
+                isConnecting: false,
+                error: 'Call ended'
+            });
+            
+            this.cleanup();
+            
+            setTimeout(() => {
+                this.closeModal();
+            }, 2000);
+        }
+        
+        retryCall() {
+            this.cleanup();
+            this.updateCallState({ 
+                status: 'idle', 
+                error: null, 
+                isConnecting: false,
+                callId: null 
+            });
+            this.startCall();
         }
         
         cleanup() {
+            this.stopCallTimer();
+            
             if (this.peerConnection) {
                 this.peerConnection.close();
                 this.peerConnection = null;
@@ -965,248 +985,162 @@
                 this.localStream = null;
             }
             
-            this.stopCallTimer();
-        }
-        
-        endCall() {
             if (this.socket) {
-                if (this.callState.callId) {
-                    this.socket.emit('call_ended', {
-                        callId: this.callState.callId,
-                        handle: this.config.handle,
-                        sourceId: this.config.sourceId
-                    });
-                }
                 this.socket.disconnect();
                 this.socket = null;
             }
-            
-            this.cleanup();
-            
-            // Update state to allow modal closing
-            this.callState = { 
-                status: 'idle', 
-                callId: null, 
-                isMuted: false,
-                isConnecting: false 
-            };
-            
-            // Close modal immediately
-            this.closeModal();
         }
         
-        retryCall() {
-            this.updateCallState({ 
-                status: 'idle', 
-                error: null, 
-                isConnecting: false, 
-                callId: null 
-            });
-            this.startCall();
-        }
-        
-        updateCallState(updates) {
-            this.callState = { ...this.callState, ...updates };
+        updateCallState(newState) {
+            this.callState = { ...this.callState, ...newState };
             this.updateUI();
         }
         
         updateUI() {
-            const trigger = this.widget?.querySelector('.callsafe-trigger5');
-            const statusIcon = this.modal?.querySelector('.callsafe-status-icon');
-            const statusText = this.modal?.querySelector('.callsafe-status');
-            const statusMessage = this.modal?.querySelector('.callsafe-status-message');
-            const timerElement = this.modal?.querySelector('.callsafe-timer');
-            const startBtn = this.modal?.querySelector('.callsafe-start-btn');
-            const retryBtn = this.modal?.querySelector('.callsafe-retry-btn');
-            const controls = this.modal?.querySelector('.callsafe-controls');
-            const iconSvg = statusIcon?.querySelector('svg');
-            const spinner = statusIcon?.querySelector('.callsafe-spinner');
+            const trigger = this.widget.querySelector('.callsafe-trigger5');
+            const statusIcon = this.modal.querySelector('.callsafe-status-icon');
+            const status = this.modal.querySelector('.callsafe-status');
+            const statusMessage = this.modal.querySelector('.callsafe-status-message');
+            const startBtn = this.modal.querySelector('.callsafe-start-btn');
+            const retryBtn = this.modal.querySelector('.callsafe-retry-btn');
+            const controls = this.modal.querySelector('.callsafe-controls');
+            const timer = this.modal.querySelector('.callsafe-timer');
+            const spinner = this.modal.querySelector('.callsafe-spinner');
             
-            if (!trigger || !statusIcon || !statusText || !statusMessage) return;
+            // Update trigger button
+            trigger.className = `callsafe-trigger5 ${this.callState.status}`;
             
-            // Reset classes
-            trigger.className = 'callsafe-trigger5';
-            statusIcon.className = 'callsafe-status-icon';
+            // Update status icon
+            statusIcon.className = `callsafe-status-icon ${this.callState.status}`;
             
+            // Update text content
             switch (this.callState.status) {
                 case 'idle':
-                    this.stopCallTimer();
-                    
-                    trigger.classList.add('idle');
-                    statusIcon.classList.add('idle');
-                    statusText.textContent = 'Ready to Call';
+                    trigger.querySelector('.callsafe-text').textContent = 'Call Now';
+                    status.textContent = 'Ready to Call';
                     statusMessage.textContent = 'Click to start your call';
-                    if (timerElement) timerElement.style.display = 'none';
-                    if (startBtn) startBtn.style.display = 'flex';
-                    if (retryBtn) retryBtn.style.display = 'none';
-                    if (controls) controls.style.display = 'none';
-                    if (iconSvg) iconSvg.style.display = 'block';
-                    if (spinner) spinner.style.display = 'none';
+                    startBtn.style.display = 'block';
+                    retryBtn.style.display = 'none';
+                    controls.style.display = 'none';
+                    timer.style.display = 'none';
+                    spinner.style.display = 'none';
                     break;
                     
                 case 'checking':
-                    trigger.classList.add('checking');
-                    statusIcon.classList.add('checking');
-                    statusText.textContent = 'Checking Availability...';
-                    statusMessage.textContent = 'Verifying business availability';
-                    if (timerElement) timerElement.style.display = 'none';
-                    if (startBtn) startBtn.style.display = 'none';
-                    if (retryBtn) retryBtn.style.display = 'none';
-                    if (controls) controls.style.display = 'none';
-                    if (iconSvg) iconSvg.style.display = 'none';
-                    if (spinner) spinner.style.display = 'block';
+                    trigger.querySelector('.callsafe-text').textContent = 'Checking...';
+                    status.textContent = 'Checking Availability';
+                    statusMessage.textContent = 'Checking if agents are available...';
+                    startBtn.style.display = 'none';
+                    retryBtn.style.display = 'none';
+                    controls.style.display = 'none';
+                    timer.style.display = 'none';
+                    spinner.style.display = 'block';
                     break;
                     
                 case 'connecting':
-                    trigger.classList.add('connecting');
-                    statusIcon.classList.add('connecting');
-                    statusText.textContent = 'Connecting...';
-                    statusMessage.textContent = 'Looking for available agent';
-                    if (timerElement) timerElement.style.display = 'none';
-                    if (startBtn) startBtn.style.display = 'none';
-                    if (retryBtn) retryBtn.style.display = 'none';
-                    if (controls) controls.style.display = 'flex';
-                    if (iconSvg) iconSvg.style.display = 'none';
-                    if (spinner) spinner.style.display = 'block';
+                    trigger.querySelector('.callsafe-text').textContent = 'Connecting...';
+                    status.textContent = 'Connecting';
+                    statusMessage.textContent = 'Finding an available agent...';
+                    startBtn.style.display = 'none';
+                    retryBtn.style.display = 'none';
+                    controls.style.display = 'none';
+                    timer.style.display = 'none';
+                    spinner.style.display = 'block';
                     break;
                     
                 case 'connected':
-                    trigger.classList.add('connected');
-                    statusIcon.classList.add('connected');
-                    statusText.textContent = 'Connected to Agent';
+                    trigger.querySelector('.callsafe-text').textContent = 'Connected';
+                    status.textContent = 'Connected';
                     statusMessage.textContent = 'You are now speaking with an agent';
-                    
-                    if (!this.durationInterval) {
-                        this.startCallTimer();
-                    }
-                    
-                    if (timerElement) {
-                        timerElement.style.display = 'block';
-                        timerElement.textContent = this.formatDuration(this.callDuration);
-                    }
-                    if (startBtn) startBtn.style.display = 'none';
-                    if (retryBtn) retryBtn.style.display = 'none';
-                    if (controls) controls.style.display = 'flex';
-                    if (iconSvg) iconSvg.style.display = 'block';
-                    if (spinner) spinner.style.display = 'none';
-                    break;
-                    
-                case 'busy':
-                    this.stopCallTimer();
-                    
-                    trigger.classList.add('busy');
-                    statusIcon.classList.add('busy');
-                    statusText.textContent = 'Business is Busy';
-                    statusMessage.textContent = this.callState.error || 'Business is currently on another call';
-                    if (timerElement) timerElement.style.display = 'none';
-                    if (startBtn) startBtn.style.display = 'none';
-                    if (retryBtn) retryBtn.style.display = 'block';
-                    if (controls) controls.style.display = 'none';
-                    if (iconSvg) iconSvg.style.display = 'block';
-                    if (spinner) spinner.style.display = 'none';
+                    startBtn.style.display = 'none';
+                    retryBtn.style.display = 'none';
+                    controls.style.display = 'flex';
+                    timer.style.display = 'block';
+                    spinner.style.display = 'none';
                     break;
                     
                 case 'failed':
-                    this.stopCallTimer();
-                    
-                    trigger.classList.add('failed');
-                    statusIcon.classList.add('failed');
-                    statusText.textContent = 'Call Failed';
-                    statusMessage.textContent = this.callState.error || 'Unable to connect. Please try again.';
-                    if (timerElement) timerElement.style.display = 'none';
-                    if (startBtn) startBtn.style.display = 'none';
-                    if (retryBtn) retryBtn.style.display = 'block';
-                    if (controls) controls.style.display = 'none';
-                    if (iconSvg) iconSvg.style.display = 'block';
-                    if (spinner) spinner.style.display = 'none';
+                    trigger.querySelector('.callsafe-text').textContent = 'Try Again';
+                    status.textContent = 'Call Failed';
+                    statusMessage.textContent = this.callState.error || 'Something went wrong';
+                    startBtn.style.display = 'none';
+                    retryBtn.style.display = 'block';
+                    controls.style.display = 'none';
+                    timer.style.display = 'none';
+                    spinner.style.display = 'none';
                     break;
                     
                 case 'ended':
-                    this.stopCallTimer();
+                    trigger.querySelector('.callsafe-text').textContent = 'Call Again';
+                    status.textContent = 'Call Ended';
+                    statusMessage.textContent = 'Call has been terminated';
+                    startBtn.style.display = 'none';
+                    retryBtn.style.display = 'block';
+                    controls.style.display = 'none';
+                    timer.style.display = 'none';
+                    spinner.style.display = 'none';
+                    break;
                     
-                    trigger.classList.add('failed');
-                    statusIcon.classList.add('failed');
-                    statusText.textContent = 'Call Ended';
-                    statusMessage.textContent = this.callState.error || 'Call has been ended';
-                    if (timerElement) timerElement.style.display = 'none';
-                    if (startBtn) startBtn.style.display = 'none';
-                    if (retryBtn) retryBtn.style.display = 'block';
-                    if (controls) controls.style.display = 'none';
-                    if (iconSvg) iconSvg.style.display = 'block';
-                    if (spinner) spinner.style.display = 'none';
+                case 'busy':
+                    trigger.querySelector('.callsafe-text').textContent = 'Line Busy';
+                    status.textContent = 'Line Busy';
+                    statusMessage.textContent = this.callState.error || 'Business line is currently busy';
+                    startBtn.style.display = 'none';
+                    retryBtn.style.display = 'block';
+                    controls.style.display = 'none';
+                    timer.style.display = 'none';
+                    spinner.style.display = 'none';
                     break;
             }
         }
         
         setupEventListeners() {
-            // Handle escape key
-            document.addEventListener('keydown', (e) => {
-                if (e.key === 'Escape' && this.isModalOpen) {
-                    this.closeModal();
-                }
-            });
-            
             // Handle page unload
             window.addEventListener('beforeunload', () => {
-                if (this.callState.status !== 'idle') {
-                    this.endCall();
+                this.cleanup();
+            });
+            
+            // Handle visibility change
+            document.addEventListener('visibilitychange', () => {
+                if (document.hidden && this.callState.status === 'connected') {
+                    console.log('📱 Page hidden during call - maintaining connection');
                 }
             });
         }
+    }
+    
+    // Global initialization function
+    window.initCallSafeWidget = function(config) {
+        if (!config || !config.handle) {
+            console.error('CallSafe Widget: handle is required');
+            return;
+        }
         
-        destroy() {
-            this.endCall();
-            this.stopCallTimer();
-            if (this.widget) {
-                this.widget.remove();
-            }
-            if (this.modal) {
-                this.modal.remove();
-            }
-            if (this.remoteAudio) {
-                this.remoteAudio.remove();
-            }
-            const styles = document.getElementById('callsafe-embed5-styles');
-            if (styles) {
-                styles.remove();
-            }
+        // Wait for DOM to be ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => {
+                new MultiDeviceCallWidget(config);
+            });
+        } else {
+            new MultiDeviceCallWidget(config);
+        }
+    };
+    
+    // Auto-initialize if config is provided in script tag
+    const scriptTag = document.currentScript;
+    if (scriptTag) {
+        const handle = scriptTag.getAttribute('data-handle');
+        const sourceId = scriptTag.getAttribute('data-source-id');
+        const baseUrl = scriptTag.getAttribute('data-base-url');
+        const signalingUrl = scriptTag.getAttribute('data-signaling-url');
+        
+        if (handle) {
+            window.initCallSafeWidget({
+                handle,
+                sourceId,
+                baseUrl,
+                signalingUrl
+            });
         }
     }
-    
-    // Auto-initialize widgets from script tags
-    function initializeWidgets() {
-        const scripts = document.querySelectorAll('script[src*="embed5.js"]');
-        
-        scripts.forEach(script => {
-            const handle = script.getAttribute('data-handle');
-            const sourceId = script.getAttribute('data-source-id');
-            
-            if (!handle) {
-                console.warn('CallSafe embed5: data-handle attribute is required');
-                return;
-            }
-            
-            // Prevent multiple widgets from the same script
-            if (script.dataset.initialized) return;
-            script.dataset.initialized = 'true';
-            
-            new MultiDeviceCallWidget({
-                handle: handle,
-                sourceId: sourceId || '',
-                baseUrl: script.getAttribute('data-base-url') || 'https://callsafe.tech',
-                signalingUrl: script.getAttribute('data-signaling-url') || 'https://tunnel.callsafe.tech'
-            });
-        });
-    }
-    
-    // Initialize when DOM is ready
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initializeWidgets);
-    } else {
-        initializeWidgets();
-    }
-    
-    // Expose MultiDeviceCallWidget for manual initialization
-    window.MultiDeviceCallWidget = MultiDeviceCallWidget;
-    
 })();

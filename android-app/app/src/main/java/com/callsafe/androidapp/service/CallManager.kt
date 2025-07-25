@@ -72,6 +72,15 @@ class CallManager(
                     connectionStatus = "Connected"
                 )}
                 
+                // CRITICAL: Set FCM token before registering
+                val fcmToken = sessionManager.getFCMToken()
+                if (fcmToken != null) {
+                    Log.i(TAG, "🔥 Setting FCM token: ${fcmToken.take(20)}...")
+                    socketManager.setFCMToken(fcmToken)
+                } else {
+                    Log.w(TAG, "⚠️ No FCM token available")
+                }
+                
                 // Register as agent
                 socketManager.goOnlineWithHandle(handle, sourceId)
             } else {
@@ -338,6 +347,8 @@ class CallManager(
             return
         }
         
+        Log.i(TAG, "📞 NEW INCOMING CALL RECEIVED: $callId, sourceId: $sourceId")
+        
         val incomingCall = IncomingCall(
             callId = callId,
             sourceId = sourceId,
@@ -358,6 +369,23 @@ class CallManager(
         }, 30000) // 30 second timeout
         
         callTimeouts[callId] = handler
+        
+        // CRITICAL: Launch incoming call activity immediately
+        try {
+            val intent = android.content.Intent(context, com.callsafe.androidapp.IncomingCallActivity::class.java).apply {
+                flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or 
+                       android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP or 
+                       android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP
+                putExtra("callId", callId)
+                putExtra("sourceId", sourceId)
+                putExtra("callerName", sourceId) // Use sourceId as caller name
+                putExtra("fromService", true)
+            }
+            context.startActivity(intent)
+            Log.i(TAG, "✅ Launched incoming call activity for call: $callId")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Failed to launch incoming call activity", e)
+        }
         
         Log.i(TAG, "✅ Added incoming call: $callId")
     }

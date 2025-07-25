@@ -125,7 +125,11 @@ class SocketManager private constructor() {
         socket?.apply {
             // EXACTLY match website incoming events
             on("new_incoming_call") { args ->
-                Log.i(TAG, "📞 NEW INCOMING CALL")
+                Log.i(TAG, "📞 NEW INCOMING CALL RECEIVED VIA SOCKET")
+                Log.i(TAG, "📞 Args length: ${args.size}")
+                args.forEachIndexed { index, arg ->
+                    Log.i(TAG, "📞 Arg $index: $arg")
+                }
                 handleSocketEvent("new_incoming_call", args)
             }
             
@@ -208,10 +212,16 @@ class SocketManager private constructor() {
         
         val listener = eventListeners[eventName]
         if (listener != null) {
-            Log.i(TAG, "✅ Calling listener for '$eventName'")
-            listener.invoke(data)
+            Log.i(TAG, "✅ Calling listener for '$eventName' - DATA: $data")
+            try {
+                listener.invoke(data)
+                Log.i(TAG, "✅ Listener executed successfully for '$eventName'")
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Error executing listener for '$eventName'", e)
+            }
         } else {
             Log.e(TAG, "❌ No listener registered for '$eventName'")
+            Log.e(TAG, "❌ All listeners: ${eventListeners.keys.toList()}")
         }
     }
     
@@ -286,23 +296,33 @@ class SocketManager private constructor() {
         fcmToken = token
     }
     
-    // Use modern agent registration
+    // CRITICAL: Use modern agent registration that matches server expectations
     fun goOnlineWithHandle(handle: String, sourceId: String?) {
-        Log.i(TAG, "📤 Going online with handle: $handle using modern registration")
+        Log.i(TAG, "📤 Going online with handle: $handle using MODERN agent_register")
+        Log.i(TAG, "🔥 FCM Token available: ${fcmToken?.take(20)}...")
+        
         agentState = AgentState(
             isAgentOnline = true,
             registrationType = "with_handle", 
             handle = handle,
             sourceId = sourceId
         )
+        
+        // Use the EXACT registration format the server expects
         val data = JSONObject().apply {
             put("handle", handle)
-            put("deviceType", "android")
-            put("platform", "android")
+            put("deviceType", "android")  // CRITICAL: Server expects this exact field
+            put("platform", "android")   // CRITICAL: Server expects this exact field
             sourceId?.let { put("sourceId", it) }
-            fcmToken?.let { put("fcmToken", it) }
+            fcmToken?.let { 
+                put("fcmToken", it)
+                Log.i(TAG, "✅ Including FCM token in registration: ${it.take(20)}...")
+            } ?: Log.w(TAG, "⚠️ No FCM token available for registration")
         }
+        
+        Log.i(TAG, "📤 Sending agent_register with data: $data")
         emitInternal("agent_register", data)
+        Log.i(TAG, "✅ agent_register event sent successfully")
     }
     
     fun goOffline() {

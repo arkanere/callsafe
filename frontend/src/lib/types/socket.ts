@@ -1,12 +1,10 @@
 export interface CustomerEvents {
-  customer_connect: () => void;
   call_ended: () => void;
   connection_failed: (reason: string) => void;
   reconnect_attempt: (attempt: number) => void;
 }
 
 export interface AgentEvents {
-  agent_online: () => void;
   agent_offline: () => void;
   accept_call: (callId: string) => void;
   decline_call: (callId: string) => void;

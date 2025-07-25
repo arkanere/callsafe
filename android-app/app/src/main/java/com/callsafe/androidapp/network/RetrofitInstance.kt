@@ -43,4 +43,8 @@ object RetrofitInstance {
             .build()
             .create(SignalingApiService::class.java)
     }
+    
+    // Getter methods for external access
+    fun getApiService(): ApiService = api
+    fun getSignalingApiService(): SignalingApiService = signalingApi
 }

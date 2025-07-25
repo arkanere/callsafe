@@ -1,50 +1,74 @@
 <script lang="ts">
+  // Rationalized Embed Component for CallSafe Customer Widget
+  // Uses unified call state machine and rationalized events
+  
   import { onMount, onDestroy } from 'svelte';
   import { page } from '$app/stores';
   import { WebRTCManager } from '$lib/webrtc.js';
   import { SocketManager } from '$lib/socket.js';
   import { connectionMonitor } from '$lib/monitoring.js';
-  import type { CallState } from '$lib/types/webrtc.js';
   import { generateUUID } from '$lib/utils/uuid.js';
+  
+  // Import rationalized event system
+  import { 
+    CallStateMachine, 
+    createCallStateMachine,
+    CallStateMachineHelper 
+  } from '$lib/call-state-machine.js';
+  import type { 
+    CallPhase,
+    CallStateChangedEvent,
+    CallTerminatedEvent,
+    CallErrorEvent,
+    UIControlChangedEvent,
+    WebRTCStateEvent,
+    CallIdentifier
+  } from '$lib/types/rationalized-events.js';
+  import { createCallIdentifier, createDeviceContext } from '$lib/types/rationalized-events.js';
 
+  // Component state
   let webrtc: WebRTCManager;
   let socket: SocketManager;
-  let callState: CallState = {
-    status: 'idle',
-    isCustomer: true,
-    isMuted: false,
-    sourceId: ''
-  };
-  let errorMessage = '';
+  let callStateMachine: CallStateMachine;
+  
+  // UI reactive state (derived from state machine)
   let isConnecting = false;
-  let remoteAudio: HTMLAudioElement;
+  let errorMessage = '';
   let connectionStatus = 'Disconnected';
+  let remoteAudio: HTMLAudioElement;
+  let connectionRetryCount = 0;
   let handle = '';
   let sourceId = '';
-  let webrtcFailureTimeout: NodeJS.Timeout | null = null;
-  let connectionRetryCount = 0;
-  const MAX_RETRY_ATTEMPTS = 2;
-  const WEBRTC_FAILURE_DELAY = 20000; // 20 seconds delay before reporting failure
 
-  // Extract handle from URL parameters
+  // Constants
+  const MAX_RETRY_ATTEMPTS = 2;
+  const WEBRTC_FAILURE_DELAY = 20000;
+
+  // Extract parameters
   $: handle = $page.params.handle || '';
-  // Extract sourceId from URL query parameters
   $: sourceId = $page.url.searchParams.get('sourceId') || '';
+
+  // Reactive state derived from call state machine
+  $: if (callStateMachine) {
+    const state = callStateMachine.getCurrentState();
+    isConnecting = ['routing', 'ringing', 'connecting'].includes(state.phase);
+    connectionStatus = getConnectionStatusMessage(state.phase);
+  }
 
   onMount(() => {
     webrtc = new WebRTCManager(true);
     socket = new SocketManager();
     
-    // Update callState with sourceId
-    callState = { ...callState, sourceId };
+    // Enable rationalized events
+    socket.enableRationalizedEvents(true);
     
     setupWebRTCHandlers();
-    setupSocketHandlers();
+    setupRationalizedSocketHandlers();
   });
 
   onDestroy(() => {
-    if (webrtcFailureTimeout) {
-      clearTimeout(webrtcFailureTimeout);
+    if (callStateMachine) {
+      callStateMachine.forceTerminate('component_destroyed', 'customer');
     }
     if (webrtc) {
       webrtc.endCall();
@@ -54,23 +78,26 @@
     }
   });
 
+  // =============================================================================
+  // WEBRTC SETUP (Enhanced with State Machine Integration)
+  // =============================================================================
+
   function setupWebRTCHandlers() {
     webrtc.setStateChangeHandler((state) => {
-      const previousStatus = callState.status;
-      callState = { ...callState, ...state };
-      console.log('📱 Call state updated:', callState);
+      if (!callStateMachine) return;
+      
+      console.log('📱 WebRTC state change:', state);
       
       if (state.status === 'connected') {
         connectionMonitor.recordConnectionSuccess();
-        // Clear any connection messages when successfully connected
+        callStateMachine.transition('WEBRTC_CONNECTED');
         connectionStatus = '';
       } else if (state.status === 'failed') {
         connectionMonitor.recordConnectionFailure(state.error || 'Unknown error');
         errorMessage = state.error || 'Call failed';
-      } else if (state.status === 'connecting' && previousStatus === 'connected') {
-        // Show reconnecting message without failing the call
-        connectionStatus = 'Reconnecting...';
-        console.log('🔄 Connection temporarily lost, attempting to reconnect...');
+        callStateMachine.transition('WEBRTC_FAILED');
+      } else if (state.status === 'connecting') {
+        console.log('🔄 WebRTC connecting...');
       }
     });
 
@@ -81,101 +108,94 @@
     });
 
     webrtc.setIceCandidateHandler((candidate) => {
-      if (callState.callId) {
-        socket.sendIceCandidate(callState.callId, candidate, handle, sourceId);
+      if (callStateMachine) {
+        const state = callStateMachine.getCurrentState();
+        socket.sendIceCandidate(state.identifier.callId, candidate, handle, sourceId);
       }
     });
 
     webrtc.setWebRTCStateChangeHandler((state, reason) => {
       console.log('📡 WebRTC state change:', state, 'reason:', reason);
-      if (callState.callId) {
-        switch (state) {
-          case 'webrtc_connected':
-            // Clear any pending failure timeout
-            if (webrtcFailureTimeout) {
-              clearTimeout(webrtcFailureTimeout);
-              webrtcFailureTimeout = null;
-            }
+      
+      if (!callStateMachine) return;
+      const callState = callStateMachine.getCurrentState();
+      
+      switch (state) {
+        case 'webrtc_connected':
+          if (connectionRetryCount > 0) {
+            console.log('🎉 WebRTC recovery successful after', connectionRetryCount, 'retries');
             connectionRetryCount = 0;
-            socket.emitWebRTCConnected(callState.callId, handle, sourceId);
-            break;
-          case 'webrtc_failed':
-            console.log('🔄 WebRTC failed, retry count:', connectionRetryCount);
+          }
+          callStateMachine.updateWebRTCQuality('good');
+          socket.emit('webrtc_connected', { callId: callState.identifier.callId, handle, sourceId });
+          break;
+          
+        case 'webrtc_failed':
+          console.log('🔄 WebRTC failed, retry count:', connectionRetryCount);
+          
+          if (connectionRetryCount < MAX_RETRY_ATTEMPTS) {
+            connectionRetryCount++;
+            connectionStatus = `Connection failed, retrying... (${connectionRetryCount}/${MAX_RETRY_ATTEMPTS})`;
+            callStateMachine.updateWebRTCQuality('unstable');
             
-            // Don't immediately report failure - add delay and retry logic
-            if (connectionRetryCount < MAX_RETRY_ATTEMPTS) {
-              connectionRetryCount++;
-              console.log(`🔄 Attempting WebRTC retry ${connectionRetryCount}/${MAX_RETRY_ATTEMPTS}`);
-              connectionStatus = `Connection failed, retrying... (${connectionRetryCount}/${MAX_RETRY_ATTEMPTS})`;
-              
-              // Wait a bit before retrying
-              setTimeout(() => {
-                if (callState.status !== 'ended' && callState.callId) {
-                  console.log('🔄 Retrying WebRTC connection...');
-                  // Don't create a new offer, just wait for ICE to continue
-                }
-              }, 3000);
-            } else {
-              // Only report failure after retries exhausted and with delay
-              if (!webrtcFailureTimeout) {
-                connectionStatus = 'Connection struggling, please wait...';
-                console.log(`⏰ Scheduling WebRTC failure report in ${WEBRTC_FAILURE_DELAY/1000} seconds`);
-                
-                webrtcFailureTimeout = setTimeout(() => {
-                  if (callState.status !== 'ended' && callState.callId) {
-                    console.log('⏰ WebRTC failure timeout reached, reporting failure');
-                    socket.emitWebRTCFailed(callState.callId, handle, sourceId, reason);
-                  }
-                  webrtcFailureTimeout = null;
-                }, WEBRTC_FAILURE_DELAY);
+            setTimeout(() => {
+              if (CallStateMachineHelper.isCallActive(callStateMachine)) {
+                console.log('🔄 Retrying WebRTC connection...');
               }
-            }
-            break;
-          case 'webrtc_disconnected':
-            socket.emitWebRTCDisconnected(callState.callId, handle, sourceId, reason);
-            break;
-        }
+            }, 3000);
+          } else {
+            connectionStatus = 'Connection struggling, please wait...';
+            callStateMachine.updateWebRTCQuality('failed');
+            
+            setTimeout(() => {
+              if (CallStateMachineHelper.isCallActive(callStateMachine)) {
+                socket.emit('webrtc_failed', { callId: callState.identifier.callId, handle, sourceId, reason });
+              }
+            }, WEBRTC_FAILURE_DELAY);
+          }
+          break;
+          
+        case 'webrtc_disconnected':
+          callStateMachine.updateWebRTCQuality('poor');
+          socket.emit('webrtc_disconnected', { callId: callState.identifier.callId, handle, sourceId, reason });
+          break;
       }
     });
   }
 
-  function setupSocketHandlers() {
-    console.log('=== SETTING UP SOCKET HANDLERS (Customer with handle) ===');
-    console.log('Handle:', handle);
-    console.log('SourceId:', sourceId);
+  // =============================================================================
+  // RATIONALIZED SOCKET EVENT HANDLERS
+  // =============================================================================
+
+  function setupRationalizedSocketHandlers() {
+    console.log('=== SETTING UP RATIONALIZED SOCKET HANDLERS (Customer) ===');
+    console.log('Handle:', handle, 'SourceId:', sourceId);
     
-    socket.on('call_accepted', async (data) => {
-      console.log('🎉 Call accepted by agent:', data);
-      connectionStatus = 'Call accepted, connecting...';
-      
-      try {
-        // Set the call ID from the server response
-        if (data.callId) {
-          callState = { ...callState, callId: data.callId, status: 'connecting' };
-          console.log('✅ Call ID set from server:', data.callId);
-        } else {
-          console.error('❌ No call ID in server response');
-          errorMessage = 'No call ID received from server';
-          callState = { ...callState, status: 'failed' };
-          return;
-        }
-        
-        connectionMonitor.startConnectionAttempt();
-        console.log('📞 Creating WebRTC offer for call:', callState.callId);
-        const offer = await webrtc.createOffer(callState.callId);
-        console.log('📤 Sending offer to agent:', offer);
-        socket.sendOffer(callState.callId, offer, handle, sourceId);
-      } catch (error) {
-        console.error('❌ Failed to create offer:', error);
-        errorMessage = 'Failed to create call offer';
-        callState = { ...callState, status: 'failed' };
-        connectionMonitor.recordConnectionFailure(error instanceof Error ? error.message : 'Unknown error');
-        
-        // Clean up the call on the server side
-        if (callState.callId) {
-          socket.endCall({ callId: callState.callId, handle, sourceId });
-        }
-      }
+    // Primary call state handler
+    socket.on('call.state_changed', handleCallStateChanged);
+    socket.on('call.terminated', handleCallTerminated);
+    socket.on('call.error', handleCallError);
+    
+    // WebRTC events
+    socket.on('webrtc.state_changed', handleWebRTCStateChanged);
+    
+    // UI control events
+    socket.on('ui.control_changed', handleUIControlChanged);
+    socket.on('ui.state_sync', handleUIStateSync);
+    
+    // Device events
+    socket.on('device.call_accepted', handleDeviceCallAccepted);
+    socket.on('device.call_ended', handleDeviceCallEnded);
+    
+    // Routing events
+    socket.on('routing.call_routed', handleCallRouted);
+    socket.on('routing.no_agents', handleNoAgents);
+    socket.on('routing.handle_busy', handleHandleBusy);
+
+    // Legacy WebRTC signaling (unchanged)
+    socket.on('offer', async (data) => {
+      console.log('📥 Received offer from agent:', data);
+      // Legacy handler remains the same
     });
 
     socket.on('answer', async (data) => {
@@ -186,12 +206,8 @@
       } catch (error) {
         console.error('❌ Failed to set remote answer:', error);
         errorMessage = 'Failed to connect to agent';
-        callState = { ...callState, status: 'failed' };
-        connectionMonitor.recordConnectionFailure(error instanceof Error ? error.message : 'Unknown error');
-        
-        // End the call on server side
-        if (callState.callId) {
-          socket.endCall({ callId: callState.callId, handle, sourceId });
+        if (callStateMachine) {
+          callStateMachine.transition('WEBRTC_FAILED');
         }
       }
     });
@@ -200,119 +216,161 @@
       console.log('🧊 Received ICE candidate:', data);
       try {
         await webrtc.addIceCandidate(data.candidate);
-        console.log('✅ ICE candidate added successfully');
       } catch (error) {
         console.error('❌ Failed to add ICE candidate:', error);
       }
     });
-
-    socket.on('call_ended', (data) => {
-      console.log('📞 Call ended by agent/server:', data);
-      const reason = data?.reason || 'call_ended';
-      
-      if (reason.includes('timeout')) {
-        errorMessage = 'Call timed out - no agent response';
-      } else if (reason.includes('agent_disconnected')) {
-        errorMessage = 'Agent disconnected from the call';
-      } else if (reason.includes('agent_ended')) {
-        connectionStatus = 'Call ended by agent';
-      } else {
-        connectionStatus = 'Call ended';
-      }
-      
-      callState = { ...callState, status: 'ended' };
-      isConnecting = false;
-      
-      if (webrtc) {
-        webrtc.endCall();
-      }
-      // Don't disconnect socket here as server already handled cleanup
-    });
-
-    socket.on('no_agents_available', () => {
-      errorMessage = 'Sorry, all our representatives are currently busy. Please try again in a few minutes.';
-      callState = { ...callState, status: 'failed' };
-      isConnecting = false;
-      connectionStatus = 'Call failed - No agents available';
-      connectionMonitor.recordConnectionFailure('no_agents_available');
-      if (webrtc) {
-        webrtc.endCall();
-      }
-      socket.disconnect();
-    });
-
-    socket.on('call_timeout', () => {
-      errorMessage = 'No agent is available right now. Please try calling back later.';
-      callState = { ...callState, status: 'failed' };
-      isConnecting = false;
-      connectionStatus = 'Call timeout - No response from agents';
-      connectionMonitor.recordConnectionFailure('call_timeout');
-      if (webrtc) {
-        webrtc.endCall();
-      }
-      socket.disconnect();
-    });
-
-    socket.on('call_disconnected', (reason) => {
-      errorMessage = `Call disconnected: ${reason}`;
-      callState = { ...callState, status: 'ended' };
-      if (webrtc) {
-        webrtc.endCall();
-      }
-      socket.disconnect();
-    });
-
-    socket.on('network_error', (error) => {
-      errorMessage = "We're having trouble connecting your call. Please check your internet connection and try again.";
-      callState = { ...callState, status: 'failed' };
-      if (webrtc) {
-        webrtc.endCall();
-      }
-      socket.disconnect();
-    });
-
-    socket.on('reconnect_attempt', (attempt) => {
-      connectionStatus = `Reconnecting... (attempt ${attempt})`;
-    });
-
-    socket.on('connection_failed', (reason) => {
-      errorMessage = 'Unable to connect to our service. Please try again later.';
-      connectionStatus = 'Connection failed';
-      isConnecting = false;
-    });
-
-    socket.on('handle_not_found', () => {
-      errorMessage = 'Invalid call link. Please check the URL and try again.';
-      callState = { ...callState, status: 'failed' };
-      isConnecting = false;
-      if (webrtc) {
-        webrtc.endCall();
-      }
-      socket.disconnect();
-    });
-
-    socket.on('error', (error) => {
-      console.error('📞 Server error:', error);
-      errorMessage = `Server error: ${error}`;
-      callState = { ...callState, status: 'failed' };
-      isConnecting = false;
-      connectionStatus = 'Server error';
-      connectionMonitor.recordConnectionFailure(error);
-      
-      if (webrtc) {
-        webrtc.endCall();
-      }
-    });
   }
 
-  async function startCall() {
-    console.log('=== START CALL CLICKED ===');
-    console.log('Handle:', handle);
-    console.log('SourceId:', sourceId);
-    console.log('Current state - isConnecting:', isConnecting, 'callState.status:', callState.status);
+  // =============================================================================
+  // RATIONALIZED EVENT HANDLERS
+  // =============================================================================
+
+  function handleCallStateChanged(event: CallStateChangedEvent) {
+    console.log('🎯 Call state changed:', event);
     
-    if (isConnecting || callState.status === 'connecting') {
-      console.log('❌ Call already in progress, ignoring click');
+    if (event.changes.includes('phase')) {
+      const phase = event.current.phase;
+      
+      switch (phase) {
+        case 'routing':
+          connectionStatus = 'Finding available agent...';
+          break;
+        case 'ringing':
+          connectionStatus = 'Calling agent...';
+          break;
+        case 'connecting':
+          connectionStatus = 'Call accepted, connecting...';
+          // Start WebRTC offer process
+          if (event.current.participants.agent.connected) {
+            createWebRTCOffer(event.callId);
+          }
+          break;
+        case 'active':
+          connectionStatus = 'Connected to agent';
+          connectionMonitor.recordConnectionSuccess();
+          break;
+      }
+    }
+    
+    if (event.changes.includes('webrtc_quality')) {
+      const quality = event.current.webrtcQuality;
+      if (quality === 'poor' || quality === 'unstable') {
+        connectionStatus = 'Connection quality poor, trying to improve...';
+      }
+    }
+  }
+
+  function handleCallTerminated(event: CallTerminatedEvent) {
+    console.log('📞 Call terminated:', event);
+    
+    const reason = event.reason;
+    if (reason.includes('timeout')) {
+      errorMessage = 'Call timed out - no agent response';
+    } else if (reason.includes('agent_disconnected')) {
+      errorMessage = 'Agent disconnected from the call';
+    } else if (reason.includes('agent_ended')) {
+      connectionStatus = 'Call ended by agent';
+    } else if (reason === 'cancelled') {
+      connectionStatus = 'Call cancelled';
+    } else {
+      connectionStatus = 'Call ended';
+    }
+    
+    isConnecting = false;
+    
+    if (webrtc) {
+      webrtc.endCall();
+    }
+  }
+
+  function handleCallError(event: CallErrorEvent) {
+    console.error('📞 Call error:', event);
+    
+    switch (event.code) {
+      case 'WEBRTC_FAILED':
+        errorMessage = "We're having trouble with the connection. Please try again.";
+        break;
+      case 'NO_AGENTS':
+        errorMessage = 'Sorry, all our representatives are currently busy. Please try again in a few minutes.';
+        break;
+      case 'CALL_TIMEOUT':
+        errorMessage = 'No agent is available right now. Please try calling back later.';
+        break;
+      case 'HANDLE_BUSY':
+        errorMessage = 'This business line is currently busy. Please try again later.';
+        break;
+      default:
+        errorMessage = event.context?.message || 'An unexpected error occurred. Please try again.';
+    }
+    
+    connectionStatus = 'Call failed';
+    isConnecting = false;
+    
+    connectionMonitor.recordConnectionFailure(event.code);
+    
+    if (webrtc) {
+      webrtc.endCall();
+    }
+  }
+
+  function handleWebRTCStateChanged(event: WebRTCStateEvent) {
+    console.log('🌐 WebRTC state changed:', event);
+    
+    if (callStateMachine) {
+      callStateMachine.updateWebRTCQuality(event.current);
+    }
+  }
+
+  function handleUIControlChanged(event: UIControlChangedEvent) {
+    console.log('🎛️ UI control changed:', event);
+    // Handle UI control changes from other devices if needed
+  }
+
+  function handleUIStateSync(event: any) {
+    console.log('🔄 UI state sync:', event);
+    // Sync UI state across devices
+  }
+
+  function handleDeviceCallAccepted(event: any) {
+    console.log('📱 Device call accepted:', event);
+    // Handle multi-device coordination
+  }
+
+  function handleDeviceCallEnded(event: any) {
+    console.log('📱 Device call ended:', event);
+    // Handle multi-device coordination
+  }
+
+  function handleCallRouted(event: any) {
+    console.log('🚦 Call routed:', event);
+    connectionStatus = 'Agent found, connecting...';
+  }
+
+  function handleNoAgents(event: any) {
+    console.log('🚫 No agents available:', event);
+    errorMessage = 'Sorry, all our representatives are currently busy. Please try again in a few minutes.';
+    isConnecting = false;
+    connectionStatus = 'Call failed - No agents available';
+  }
+
+  function handleHandleBusy(event: any) {
+    console.log('📞 Handle busy:', event);
+    errorMessage = 'This business line is currently busy. Please try again later.';
+    isConnecting = false;
+    connectionStatus = 'Business line busy';
+  }
+
+  // =============================================================================
+  // CALL CONTROL METHODS (Using State Machine)
+  // =============================================================================
+
+  async function startCall() {
+    console.log('=== START CALL (RATIONALIZED) ===');
+    console.log('Handle:', handle, 'SourceId:', sourceId);
+    
+    if (isConnecting) {
+      console.log('❌ Call already in progress');
       return;
     }
     
@@ -321,51 +379,70 @@
       return;
     }
     
-    // Generate unique callAttemptId for this call attempt
-    const callAttemptId = generateUUID();
-    console.log('🆔 Generated callAttemptId:', callAttemptId);
-    
-    // Update call state with callAttemptId
-    callState = { ...callState, callAttemptId };
-    
-    console.log('🚀 Starting call process...');
-    isConnecting = true;
-    errorMessage = '';
-    connectionStatus = 'Connecting to service...';
-    connectionMonitor.startConnectionAttempt();
-    
-    // Reset mute state for new call and set status to connecting immediately
-    callState = { ...callState, isMuted: false, status: 'connecting', callAttemptId };
-
     try {
-      console.log('🎤 Requesting microphone permission...');
-      // Request microphone permission and initialize media
+      // Generate unique identifiers
+      const callAttemptId = generateUUID();
+      const sessionId = generateUUID();
+      
+      // Create call identifier
+      const identifier = createCallIdentifier(
+        '', // Will be set by server
+        handle,
+        sessionId,
+        sourceId
+      );
+      
+      // Create device context
+      const deviceContext = createDeviceContext('web', 'browser', true);
+      
+      // Initialize call state machine
+      callStateMachine = createCallStateMachine(identifier, deviceContext, true);
+      
+      // Set up state machine event handlers
+      callStateMachine.on('call.state_changed', (event) => {
+        console.log('🎯 State machine event:', event);
+      });
+      
+      callStateMachine.on('call.terminated', (event) => {
+        console.log('🔚 State machine terminated:', event);
+      });
+      
+      console.log('🚀 Starting call process...');
+      isConnecting = true;
+      errorMessage = '';
       connectionStatus = 'Requesting microphone access...';
+      connectionMonitor.startConnectionAttempt();
+
+      // Request microphone permission
       await webrtc.initializeMedia({ audio: true, video: false });
       console.log('✅ Microphone access granted');
       
       // Connect to signaling server
-      console.log('🔗 Connecting to signaling server...');
       connectionStatus = 'Connecting to signaling server...';
       await socket.connect();
       console.log('✅ Connected to signaling server');
       
+      // Update call identifier with generated callId (will be updated by server)
+      identifier.callId = `temp_${Date.now()}`;
+      
+      // Transition to routing phase
+      callStateMachine.transition('ROUTE_CALL');
+      
       // Register as customer with handle
-      console.log('👤 Registering as customer with handle:', handle, 'sourceId:', sourceId, 'callAttemptId:', callState.callAttemptId);
       connectionStatus = 'Looking for available agent...';
-      socket.connectAsCustomerWithHandle(handle, sourceId, callState.callAttemptId);
-      console.log('✅ Customer registration sent with handle:', handle, 'sourceId:', sourceId, 'callAttemptId:', callState.callAttemptId);
+      socket.emit('customer_connect_with_handle', { handle, sourceId, callAttemptId });
+      console.log('✅ Customer registration sent');
       
     } catch (error) {
+      console.error('❌ Failed to start call:', error);
+      
       isConnecting = false;
       connectionMonitor.recordConnectionFailure(error instanceof Error ? error.message : 'Unknown error');
       
-      // Clean up any partial WebRTC initialization
       if (webrtc) {
         webrtc.endCall();
       }
       
-      // Clean up socket if it was connected
       if (socket) {
         socket.disconnect();
       }
@@ -377,78 +454,143 @@
       }
       
       connectionStatus = 'Connection failed';
-      console.error('Failed to start call:', error);
+      
+      if (callStateMachine) {
+        callStateMachine.forceTerminate('initialization_failed', 'customer');
+      }
+    }
+  }
+
+  async function createWebRTCOffer(callId: string) {
+    if (!callStateMachine) return;
+    
+    try {
+      console.log('📞 Creating WebRTC offer for call:', callId);
+      const offer = await webrtc.createOffer(callId);
+      console.log('📤 Sending offer to agent:', offer);
+      socket.emit('offer', { callId, offer, handle, sourceId });
+    } catch (error) {
+      console.error('❌ Failed to create offer:', error);
+      errorMessage = 'Failed to create call offer';
+      callStateMachine.transition('WEBRTC_FAILED');
+      connectionMonitor.recordConnectionFailure(error instanceof Error ? error.message : 'Unknown error');
     }
   }
 
   function endCall() {
-    console.log('=== END CALL CLICKED ===');
-    console.log('Current call state:', callState);
-    console.log('Call ID exists:', !!callState.callId);
-    console.log('Connection status:', connectionStatus);
+    console.log('=== END CALL (RATIONALIZED) ===');
     
-    // Clear any pending failure timeout when ending call
-    if (webrtcFailureTimeout) {
-      clearTimeout(webrtcFailureTimeout);
-      webrtcFailureTimeout = null;
+    if (!callStateMachine) {
+      console.log('❌ No call state machine');
+      return;
     }
     
+    const state = callStateMachine.getCurrentState();
+    console.log('Current call state:', state);
+    
     if (socket) {
-      // If call doesn't have a callId yet (still connecting), cancel the call request
-      if (!callState.callId) {
-        console.log('📞 Cancelling call request - no callId assigned yet');
-        console.log('Handle:', handle, 'SourceId:', sourceId, 'CallAttemptId:', callState.callAttemptId);
-        socket.cancelCallRequest(handle, sourceId, callState.callAttemptId);
+      if (!state.identifier.callId || state.identifier.callId.startsWith('temp_')) {
+        // Call hasn't been assigned a server callId yet
+        console.log('📞 Cancelling call request - no server callId assigned yet');
+        socket.emit('cancel_call_request', { handle, sourceId, callAttemptId: state.identifier.sessionId });
       } else {
-        // For calls with callId, send normal call_ended
-        console.log('📞 Ending established call with callId:', callState.callId);
-        socket.endCall({ 
-          callId: callState.callId, 
+        // Call has server callId, send normal end call
+        console.log('📞 Ending established call with callId:', state.identifier.callId);
+        socket.emit('call_ended', { 
+          callId: state.identifier.callId, 
           handle: handle,
           sourceId: sourceId
         });
       }
     }
+    
     if (webrtc) {
       webrtc.endCall();
     }
     
-    callState = { ...callState, status: 'ended' };
+    // Transition state machine to terminated
+    callStateMachine.forceTerminate('user_hangup', 'customer');
+    
     isConnecting = false;
     connectionStatus = 'Call ended';
     console.log('✅ Customer call cleanup completed');
   }
 
   function toggleMute() {
+    if (!CallStateMachineHelper.canMute(callStateMachine)) {
+      console.log('❌ Mute not available in current state');
+      return;
+    }
+    
     if (webrtc) {
       const isMuted = webrtc.toggleMute();
-      callState = { ...callState, isMuted };
-      console.log('🔇 UI mute state updated:', isMuted ? 'muted' : 'unmuted');
+      
+      // Update state machine
+      callStateMachine.updateUIControl('mute', isMuted);
+      
+      // Emit UI control change (rationalized)
+      const state = callStateMachine.getCurrentState();
+      socket.emitUIControlChange(
+        state.identifier.callId, 
+        handle, 
+        'mute', 
+        isMuted, 
+        state.identifier.sourceId
+      );
+      
+      console.log('🔇 Mute state updated:', isMuted ? 'muted' : 'unmuted');
     }
   }
 
   function retryCall() {
     errorMessage = '';
-    callState = { ...callState, status: 'idle', isMuted: false, callAttemptId: undefined };
     isConnecting = false;
     connectionStatus = 'Disconnected';
     connectionRetryCount = 0;
     
-    // Clear any pending failure timeout
-    if (webrtcFailureTimeout) {
-      clearTimeout(webrtcFailureTimeout);
-      webrtcFailureTimeout = null;
+    if (callStateMachine) {
+      callStateMachine.forceTerminate('retry_requested', 'customer');
+      callStateMachine = null;
     }
   }
 
-  function getStatusColor(status: string): string {
-    switch (status) {
-      case 'connected': return 'text-green-600';
-      case 'connecting': return 'text-yellow-600';
-      case 'failed': return 'text-red-600';
-      case 'ended': return 'text-gray-600';
+  // =============================================================================
+  // UTILITY FUNCTIONS
+  // =============================================================================
+
+  function getConnectionStatusMessage(phase: CallPhase): string {
+    switch (phase) {
+      case 'initializing': return 'Starting call...';
+      case 'routing': return 'Finding agent...';
+      case 'ringing': return 'Calling agent...';
+      case 'connecting': return 'Connecting...';
+      case 'active': return 'Connected to Agent';
+      case 'terminated': return 'Call ended';
+      default: return 'Disconnected';
+    }
+  }
+
+  function getStatusColor(phase: CallPhase): string {
+    switch (phase) {
+      case 'active': return 'text-green-600';
+      case 'connecting': 
+      case 'routing':
+      case 'ringing': return 'text-yellow-600';
+      case 'terminated': return 'text-gray-600';
       default: return 'text-blue-600';
     }
+  }
+
+  function getCurrentPhase(): CallPhase {
+    return callStateMachine?.getPhase() || 'terminated';
+  }
+
+  function getUIControls() {
+    return callStateMachine?.getUIControls() || { 
+      muteAvailable: false, 
+      endCallAvailable: false, 
+      muteState: false 
+    };
   }
 </script>
 
@@ -468,11 +610,11 @@
     <!-- Call Status -->
     <div class="mb-6">
       <div class="flex items-center justify-center mb-4">
-        <div class="w-4 h-4 rounded-full mr-2 {callState.status === 'connected' ? 'bg-green-500' : 
-                                                 callState.status === 'connecting' ? 'bg-yellow-500 animate-pulse' : 
-                                                 callState.status === 'failed' ? 'bg-red-500' : 
-                                                 'bg-gray-400'}"></div>
-        <span class="text-sm font-medium {getStatusColor(callState.status)}">
+        <div class="w-4 h-4 rounded-full mr-2 {getCurrentPhase() === 'active' ? 'bg-green-500' : 
+                                               ['connecting', 'routing', 'ringing'].includes(getCurrentPhase()) ? 'bg-yellow-500 animate-pulse' : 
+                                               getCurrentPhase() === 'terminated' && errorMessage ? 'bg-red-500' : 
+                                               'bg-gray-400'}"></div>
+        <span class="text-sm font-medium {getStatusColor(getCurrentPhase())}">
           {connectionStatus}
         </span>
       </div>
@@ -496,7 +638,7 @@
 
     <!-- Main Call Interface -->
     <div class="space-y-4">
-      {#if callState.status === 'idle' || callState.status === 'failed'}
+      {#if getCurrentPhase() === 'terminated' || getCurrentPhase() === 'initializing'}
         <button
           on:click={startCall}
           disabled={isConnecting || !handle}
@@ -524,7 +666,7 @@
             Try Again
           </button>
         {/if}
-      {:else if callState.status === 'connecting'}
+      {:else if ['routing', 'ringing', 'connecting'].includes(getCurrentPhase())}
         <div class="text-center py-4">
           <div class="animate-pulse">
             <div class="w-16 h-16 bg-yellow-200 rounded-full mx-auto mb-4 flex items-center justify-center">
@@ -532,7 +674,7 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
               </svg>
             </div>
-            <p class="text-gray-600 mb-4">Connecting to agent...</p>
+            <p class="text-gray-600 mb-4">{getConnectionStatusMessage(getCurrentPhase())}</p>
           </div>
         </div>
 
@@ -540,9 +682,10 @@
         <div class="flex space-x-4">
           <button
             on:click={toggleMute}
-            class="flex-1 {callState.isMuted ? 'bg-red-600 hover:bg-red-700' : 'bg-gray-600 hover:bg-gray-700'} text-white font-semibold py-3 px-4 rounded-xl transition-colors duration-200 flex items-center justify-center"
+            disabled={!getUIControls().muteAvailable}
+            class="flex-1 {getUIControls().muteState ? 'bg-red-600 hover:bg-red-700' : 'bg-gray-600 hover:bg-gray-700'} disabled:bg-gray-300 text-white font-semibold py-3 px-4 rounded-xl transition-colors duration-200 flex items-center justify-center"
           >
-            {#if callState.isMuted}
+            {#if getUIControls().muteState}
               <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" clip-rule="evenodd"/>
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"/>
@@ -558,7 +701,8 @@
 
           <button
             on:click={endCall}
-            class="flex-1 bg-red-600 hover:bg-red-700 text-white font-semibold py-3 px-4 rounded-xl transition-colors duration-200 flex items-center justify-center"
+            disabled={!getUIControls().endCallAvailable}
+            class="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-gray-300 text-white font-semibold py-3 px-4 rounded-xl transition-colors duration-200 flex items-center justify-center"
           >
             <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 8l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M3 3l18 18"/>
@@ -566,7 +710,7 @@
             End Call
           </button>
         </div>
-      {:else if callState.status === 'connected'}
+      {:else if getCurrentPhase() === 'active'}
         <div class="text-center py-4">
           <div class="w-16 h-16 bg-green-200 rounded-full mx-auto mb-4 flex items-center justify-center">
             <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -580,9 +724,9 @@
         <div class="flex space-x-4">
           <button
             on:click={toggleMute}
-            class="flex-1 {callState.isMuted ? 'bg-red-600 hover:bg-red-700' : 'bg-gray-600 hover:bg-gray-700'} text-white font-semibold py-3 px-4 rounded-xl transition-colors duration-200 flex items-center justify-center"
+            class="flex-1 {getUIControls().muteState ? 'bg-red-600 hover:bg-red-700' : 'bg-gray-600 hover:bg-gray-700'} text-white font-semibold py-3 px-4 rounded-xl transition-colors duration-200 flex items-center justify-center"
           >
-            {#if callState.isMuted}
+            {#if getUIControls().muteState}
               <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" clip-rule="evenodd"/>
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"/>
@@ -606,23 +750,18 @@
             End Call
           </button>
         </div>
-      {:else if callState.status === 'ended'}
-        <div class="text-center py-8">
-          <div class="w-16 h-16 bg-gray-200 rounded-full mx-auto mb-4 flex items-center justify-center">
-            <svg class="w-8 h-8 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 8l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M3 3l18 18"/>
-            </svg>
-          </div>
-          <p class="text-gray-600 mb-4">Call Ended</p>
-          <button
-            on:click={retryCall}
-            class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-xl transition-colors duration-200"
-          >
-            Make Another Call
-          </button>
-        </div>
       {/if}
     </div>
+
+    <!-- Debug Information (Development Only) -->
+    {#if import.meta.env.DEV && callStateMachine}
+      <div class="mt-8 p-4 bg-gray-100 rounded-lg text-xs">
+        <p><strong>Debug:</strong></p>
+        <p>Phase: {getCurrentPhase()}</p>
+        <p>UI Controls: {JSON.stringify(getUIControls())}</p>
+        <p>WebRTC Quality: {callStateMachine.getCurrentState().webrtcQuality}</p>
+      </div>
+    {/if}
 
     <!-- Hidden audio element for remote stream -->
     <audio 
