@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <string name="app_name">CallSafe</string>
-    <string name="user_page">User</string>
-    <string name="receive_page">Receive</string>
-    <string name="welcome">Welcome to CallSafe</string>
-</resources>
