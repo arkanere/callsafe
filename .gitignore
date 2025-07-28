@@ -15,6 +15,12 @@ dist/
 build/
 .svelte-kit/
 .vercel/
+.netlify/
+
+# SvelteKit specific
+.svelte-kit/
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
 
 # Database
 *.db
@@ -62,6 +68,12 @@ pids/
 
 # Optional eslint cache
 .eslintcache
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
 
 # Android
 android-app/app/build/
