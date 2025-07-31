@@ -1,5 +1,7 @@
 <script lang="ts">
     import { goto } from '$app/navigation';
+    import { onMount } from 'svelte';
+    import { AuthManager } from '$lib/managers/auth-manager';
     
     let showLoginModal = false;
     let isSignUpMode = false;
@@ -9,21 +11,38 @@
     let fullName = '';
     let loginError = '';
     let isLoading = false;
-    
-    // User session storage (in real app, this would be handled by session management)
     let currentUser = null;
     
+    // Check if user is already authenticated
+    onMount(() => {
+      console.log('[MAIN PAGE] Component mounted');
+      console.log('[MAIN PAGE] Checking token validity');
+      const isTokenValid = AuthManager.isTokenValid();
+      console.log('[MAIN PAGE] Token valid:', isTokenValid);
+      if (isTokenValid) {
+        console.log('[MAIN PAGE] Redirecting to /user');
+        goto('/user');
+      } else {
+        console.log('[MAIN PAGE] User not authenticated, staying on main page');
+      }
+    });
+    
     function openLoginModal() {
+      console.log('[MAIN PAGE] Opening login modal');
       showLoginModal = true;
       resetForm();
+      console.log('[MAIN PAGE] Login modal opened, form reset');
     }
     
     function closeLoginModal() {
+      console.log('[MAIN PAGE] Closing login modal');
       showLoginModal = false;
       resetForm();
+      console.log('[MAIN PAGE] Login modal closed, form reset');
     }
     
     function resetForm() {
+      console.log('[MAIN PAGE] Resetting form');
       isSignUpMode = false;
       loginError = '';
       email = '';
@@ -31,9 +50,11 @@
       confirmPassword = '';
       fullName = '';
       isLoading = false;
+      console.log('[MAIN PAGE] Form state reset:', { isSignUpMode, loginError, email, password, confirmPassword, fullName, isLoading });
     }
     
     function toggleMode() {
+      console.log('[MAIN PAGE] Toggling mode from', isSignUpMode ? 'signup' : 'signin');
       isSignUpMode = !isSignUpMode;
       loginError = '';
       password = '';
@@ -41,148 +62,138 @@
       if (!isSignUpMode) {
         fullName = '';
       }
+      console.log('[MAIN PAGE] Mode toggled to', isSignUpMode ? 'signup' : 'signin');
     }
     
     function validateEmail(email: string): boolean {
+      console.log('[MAIN PAGE] Validating email:', email);
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      return emailRegex.test(email);
+      const isValid = emailRegex.test(email);
+      console.log('[MAIN PAGE] Email validation result:', isValid);
+      return isValid;
     }
     
     function validatePassword(password: string): boolean {
-      return password.length >= 6;
+      console.log('[MAIN PAGE] Validating password length:', password.length);
+      const isValid = password.length >= 6;
+      console.log('[MAIN PAGE] Password validation result:', isValid);
+      return isValid;
     }
     
     async function handleSignUp() {
+      console.log('[MAIN PAGE] Starting signup process');
+      console.log('[MAIN PAGE] Signup data:', { fullName: fullName.trim(), email: email.trim(), passwordLength: password.length });
+      
       // Validation
       if (!fullName.trim()) {
+        console.log('[MAIN PAGE] Signup validation failed: missing full name');
         loginError = 'Please enter your full name';
         return;
       }
       
       if (!validateEmail(email)) {
+        console.log('[MAIN PAGE] Signup validation failed: invalid email');
         loginError = 'Please enter a valid email address';
         return;
       }
       
       if (!validatePassword(password)) {
+        console.log('[MAIN PAGE] Signup validation failed: password too short');
         loginError = 'Password must be at least 6 characters long';
         return;
       }
       
       if (password !== confirmPassword) {
+        console.log('[MAIN PAGE] Signup validation failed: passwords do not match');
         loginError = 'Passwords do not match';
         return;
       }
       
+      console.log('[MAIN PAGE] Signup validation passed, making API request');
       isLoading = true;
       loginError = '';
       
       try {
+        const requestData = {
+          email: email.trim(),
+          password,
+          name: fullName.trim()
+        };
+        console.log('[MAIN PAGE] Sending signup request:', { ...requestData, password: '[REDACTED]' });
+        
         const response = await fetch('/api/signup', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            email: email.trim(),
-            password,
-            name: fullName.trim()
-          })
+          body: JSON.stringify(requestData)
         });
         
+        console.log('[MAIN PAGE] Signup response status:', response.status);
         const result = await response.json();
+        console.log('[MAIN PAGE] Signup response data:', { ...result, user: result.user ? { ...result.user, password: '[REDACTED]' } : undefined });
         
         if (result.success) {
+          console.log('[MAIN PAGE] Signup successful, storing user data');
           // Store user session
           currentUser = result.user;
           
           // Store userId in localStorage for session management
           localStorage.setItem('callsafe_userId', result.user.id.toString());
           localStorage.setItem('callsafe_user', JSON.stringify(result.user));
+          console.log('[MAIN PAGE] User data stored in localStorage');
           
           // Success - redirect to user page
+          console.log('[MAIN PAGE] Redirecting to /user');
           closeLoginModal();
           goto('/user');
         } else {
+          console.log('[MAIN PAGE] Signup failed:', result.error);
           loginError = result.error || 'Failed to create account';
         }
       } catch (error) {
-        console.error('Signup error:', error);
+        console.error('[MAIN PAGE] Signup error:', error);
         loginError = 'Failed to create account. Please try again.';
       } finally {
+        console.log('[MAIN PAGE] Signup process finished');
         isLoading = false;
       }
     }
     
     async function handleSignIn() {
+      console.log('[MAIN PAGE] Starting signin process');
+      console.log('[MAIN PAGE] Signin data:', { email: email.trim(), passwordLength: password.length });
+      
       if (!email || !password) {
+        console.log('[MAIN PAGE] Signin validation failed: missing email or password');
         loginError = 'Please enter both email and password';
         return;
       }
       
+      console.log('[MAIN PAGE] Signin validation passed, calling AuthManager.login');
       isLoading = true;
       loginError = '';
       
       try {
-        const response = await fetch('/api/login', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            email: email.trim(),
-            password
-          })
-        });
+        const loginResponse = await AuthManager.login(email.trim(), password);
+        console.log('[MAIN PAGE] Login successful:', { response: loginResponse });
         
-        const result = await response.json();
+        // Success - redirect to user dashboard
+        console.log('[MAIN PAGE] Redirecting to /user');
+        closeLoginModal();
+        goto('/user');
         
-        if (result.success) {
-          // Store user session
-          currentUser = result.user;
-          
-          // Store userId in localStorage for session management
-          localStorage.setItem('callsafe_userId', result.user.id.toString());
-          localStorage.setItem('callsafe_user', JSON.stringify(result.user));
-          
-          // Success - redirect based on embed status
-          closeLoginModal();
-          
-          if (result.user.isEmbedded) {
-            // User has already embedded the code, redirect to receive page
-            // First get their handle
-            const userId = result.user.id;
-            try {
-              const handleResponse = await fetch(`/api/links?userId=${userId}`);
-              const handleData = await handleResponse.json();
-              
-              if (handleData.success && handleData.handles.length > 0) {
-                const handle = handleData.handles[0].handle;
-                goto(`/user/receive/${handle}`);
-              } else {
-                // Fallback to user page if no handle found
-                goto('/user');
-              }
-            } catch (error) {
-              console.error('Error fetching handle:', error);
-              goto('/user'); // Fallback
-            }
-          } else {
-            // User hasn't embedded yet, show user page with embed instructions
-            goto('/user');
-          }
-        } else {
-          loginError = result.error || 'Invalid email or password';
-        }
       } catch (error) {
-        console.error('Login error:', error);
-        loginError = 'Login failed. Please try again.';
+        console.error('[MAIN PAGE] Login error:', error);
+        loginError = 'Invalid email or password';
       } finally {
+        console.log('[MAIN PAGE] Signin process finished');
         isLoading = false;
       }
     }
     
     async function handleSubmit() {
+      console.log('[MAIN PAGE] Form submitted, mode:', isSignUpMode ? 'signup' : 'signin');
       if (isSignUpMode) {
         await handleSignUp();
       } else {
@@ -191,9 +202,12 @@
     }
     
     function handleKeydown(event: KeyboardEvent) {
+      console.log('[MAIN PAGE] Keydown event:', event.key);
       if (event.key === 'Enter') {
+        console.log('[MAIN PAGE] Enter key pressed, submitting form');
         handleSubmit();
       } else if (event.key === 'Escape') {
+        console.log('[MAIN PAGE] Escape key pressed, closing modal');
         closeLoginModal();
       }
     }

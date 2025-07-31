@@ -1,69 +1,507 @@
-<script>
+<script lang="ts">
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
+  import { onMount, onDestroy } from 'svelte';
+  import { AuthManager } from '$lib/managers/auth-manager';
+  import { ConnectionManager } from '$lib/managers/connection-manager';
+  import { WebRTCManager } from '$lib/managers/webrtc-manager';
+  import { callState } from '$lib/stores/call-state';
+  import { generateDeviceId } from '$lib/utils/uuid';
+  import type { Socket } from 'socket.io-client';
+  import type {
+    CallIncomingEvent,
+    CallAcceptedEvent,
+    CallEndedEvent,
+    CallFailedEvent,
+    WebRTCOfferEvent,
+    WebRTCAnswerEvent,
+    WebRTCIceCandidateEvent
+  } from '$lib/types/events';
 
   // Extract parameters
   let handle = $page.params.handle || '';
   let sourceId = $page.url.searchParams.get('sourceId') || '';
 
-  // Component state (placeholder data for UI)
-  let isOnline = false;
+  // Connection management
+  let connectionManager: ConnectionManager;
+  let webrtcManager: WebRTCManager | null = null;
+  let socket: Socket | null = null;
+  let socketConnected = false;
   let errorMessage = '';
   let connectionStatus = 'Disconnected';
-  let socketConnected = false;
-  
-  // Call management (placeholder data)
-  let incomingCalls = [];
-  let callHistory = [];
-  let callStateMachine = null;
-  let currentCallStartTime = null;
+
+  // Call state
+  let isOnline = false;
+  let incomingCalls: any[] = [];
+  let callHistory: any[] = [];
+  let currentCallStartTime: number | null = null;
   let callDuration = 0;
-  let durationInterval;
+  let durationInterval: any = null;
 
-  // Multi-device reactive states (placeholder data)
-  let handleState = null;
-  let devices = { android: null };
-  let handleCallState = null;
-  let handleBusy = false;
-  let deviceList = [];
-
-  // Reactive state variables for UI
+  // UI state
   let currentPhase = 'terminated';
-  let uiControls = { muteAvailable: false, endCallAvailable: false, muteState: false };
-  let webrtcQuality = 'good';
-  let stateUpdateCounter = 0;
+  let isMuted = false;
 
-  // Placeholder functions (to be implemented later)
-  function toggleOnlineStatus() {
-    if (!handle) {
-      errorMessage = 'No handle specified for this agent portal';
+  onMount(async () => {
+    // Check authentication
+    if (!AuthManager.isTokenValid()) {
+      goto('/');
       return;
     }
 
-    if (isOnline) {
-      isOnline = false;
-      connectionStatus = 'Offline';
-    } else {
-      isOnline = true;
-      connectionStatus = 'Online - Waiting for calls';
+    // Load call history from localStorage
+    loadCallHistory();
+
+    // Initialize WebRTC manager before connection
+    webrtcManager = new WebRTCManager();
+
+    // Initialize connection
+    await initializeConnection();
+  });
+
+  onDestroy(() => {
+    cleanup();
+  });
+
+  async function initializeConnection() {
+    try {
+      connectionManager = new ConnectionManager();
+      socket = await connectionManager.connect();
+      
+      socketConnected = true;
+      connectionStatus = 'Connected';
       errorMessage = '';
+
+      // Request microphone permission directly (enables audio autoplay)
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          audio: { 
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true 
+          }, 
+          video: false 
+        });
+        
+        // Stop the stream immediately - we just needed permission
+        stream.getTracks().forEach(track => track.stop());
+        
+        console.log('[CONNECTION] Microphone permission granted - audio autoplay enabled');
+      } catch (micError) {
+        console.warn('[CONNECTION] Microphone permission denied:', micError);
+        errorMessage = 'Microphone access required for calls. Please refresh and allow microphone access.';
+      }
+
+      setupSocketEventHandlers();
+      registerDevice();
+
+    } catch (error) {
+      console.error('Connection failed:', error);
+      errorMessage = 'Failed to connect to server';
+      socketConnected = false;
+      connectionStatus = 'Failed';
     }
   }
 
-  function acceptCall(callId) {
-    console.log('Accept call:', callId);
+  function setupSocketEventHandlers() {
+    if (!socket) return;
+
+    // Incoming call handler
+    socket.on('call:incoming', (data: CallIncomingEvent) => {
+      console.log('Incoming call:', data);
+      
+      incomingCalls = [...incomingCalls, {
+        callId: data.callAttemptId,
+        sourceId: data.sourceId,
+        timestamp: data.timestamp
+      }];
+
+      // Play incoming call sound
+      playIncomingCallSound();
+
+      callState.update(state => ({
+        ...state,
+        currentCall: {
+          callAttemptId: data.callAttemptId,
+          sourceId: data.sourceId,
+          state: 'incoming',
+          startTime: data.timestamp,
+          duration: 0
+        },
+        ui: {
+          ...state.ui,
+          showIncomingCallModal: true
+        }
+      }));
+    });
+
+    // Call accepted handler (confirmation from server)
+    socket.on('call:accepted', async (data: CallAcceptedEvent) => {
+      console.log('Call accepted:', data);
+      // WebRTC is already initialized when accepting the call
+      // This event confirms the call was accepted on the server side
+      currentPhase = 'connecting';
+    });
+
+    // WebRTC offer handler (business receives offer from customer)
+    socket.on('webrtc:offer', async (data: WebRTCOfferEvent) => {
+      console.log('Received WebRTC offer');
+      
+      if (webrtcManager) {
+        try {
+          await webrtcManager.createAnswer(data.offer, data.callAttemptId);
+          
+          // Update call state to active once answer is sent
+          currentPhase = 'active';
+          startCallTimer();
+          
+          callState.update(state => ({
+            ...state,
+            currentCall: state.currentCall ? {
+              ...state.currentCall,
+              state: 'connected'
+            } : null
+          }));
+        } catch (error) {
+          console.error('Failed to create WebRTC answer:', error);
+          handleCallFailure('Failed to establish connection');
+        }
+      } else {
+        console.error('WebRTC manager not initialized when receiving offer');
+        handleCallFailure('Failed to establish connection');
+      }
+    });
+
+    // WebRTC answer handler
+    socket.on('webrtc:answer', async (data: WebRTCAnswerEvent) => {
+      console.log('Received WebRTC answer');
+      
+      if (webrtcManager) {
+        try {
+          await webrtcManager.setRemoteDescription(data.answer);
+          currentPhase = 'active';
+          startCallTimer();
+        } catch (error) {
+          console.error('WebRTC set remote description failed:', error);
+          handleCallFailure('Failed to establish connection');
+        }
+      }
+    });
+
+    // ICE candidate handler
+    socket.on('webrtc:ice-candidate', async (data: WebRTCIceCandidateEvent) => {
+      if (webrtcManager) {
+        try {
+          await webrtcManager.addIceCandidate(data.candidate);
+        } catch (error) {
+          console.error('Failed to add ICE candidate:', error);
+        }
+      }
+    });
+
+    // Call ended handler
+    socket.on('call:ended', (data: CallEndedEvent) => {
+      console.log('Call ended:', data);
+      
+      // Save to call history
+      saveCallToHistory({
+        callAttemptId: data.callAttemptId,
+        sourceId: getCurrentCall()?.sourceId || 'unknown',
+        startTime: currentCallStartTime || data.timestamp,
+        endTime: data.timestamp,
+        duration: data.duration,
+        device: 'web',
+        status: 'completed'
+      });
+
+      endCall();
+    });
+
+    // Call failed handler
+    socket.on('call:failed', (data: CallFailedEvent) => {
+      console.log('Call failed:', data);
+      
+      const errorMessage = data.reason === 'connection_timeout'
+        ? 'Call connection timed out. Please try again.'
+        : 'Call connection failed. Please try again.';
+      
+      handleCallFailure(errorMessage);
+    });
+
+    // Connection events
+    socket.on('connect', () => {
+      socketConnected = true;
+      connectionStatus = 'Connected';
+      errorMessage = '';
+    });
+
+    socket.on('disconnect', () => {
+      socketConnected = false;
+      connectionStatus = 'Disconnected';
+      isOnline = false;
+    });
   }
 
-  function declineCall(callId) {
-    console.log('Decline call:', callId);
+  function registerDevice() {
+    if (!socket) return;
+
+    socket.emit('device:connect', {
+      deviceType: 'web',
+      deviceId: generateDeviceId(),
+      pushToken: null,
+      timestamp: Date.now()
+    });
+    
+    // Set device as online by default after successful connection
+    socket.emit('device:status', {
+      deviceId: generateDeviceId(),
+      status: 'available',
+      timestamp: Date.now()
+    });
+    
+    isOnline = true;
+    connectionStatus = 'Online - Waiting for calls';
+  }
+
+  function toggleOnlineStatus() {
+    if (!handle || !socket) {
+      errorMessage = 'No handle specified or not connected';
+      return;
+    }
+
+    const newStatus = !isOnline;
+    
+    socket.emit('device:status', {
+      deviceId: generateDeviceId(),
+      status: newStatus ? 'available' : 'unavailable',
+      timestamp: Date.now()
+    });
+
+    isOnline = newStatus;
+    connectionStatus = isOnline ? 'Online - Waiting for calls' : 'Connected';
+    errorMessage = '';
+
+    callState.update(state => ({
+      ...state,
+      ui: {
+        ...state.ui,
+        status: newStatus ? 'available' : 'unavailable'
+      }
+    }));
+  }
+
+  async function acceptCall(callId: string) {
+    if (!socket) return;
+
+    currentPhase = 'connecting';
+
+    // Initialize WebRTC immediately when accepting the call (before sending call:accept)
+    try {
+      webrtcManager = new WebRTCManager(socket!);
+      await webrtcManager.initialize(callId);
+    } catch (error) {
+      console.error('WebRTC initialization failed:', error);
+      handleCallFailure('Failed to initialize audio');
+      return;
+    }
+
+    socket.emit('call:accept', {
+      callAttemptId: callId,
+      deviceType: 'web',
+      deviceId: generateDeviceId(),
+      timestamp: Date.now()
+    });
+
+    // Remove from incoming calls and stop ringtone
+    incomingCalls = incomingCalls.filter(call => call.callId !== callId);
+    stopIncomingCallSound();
+    currentCallStartTime = Date.now();
+
+    callState.update(state => ({
+      ...state,
+      ui: {
+        ...state.ui,
+        showIncomingCallModal: false,
+        showCallControls: true,
+        status: 'busy'
+      }
+    }));
+  }
+
+  function declineCall(callId: string) {
+    if (!socket) return;
+
+    socket.emit('call:reject', {
+      callAttemptId: callId,
+      deviceType: 'web',
+      timestamp: Date.now()
+    });
+
+    // Remove from incoming calls and stop ringtone
+    incomingCalls = incomingCalls.filter(call => call.callId !== callId);
+    stopIncomingCallSound();
+
+    callState.update(state => ({
+      ...state,
+      ui: {
+        ...state.ui,
+        showIncomingCallModal: false
+      }
+    }));
   }
 
   function endCall() {
-    console.log('End call');
+    if (getCurrentCall() && socket) {
+      socket.emit('call:end', {
+        callAttemptId: getCurrentCall()?.callAttemptId,
+        initiator: 'business',
+        reason: 'user_action',
+        timestamp: Date.now()
+      });
+    }
+
+    // Stop any playing ringtone
+    stopIncomingCallSound();
+
+    // Clear any pending incoming calls UI
+    incomingCalls = [];
+
+    // Clean up WebRTC
+    if (webrtcManager) {
+      webrtcManager.cleanup();
+      webrtcManager = null;
+    }
+
+    // Stop call timer
+    if (durationInterval) {
+      clearInterval(durationInterval);
+      durationInterval = null;
+    }
+
+    // Reset state
+    currentPhase = 'terminated';
+    currentCallStartTime = null;
+    callDuration = 0;
+    isMuted = false;
+
+    callState.update(state => ({
+      ...state,
+      currentCall: null,
+      ui: {
+        ...state.ui,
+        showCallControls: false,
+        showIncomingCallModal: false,
+        status: isOnline ? 'available' : 'unavailable',
+        isMuted: false
+      }
+    }));
   }
 
   function toggleMute() {
-    console.log('Toggle mute');
+    if (!webrtcManager) return;
+
+    isMuted = webrtcManager.toggleMute();
+    
+    callState.update(state => ({
+      ...state,
+      ui: {
+        ...state.ui,
+        isMuted
+      }
+    }));
+  }
+
+  function getCurrentCall() {
+    const state = $callState;
+    return state.currentCall;
+  }
+
+  function handleCallFailure(message: string) {
+    errorMessage = message;
+    
+    // Clean up WebRTC
+    if (webrtcManager) {
+      webrtcManager.cleanup();
+      webrtcManager = null;
+    }
+
+    // Reset state
+    setTimeout(() => {
+      endCall();
+      errorMessage = '';
+    }, 3000);
+  }
+
+  function startCallTimer() {
+    if (durationInterval) return;
+
+    durationInterval = setInterval(() => {
+      if (currentCallStartTime) {
+        callDuration = Math.floor((Date.now() - currentCallStartTime) / 1000);
+      }
+    }, 1000);
+  }
+
+  function playIncomingCallSound() {
+    if (typeof document === 'undefined') return; // Skip on server-side
+    
+    const audioElement = document.querySelector('audio[src="/ringtone.mp3"]') as HTMLAudioElement;
+    if (audioElement) {
+      audioElement.loop = true;
+      audioElement.play().catch(error => {
+        console.log('Could not play ringtone:', error);
+        // Fallback: Show visual notification if audio fails
+        if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+          new Notification('Incoming Call', {
+            body: 'You have an incoming call',
+            icon: '/favicon.svg'
+          });
+        }
+      });
+    }
+  }
+
+  function saveCallToHistory(callRecord: any) {
+    callHistory = [callRecord, ...callHistory.slice(0, 49)]; // Keep last 50 calls
+    localStorage.setItem(`callsafe_history_${handle}`, JSON.stringify(callHistory));
+  }
+
+  function stopIncomingCallSound() {
+    if (typeof document === 'undefined') return; // Skip on server-side
+    
+    const audioElement = document.querySelector('audio[src="/ringtone.mp3"]') as HTMLAudioElement;
+    if (audioElement) {
+      audioElement.pause();
+      audioElement.currentTime = 0;
+      audioElement.loop = false;
+    }
+  }
+
+  function loadCallHistory() {
+    try {
+      const saved = localStorage.getItem(`callsafe_history_${handle}`);
+      if (saved) {
+        callHistory = JSON.parse(saved);
+      }
+    } catch (error) {
+      console.error('Failed to load call history:', error);
+    }
+  }
+
+  function formatDuration(seconds: number) {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  }
+
+  function getStatusColor(status: string) {
+    switch (status) {
+      case 'Connected': return 'text-green-600';
+      case 'Online - Waiting for calls': return 'text-green-600';
+      case 'Disconnected': return 'text-red-600';
+      case 'Failed': return 'text-red-600';
+      default: return 'text-gray-600';
+    }
   }
 
   function clearError() {
@@ -74,32 +512,21 @@
     goto('/user');
   }
 
-  function getCurrentPhase() {
-    return currentPhase;
-  }
-
-  function getUIControls() {
-    return uiControls;
-  }
-
-  function formatDuration(seconds) {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  }
-
-  function getStatusColor(status) {
-    switch (status) {
-      case 'connected': return 'text-green-600';
-      case 'connecting': return 'text-yellow-600';
-      case 'failed': return 'text-red-600';
-      case 'ended': return 'text-gray-600';
-      case 'missed': return 'text-orange-600';
-      case 'completed': return 'text-green-600';
-      case 'timeout': return 'text-yellow-600';
-      case 'cancelled': return 'text-gray-600';
-      default: return 'text-blue-600';
+  function cleanup() {
+    if (durationInterval) {
+      clearInterval(durationInterval);
     }
+    
+    if (webrtcManager) {
+      webrtcManager.cleanup();
+    }
+    
+    if (connectionManager) {
+      connectionManager.disconnect();
+    }
+    
+    // Stop any playing ringtone
+    stopIncomingCallSound();
   }
 </script>
 
@@ -122,7 +549,7 @@
           </svg>
         </li>
         <li class="text-gray-900 font-medium">
-          Agent Portal (Rationalized)
+          Agent Portal
           {#if handle}
             <span class="text-gray-500 font-normal">({handle})</span>
           {/if}
@@ -132,19 +559,43 @@
 
     <!-- Header -->
     <div class="bg-white rounded-2xl shadow-xl p-6 mb-6">
-      <div class="flex items-center justify-between">
+      <!-- Top Section: Title + Toggle -->
+      <div class="flex items-center justify-between mb-4">
         <div>
           <h1 class="text-3xl font-bold text-gray-800">Agent Dashboard</h1>
-          <p class="text-gray-600">CallSafe Business Portal (Rationalized Events)</p>
-          {#if handle}
-            <p class="text-sm text-gray-500 mt-1">Handle: <code class="bg-gray-100 px-2 py-1 rounded">{handle}</code></p>
-          {/if}
-          {#if sourceId}
-            <p class="text-sm text-gray-500 mt-1">Source: <code class="bg-blue-100 px-2 py-1 rounded">{sourceId}</code></p>
-          {/if}
+          <p class="text-gray-600">CallSafe Business Portal</p>
         </div>
         
-        <div class="flex items-center space-x-4">
+        <button
+          on:click={toggleOnlineStatus}
+          disabled={!socketConnected || !handle}
+          class="px-6 py-2 rounded-lg font-semibold transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed {isOnline ? 'bg-green-600 hover:bg-green-700 text-white' : 'bg-gray-200 hover:bg-gray-300 text-gray-700'}"
+        >
+          {isOnline ? 'Go Offline' : 'Go Online'}
+        </button>
+      </div>
+      
+      <!-- Middle Section: Handle and Source ID -->
+      {#if handle || sourceId}
+        <div class="flex items-center space-x-4 mb-4">
+          {#if handle}
+            <div class="flex items-center">
+              <span class="text-sm text-gray-500 mr-2">Handle:</span>
+              <code class="bg-gray-100 px-2 py-1 rounded text-sm">{handle}</code>
+            </div>
+          {/if}
+          {#if sourceId}
+            <div class="flex items-center">
+              <span class="text-sm text-gray-500 mr-2">Source:</span>
+              <code class="bg-blue-100 px-2 py-1 rounded text-sm">{sourceId}</code>
+            </div>
+          {/if}
+        </div>
+      {/if}
+      
+      <!-- Bottom Section: Unified Status Bar -->
+      <div class="pt-4 border-t border-gray-200">
+        <div class="flex items-center justify-between space-x-6">
           <!-- Connection Status -->
           <div class="flex items-center">
             <div class="w-3 h-3 rounded-full mr-2 {socketConnected ? 'bg-green-500' : 'bg-red-500'}"></div>
@@ -153,14 +604,21 @@
             </span>
           </div>
           
-          <!-- Online Toggle -->
-          <button
-            on:click={toggleOnlineStatus}
-            disabled={!socketConnected || !handle}
-            class="px-6 py-2 rounded-lg font-semibold transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed {isOnline ? 'bg-green-600 hover:bg-green-700 text-white' : 'bg-gray-200 hover:bg-gray-300 text-gray-700'}"
-          >
-            {isOnline ? 'Go Offline' : 'Go Online'}
-          </button>
+          <!-- Device Status -->
+          <div class="flex items-center">
+            <div class="w-3 h-3 rounded-full mr-2 {socketConnected ? 'bg-green-500' : 'bg-red-500'}"></div>
+            <span class="text-sm font-medium text-gray-700">
+              💻 Web Dashboard ({socketConnected ? 'Online' : 'Offline'})
+            </span>
+          </div>
+          
+          <!-- Handle Status -->
+          <div class="flex items-center">
+            <span class="text-sm font-medium text-gray-600 mr-2">Handle:</span>
+            <span class="text-sm font-semibold {currentPhase === 'active' ? 'text-red-600' : 'text-green-600'}">
+              {currentPhase === 'active' ? 'Busy' : 'Available'}
+            </span>
+          </div>
         </div>
       </div>
     </div>
@@ -191,75 +649,13 @@
       </div>
     {/if}
 
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <!-- Device Status Panel -->
-      <div class="bg-white rounded-2xl shadow-xl p-6">
-        <h2 class="text-xl font-semibold text-gray-800 mb-4">Device Status</h2>
-        
-        <div class="space-y-4">
-          <!-- Web Device (Current) -->
-          <div class="flex items-center justify-between p-3 rounded-lg bg-blue-50">
-            <div class="flex items-center">
-              <div class="w-3 h-3 rounded-full bg-green-500 mr-3"></div>
-              <div>
-                <div class="font-semibold text-gray-800">💻 Web Dashboard</div>
-                <div class="text-sm text-blue-600">You (Online - Rationalized)</div>
-              </div>
-            </div>
-          </div>
-          
-          <!-- Android Device -->
-          {#if devices.android}
-            <div class="flex items-center justify-between p-3 rounded-lg {devices.android.online ? 'bg-green-50' : 'bg-gray-50'}">
-              <div class="flex items-center">
-                <div class="w-3 h-3 rounded-full {devices.android.online ? 'bg-green-500' : 'bg-gray-400'} mr-3"></div>
-                <div>
-                  <div class="font-semibold text-gray-800">📱 Android App</div>
-                  <div class="text-sm {devices.android.online ? 'text-green-600' : 'text-gray-500'}">
-                    {devices.android.online ? 'Online' : 'Offline'}
-                    {#if devices.android.online && devices.android.socketConnected}
-                      (Connected)
-                    {:else if devices.android.online}
-                      (FCM Only)
-                    {/if}
-                  </div>
-                </div>
-              </div>
-            </div>
-          {:else}
-            <div class="flex items-center justify-between p-3 rounded-lg bg-gray-50">
-              <div class="flex items-center">
-                <div class="w-3 h-3 rounded-full bg-gray-400 mr-3"></div>
-                <div>
-                  <div class="font-semibold text-gray-800">📱 Android App</div>
-                  <div class="text-sm text-gray-500">Not registered</div>
-                </div>
-              </div>
-            </div>
-          {/if}
-          
-          <!-- Handle Status -->
-          <div class="mt-4 pt-4 border-t border-gray-200">
-            <div class="flex items-center justify-between">
-              <span class="text-sm font-medium text-gray-600">Handle Status:</span>
-              <span class="text-sm font-semibold {handleBusy ? 'text-red-600' : 'text-green-600'}">
-                {handleBusy ? 'Busy' : 'Available'}
-              </span>
-            </div>
-            {#if handleCallState?.acceptedBy && handleCallState.acceptedBy !== 'web'}
-              <div class="text-xs text-gray-500 mt-1">
-                Call in progress on {handleCallState.acceptedBy} device
-              </div>
-            {/if}
-          </div>
-        </div>
-      </div>
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
       <!-- Current Call Panel -->
       <div class="bg-white rounded-2xl shadow-xl p-6">
         <h2 class="text-xl font-semibold text-gray-800 mb-4">Current Call</h2>
         
-        {#if !callStateMachine || getCurrentPhase() === 'terminated'}
+        {#if currentPhase === 'terminated'}
           <div class="text-center py-8">
             <div class="w-16 h-16 bg-gray-100 rounded-full mx-auto mb-4 flex items-center justify-center">
               <svg class="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -270,7 +666,7 @@
               {isOnline ? 'Waiting for incoming calls...' : 'Go online to receive calls'}
             </p>
           </div>
-        {:else if getCurrentPhase() === 'connecting'}
+        {:else if currentPhase === 'connecting'}
           <div class="text-center py-8">
             <div class="animate-pulse">
               <div class="w-16 h-16 bg-yellow-200 rounded-full mx-auto mb-4 flex items-center justify-center">
@@ -279,10 +675,9 @@
                 </svg>
               </div>
               <p class="text-gray-600">Connecting to customer...</p>
-              <p class="text-sm text-gray-500 mt-2">Call ID: demo-call-id</p>
             </div>
           </div>
-        {:else if getCurrentPhase() === 'active'}
+        {:else if currentPhase === 'active'}
           <div class="text-center py-2 sm:py-4">
             <div class="w-12 h-12 sm:w-16 sm:h-16 bg-green-200 rounded-full mx-auto mb-2 sm:mb-4 flex items-center justify-center">
               <svg class="w-6 h-6 sm:w-8 sm:h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -291,15 +686,14 @@
             </div>
             <p class="text-green-600 font-semibold mb-2">Connected to Customer</p>
             <p class="text-xl sm:text-2xl font-mono text-green-700 font-bold mb-2 sm:mb-4 border border-green-200 bg-green-50 px-2 py-1 rounded">{formatDuration(callDuration)}</p>
-            <p class="text-sm text-gray-500 mb-4 sm:mb-6">Call ID: demo-call-id</p>
 
             <!-- Call Controls -->
             <div class="flex space-x-4">
               <button
                 on:click={toggleMute}
-                class="flex-1 {getUIControls().muteState ? 'bg-red-600 hover:bg-red-700' : 'bg-gray-600 hover:bg-gray-700'} text-white font-semibold py-3 px-4 rounded-xl transition-colors duration-200 flex items-center justify-center"
+                class="flex-1 {isMuted ? 'bg-red-600 hover:bg-red-700' : 'bg-gray-600 hover:bg-gray-700'} text-white font-semibold py-3 px-4 rounded-xl transition-colors duration-200 flex items-center justify-center"
               >
-                {#if getUIControls().muteState}
+                {#if isMuted}
                   <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" clip-rule="evenodd"/>
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"/>
@@ -314,7 +708,7 @@
               </button>
 
               <button
-                on:click={() => endCall()}
+                on:click={endCall}
                 class="flex-1 bg-red-600 hover:bg-red-700 text-white font-semibold py-3 px-4 rounded-xl transition-colors duration-200 flex items-center justify-center"
               >
                 <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -343,11 +737,11 @@
         {:else}
           <div class="space-y-4">
             {#each incomingCalls as call (call.callId)}
-              <div class="border border-blue-200 rounded-lg p-4 bg-blue-50">
+              <div class="border border-blue-200 rounded-lg p-4 bg-blue-50 animate-pulse">
                 <div class="flex items-center justify-between">
                   <div>
                     <p class="font-semibold text-gray-800">New Customer Call</p>
-                    <p class="text-sm text-gray-600">Call ID: {call.callId}</p>
+                    <p class="text-sm text-gray-600">Call ID: {call.callId.slice(-8)}</p>
                     {#if call.sourceId}
                       <p class="text-sm text-blue-600">Source: {call.sourceId}</p>
                     {/if}
@@ -358,7 +752,7 @@
                   <div class="flex space-x-2">
                     <button
                       on:click={() => acceptCall(call.callId)}
-                      disabled={!!callStateMachine && getCurrentPhase() !== 'terminated'}
+                      disabled={currentPhase !== 'terminated'}
                       class="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white px-4 py-2 rounded-lg font-semibold transition-colors duration-200"
                     >
                       Accept
@@ -402,12 +796,9 @@
                     <span class="font-medium text-sm capitalize">
                       {call.status === 'completed' ? 'Completed' : call.status === 'timeout' ? 'Timeout' : call.status === 'cancelled' ? 'Cancelled' : call.status === 'missed' ? 'Missed Call' : 'Failed'}
                     </span>
-                    {#if call.reason}
-                      <span class="text-xs text-gray-500">({call.reason})</span>
-                    {/if}
                   </div>
                   <div class="text-xs text-gray-600 mb-1">
-                    {new Date(call.timestamp).toLocaleString()}
+                    {new Date(call.startTime).toLocaleString()}
                   </div>
                   {#if call.sourceId}
                     <div class="text-xs text-blue-600">Source: {call.sourceId}</div>
@@ -420,7 +811,7 @@
                     </div>
                   {/if}
                   <div class="text-xs text-gray-500 mt-1">
-                    #{call.callId.slice(-6)}
+                    #{call.callAttemptId.slice(-6)}
                   </div>
                 </div>
               </div>
@@ -429,8 +820,6 @@
         </div>
       {/if}
     </div>
-
-
 
     <!-- Hidden audio elements -->
     <audio 
