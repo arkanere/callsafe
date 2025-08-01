@@ -108,6 +108,13 @@
 
     // Incoming call handler
     socket.on('call:incoming', (data: CallIncomingEvent) => {
+      console.log('=== INCOMING CALL DATA FORMAT ===');
+      console.log('Raw data received:', data);
+      console.log('Data type:', typeof data);
+      console.log('Data keys:', Object.keys(data));
+      console.log('Data values:', Object.values(data));
+      console.log('JSON stringified:', JSON.stringify(data, null, 2));
+      console.log('=== END INCOMING CALL DATA ===');
       console.log('Incoming call:', data);
       
       incomingCalls = [...incomingCalls, {

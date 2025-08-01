@@ -54,4 +54,17 @@
         android:textSize="16sp"
         style="@style/Widget.Material3.Button" />
 
+    <TextView
+        android:id="@+id/signupLinkText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:text="@string/need_account"
+        android:textColor="@color/primary"
+        android:textSize="14sp"
+        android:clickable="true"
+        android:focusable="true"
+        android:background="?attr/selectableItemBackground"
+        android:padding="8dp" />
+
 </LinearLayout>

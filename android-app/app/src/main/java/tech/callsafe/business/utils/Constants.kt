@@ -2,7 +2,7 @@ package tech.callsafe.business.utils
 
 object Constants {
     // API Endpoints
-    const val API_LOGIN = "api/auth/login"
+    const val API_LOGIN = "api/login"
     
     // Socket Events
     const val DEVICE_CONNECT = "device:connect"

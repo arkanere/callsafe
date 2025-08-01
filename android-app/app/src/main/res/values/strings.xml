@@ -20,4 +20,5 @@
     <string name="offline">Offline</string>
     <string name="ready_for_calls">Ready for calls</string>
     <string name="not_receiving_calls">Not receiving calls</string>
+    <string name="need_account">Need an account? Visit callsafe.tech</string>
 </resources>

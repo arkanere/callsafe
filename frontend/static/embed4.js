@@ -40,7 +40,7 @@
       sourceId: this.sanitizeInput(sourceId),
       theme: this.sanitizeInput(theme),
       apiBase: 'https://callsafe.tech',
-      signalServer: 'http://localhost:3000'
+      signalServer: 'https://tunnel.callsafe.tech'
     };
     
     this.render(element);

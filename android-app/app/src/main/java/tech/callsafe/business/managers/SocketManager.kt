@@ -22,6 +22,7 @@ class SocketManager private constructor(private val context: Context) {
     private var webrtcEventListener: WebRTCEventListener? = null
     
     companion object {
+        private const val TAG = "SocketManager"
         @Volatile
         private var INSTANCE: SocketManager? = null
         
@@ -33,8 +34,14 @@ class SocketManager private constructor(private val context: Context) {
     }
     
     fun connect(): Boolean {
-        val token = authManager.getStoredToken() ?: return false
+        Log.d(TAG, "[SOCKET] connect() called")
+        val token = authManager.getStoredToken()
+        if (token == null) {
+            Log.w(TAG, "[SOCKET] No valid token found, cannot connect")
+            return false
+        }
         
+        Log.d(TAG, "[SOCKET] Creating socket with token: [PRESENT]")
         val options = IO.Options().apply {
             auth = mapOf("token" to token)
             transports = arrayOf("websocket", "polling")
@@ -42,28 +49,38 @@ class SocketManager private constructor(private val context: Context) {
             forceNew = true
         }
         
-        socket = IO.socket("wss://tunnel.callsafe.tech/socket.io", options)
+        Log.d(TAG, "[SOCKET] Initializing socket connection to wss://tunnel.callsafe.tech")
+        socket = IO.socket("wss://tunnel.callsafe.tech", options)
         
         socket?.apply {
             on(Socket.EVENT_CONNECT) {
+                Log.d(TAG, "[SOCKET] Connected successfully")
                 // Register device for call reception
                 registerDevice()
             }
             
             on(Socket.EVENT_DISCONNECT) { args ->
-                Log.w("Socket", "Disconnected: ${args[0]}")
+                Log.w(TAG, "[SOCKET] Disconnected: ${args[0]}")
                 // Attempt reconnection if not server-initiated
                 if (args[0] != "io server disconnect") {
+                    Log.d(TAG, "[SOCKET] Client-side disconnect, attempting reconnection")
                     attemptReconnection()
+                } else {
+                    Log.d(TAG, "[SOCKET] Server-initiated disconnect, not reconnecting")
                 }
             }
             
             on(Socket.EVENT_CONNECT_ERROR) { args ->
-                Log.e("Socket", "Connection error: ${args[0]}")
-                handleConnectionError(args[0] as Exception)
+                Log.e(TAG, "[SOCKET] Connection error: ${args[0]}")
+                val error = args[0]
+                val exception = if (error is Exception) error else Exception(error.toString())
+                handleConnectionError(exception)
             }
             
+            Log.d(TAG, "[SOCKET] Setting up event handlers")
             setupEventHandlers()
+            
+            Log.d(TAG, "[SOCKET] Starting connection")
             connect()
         }
         
@@ -71,8 +88,11 @@ class SocketManager private constructor(private val context: Context) {
     }
     
     private fun registerDevice() {
+        Log.d(TAG, "[SOCKET] registerDevice() called")
         val deviceId = getUniqueDeviceId(context)
         val fcmToken = getFCMToken()
+        
+        Log.d(TAG, "[SOCKET] Device registration - deviceId: $deviceId, fcmToken: ${if (fcmToken != null) "[PRESENT]" else "[NULL]"}")
         
         val deviceConnectEvent = JSONObject().apply {
             put("type", "device:connect")
@@ -83,13 +103,35 @@ class SocketManager private constructor(private val context: Context) {
             // Note: handle comes from JWT token in auth, not event data
         }
         
+        Log.d(TAG, "[SOCKET] Emitting device:connect event")
         socket?.emit("device:connect", deviceConnectEvent)
+        
+        // Immediately send device status as 'available' (matching web client behavior)
+        Log.d(TAG, "[SOCKET] Sending initial device status to match web client")
+        val statusData = JSONObject().apply {
+            put("deviceId", deviceId)
+            put("status", "available")
+            put("timestamp", System.currentTimeMillis())
+        }
+        socket?.emit("device:status", statusData)
+        Log.d(TAG, "[SOCKET] Initial device status sent - device should now be available for calls")
     }
     
     private fun setupEventHandlers() {
+        Log.d(TAG, "[SOCKET] Setting up event handlers")
         // Incoming call handler
         socket?.on("call:incoming") { args ->
+            Log.d(TAG, "[SOCKET] Received call:incoming event")
+            Log.d(TAG, "=== ANDROID INCOMING CALL DATA FORMAT ===")
+            Log.d(TAG, "[SOCKET] Args array length: ${args.size}")
+            Log.d(TAG, "[SOCKET] Raw args content: ${args.contentToString()}")
             val data = args[0] as JSONObject
+            Log.d(TAG, "[SOCKET] Parsed JSON data: ${data}")
+            Log.d(TAG, "[SOCKET] Data keys: ${data.keys().asSequence().toList()}")
+            Log.d(TAG, "[SOCKET] Data toString: ${data.toString()}")
+            Log.d(TAG, "[SOCKET] Data pretty JSON: ${data.toString(2)}")
+            Log.d(TAG, "=== END ANDROID INCOMING CALL DATA ===")
+            Log.d(TAG, "[SOCKET] Incoming call data: ${data}")
             handleIncomingCall(
                 callAttemptId = data.getString("callAttemptId"),
                 sourceId = data.getString("sourceId"),
@@ -99,7 +141,9 @@ class SocketManager private constructor(private val context: Context) {
         
         // Call cancelled handler
         socket?.on("call:cancelled") { args ->
+            Log.d(TAG, "[SOCKET] Received call:cancelled event")
             val data = args[0] as JSONObject
+            Log.d(TAG, "[SOCKET] Call cancelled data: ${data}")
             handleCallCancelled(
                 callAttemptId = data.getString("callAttemptId"),
                 reason = data.getString("reason")
@@ -108,7 +152,9 @@ class SocketManager private constructor(private val context: Context) {
         
         // Call ended handler
         socket?.on("call:ended") { args ->
+            Log.d(TAG, "[SOCKET] Received call:ended event")
             val data = args[0] as JSONObject
+            Log.d(TAG, "[SOCKET] Call ended data: ${data}")
             handleCallEnded(
                 callAttemptId = data.getString("callAttemptId"),
                 duration = data.getInt("duration"),
@@ -118,7 +164,9 @@ class SocketManager private constructor(private val context: Context) {
         
         // Call failed handler (for server-side timeout and technical failures)
         socket?.on("call:failed") { args ->
+            Log.d(TAG, "[SOCKET] Received call:failed event")
             val data = args[0] as JSONObject
+            Log.d(TAG, "[SOCKET] Call failed data: ${data}")
             handleCallFailed(
                 callAttemptId = data.getString("callAttemptId"),
                 reason = data.getString("reason")
@@ -127,29 +175,54 @@ class SocketManager private constructor(private val context: Context) {
         
         // WebRTC events
         socket?.on("webrtc:offer") { args ->
+            Log.d(TAG, "[SOCKET] Received webrtc:offer event")
             val data = args[0] as JSONObject
+            Log.d(TAG, "[SOCKET] WebRTC offer data: ${data}")
             handleWebRTCOffer(data)
         }
         
         socket?.on("webrtc:ice-candidate") { args ->
+            Log.d(TAG, "[SOCKET] Received webrtc:ice-candidate event")
             val data = args[0] as JSONObject
+            Log.d(TAG, "[SOCKET] WebRTC ICE candidate data: ${data}")
             handleWebRTCIceCandidate(data)
         }
         
         // Error handling
         socket?.on("error") { args ->
+            Log.e(TAG, "[SOCKET] Received error event")
             val error = args[0] as JSONObject
+            Log.e(TAG, "[SOCKET] Server error: ${error}")
             handleServerError(error)
         }
+        
+        // Test handler to ensure we're listening properly
+        socket?.on("test") { args ->
+            Log.d(TAG, "[SOCKET] TEST event received: ${args.contentToString()}")
+        }
+        
+        // Handler for any events we might have missed
+        socket?.on("call") { args ->
+            Log.d(TAG, "[SOCKET] Generic 'call' event received: ${args.contentToString()}")
+        }
+        
+        socket?.on("incoming") { args ->
+            Log.d(TAG, "[SOCKET] Generic 'incoming' event received: ${args.contentToString()}")
+        }
+        
+        Log.d(TAG, "[SOCKET] Event handlers setup complete")
     }
     
     fun emit(eventType: String, data: JSONObject) {
+        Log.d(TAG, "[SOCKET] Emitting event: $eventType with data: $data")
         socket?.emit(eventType, data)
     }
     
     fun disconnect() {
+        Log.d(TAG, "[SOCKET] disconnect() called")
         socket?.disconnect()
         socket = null
+        Log.d(TAG, "[SOCKET] Socket disconnected and cleared")
     }
     
     fun setWebRTCEventListener(listener: WebRTCEventListener?) {
@@ -157,30 +230,54 @@ class SocketManager private constructor(private val context: Context) {
     }
     
     private fun attemptReconnection() {
+        Log.d(TAG, "[SOCKET] attemptReconnection() called")
         // Implement reconnection logic if needed
         // For now, just try to reconnect after a delay
         android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            Log.d(TAG, "[SOCKET] Checking connection status for reconnection")
             if (socket?.connected() != true) {
+                Log.d(TAG, "[SOCKET] Socket not connected, attempting reconnection")
                 connect()
+            } else {
+                Log.d(TAG, "[SOCKET] Socket already connected, skipping reconnection")
             }
         }, 5000) // 5 second delay
     }
     
     private fun handleConnectionError(exception: Exception) {
+        Log.e(TAG, "[SOCKET] handleConnectionError() called")
         // Handle connection errors
-        android.util.Log.e("SocketManager", "Connection error", exception)
+        Log.e(TAG, "[SOCKET] Connection error details", exception)
     }
     
     private fun handleIncomingCall(callAttemptId: String, sourceId: String, timestamp: Long) {
-        // Handle incoming call - show notification or activity
-        // This would typically trigger the IncomingCallActivity
+        Log.d(TAG, "[SOCKET] handleIncomingCall() - callAttemptId: $callAttemptId, sourceId: $sourceId, timestamp: $timestamp")
+        
+        // TODO: Implement incoming call handling
+        // For now, let's just log and auto-reject to test the flow
+        Log.w(TAG, "[SOCKET] INCOMING CALL RECEIVED! This should trigger IncomingCallActivity")
+        Log.w(TAG, "[SOCKET] Auto-rejecting call for testing purposes")
+        
+        // Auto-reject for testing
+        val rejectData = org.json.JSONObject().apply {
+            put("type", "call:reject")
+            put("callAttemptId", callAttemptId)
+            put("deviceType", "mobile")
+            put("reason", "testing")
+            put("timestamp", System.currentTimeMillis())
+        }
+        
+        socket?.emit("call:reject", rejectData)
+        Log.d(TAG, "[SOCKET] Auto-reject sent for testing")
     }
     
     private fun handleCallCancelled(callAttemptId: String, reason: String) {
+        Log.d(TAG, "[SOCKET] handleCallCancelled() - callAttemptId: $callAttemptId, reason: $reason")
         // Handle call cancellation
     }
     
     private fun handleCallEnded(callAttemptId: String, duration: Int, reason: String?) {
+        Log.d(TAG, "[SOCKET] handleCallEnded() - callAttemptId: $callAttemptId, duration: $duration, reason: $reason")
         // Handle call ended
     }
     
@@ -264,12 +361,16 @@ class SocketManager private constructor(private val context: Context) {
     }
     
     private fun handleServerError(error: JSONObject) {
+        Log.e(TAG, "[SOCKET] handleServerError() - error: $error")
         // Handle server errors
     }
     
     private fun getFCMToken(): String? {
+        Log.d(TAG, "[SOCKET] getFCMToken() called")
         // Get FCM token from SharedPreferences
         val sharedPreferences = context.getSharedPreferences("CallSafePrefs", Context.MODE_PRIVATE)
-        return sharedPreferences.getString("fcm_token", null)
+        val token = sharedPreferences.getString("fcm_token", null)
+        Log.d(TAG, "[SOCKET] FCM token: ${if (token != null) "[PRESENT]" else "[NULL]"}")
+        return token
     }
 }

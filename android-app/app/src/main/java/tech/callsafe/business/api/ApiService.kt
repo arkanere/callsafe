@@ -6,6 +6,6 @@ import tech.callsafe.business.models.LoginRequest
 import tech.callsafe.business.models.LoginResponse
 
 interface ApiService {
-    @POST("api/auth/login")
+    @POST("api/login")
     suspend fun login(@Body request: LoginRequest): LoginResponse
 }

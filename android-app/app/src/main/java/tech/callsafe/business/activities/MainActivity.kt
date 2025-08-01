@@ -2,6 +2,7 @@ package tech.callsafe.business.activities
 
 import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentPagerAdapter
@@ -24,26 +25,41 @@ class MainActivity : AppCompatActivity() {
     private lateinit var authenticationManager: AuthenticationManager
     private var isOnline = false
     
+    companion object {
+        private const val TAG = "MainActivity"
+    }
+    
     override fun onCreate(savedInstanceState: Bundle?) {
+        Log.d(TAG, "[MAIN] onCreate() called")
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
         
+        Log.d(TAG, "[MAIN] Initializing managers")
         socketManager = SocketManager.getInstance(this)
         callHistoryManager = CallHistoryManager(this)
         authenticationManager = AuthenticationManager(this)
         
+        Log.d(TAG, "[MAIN] Setting up UI and ViewPager")
         setupUI()
         setupViewPager()
+        
+        Log.d(TAG, "[MAIN] Checking authentication and connecting")
         checkAuthenticationAndConnect()
     }
     
     private fun checkAuthenticationAndConnect() {
+        Log.d(TAG, "[MAIN] checkAuthenticationAndConnect() called")
         // Check if user is authenticated via JWT token
-        if (authenticationManager.getStoredToken() != null) {
+        val isTokenValid = authenticationManager.isTokenValid()
+        Log.d(TAG, "[MAIN] Token validation result: $isTokenValid")
+        
+        if (isTokenValid) {
+            Log.d(TAG, "[MAIN] User is authenticated, connecting to socket")
             // User is authenticated, connect to socket
             socketManager.connect()
         } else {
+            Log.d(TAG, "[MAIN] User not authenticated, redirecting to login")
             // User not authenticated, redirect to login
             startActivity(Intent(this, LoginActivity::class.java))
             finish()
@@ -51,20 +67,31 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun setupUI() {
+        Log.d(TAG, "[MAIN] Setting up UI elements")
         binding.apply {
             // Status indicator
             statusIndicator.setOnClickListener {
+                Log.d(TAG, "[MAIN] Status indicator clicked")
                 toggleOnlineStatus()
             }
             
             // Settings button
             settingsButton.setOnClickListener {
+                Log.d(TAG, "[MAIN] Settings button clicked")
                 startActivity(Intent(this@MainActivity, SettingsActivity::class.java))
             }
+            
+            // Logout button
+            logoutButton.setOnClickListener {
+                Log.d(TAG, "[MAIN] Logout button clicked")
+                performLogout()
+            }
         }
+        Log.d(TAG, "[MAIN] UI setup complete")
     }
     
     private fun setupViewPager() {
+        Log.d(TAG, "[MAIN] Setting up ViewPager")
         val adapter = DashboardPagerAdapter(supportFragmentManager, lifecycle)
         binding.viewPager.adapter = adapter
         
@@ -75,26 +102,36 @@ class MainActivity : AppCompatActivity() {
                 else -> "Settings"
             }
         }.attach()
+        Log.d(TAG, "[MAIN] ViewPager setup complete")
     }
     
     private fun toggleOnlineStatus() {
+        Log.d(TAG, "[MAIN] Toggling online status from $isOnline to ${!isOnline}")
         isOnline = !isOnline
         
+        val deviceId = getUniqueDeviceId(this)
+        val status = if (isOnline) "available" else "unavailable"
+        Log.d(TAG, "[MAIN] Updating device status - deviceId: $deviceId, status: $status")
+        
         CallManager.getInstance(this).updateDeviceStatus(
-            deviceId = getUniqueDeviceId(this),
-            status = if (isOnline) "available" else "unavailable"
+            deviceId = deviceId,
+            status = status
         )
         
+        Log.d(TAG, "[MAIN] Updating status UI")
         updateStatusUI(isOnline)
         
         if (isOnline) {
+            Log.d(TAG, "[MAIN] Starting call reception service")
             startCallReceptionService()
         } else {
+            Log.d(TAG, "[MAIN] Stopping call reception service")
             stopCallReceptionService()
         }
     }
     
     private fun updateStatusUI(online: Boolean) {
+        Log.d(TAG, "[MAIN] Updating status UI - online: $online")
         binding.apply {
             if (online) {
                 statusIndicator.setImageResource(R.drawable.ic_online)
@@ -106,6 +143,7 @@ class MainActivity : AppCompatActivity() {
                 statusText.setTextColor(ContextCompat.getColor(this@MainActivity, R.color.gray))
             }
         }
+        Log.d(TAG, "[MAIN] Status UI updated")
     }
     
     private fun startCallReceptionService() {
@@ -120,5 +158,28 @@ class MainActivity : AppCompatActivity() {
             action = CallReceptionService.ACTION_STOP_SERVICE
         }
         startService(intent)
+    }
+    
+    private fun performLogout() {
+        Log.d(TAG, "[MAIN] performLogout() called")
+        
+        // Stop services and disconnect socket
+        Log.d(TAG, "[MAIN] Stopping services and disconnecting socket")
+        stopCallReceptionService()
+        socketManager.disconnect()
+        
+        // Clear authentication data
+        Log.d(TAG, "[MAIN] Clearing authentication data")
+        authenticationManager.logout()
+        
+        // Redirect to login activity
+        Log.d(TAG, "[MAIN] Redirecting to login activity")
+        val intent = Intent(this, LoginActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+        }
+        startActivity(intent)
+        finish()
+        
+        Log.d(TAG, "[MAIN] Logout complete")
     }
 }
