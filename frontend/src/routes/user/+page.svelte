@@ -162,22 +162,22 @@
             </div>
           </div>
           
-          <!-- Source ID -->
+          <!-- Handle -->
           <div>
-            <h3 class="text-sm font-medium text-gray-700 mb-2">Source ID:</h3>
+            <h3 class="text-sm font-medium text-gray-700 mb-2">Handle:</h3>
             <div class="bg-gray-50 p-3 rounded-lg">
-              {#if userData.sourceId}
+              {#if callSafeHandle}
                 <div class="flex items-center justify-between">
-                  <code class="text-sm font-mono text-blue-600 font-semibold">{userData.sourceId}</code>
+                  <code class="text-sm font-mono text-blue-600 font-semibold">{callSafeHandle}</code>
                   <button
-                    on:click={() => copyToClipboard(userData.sourceId)}
+                    on:click={() => copyToClipboard(callSafeHandle)}
                     class="ml-2 bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded text-xs font-semibold transition-colors duration-200"
                   >
                     {copied ? 'Copied!' : 'Copy'}
                   </button>
                 </div>
               {:else}
-                <span class="text-sm text-gray-500 italic">No source ID assigned</span>
+                <span class="text-sm text-gray-500 italic">No handle assigned</span>
               {/if}
             </div>
           </div>
@@ -191,21 +191,6 @@
       <div class="bg-white rounded-2xl shadow-xl p-6 mb-8">
         <h2 class="text-xl font-bold text-gray-900 mb-4">Your CallSafe Handle</h2>
         
-        <!-- Handle Identifier -->
-        <div class="mb-4">
-          <h3 class="text-sm font-medium text-gray-700 mb-2">Handle:</h3>
-          <div class="bg-gray-50 p-3 rounded-lg">
-            <div class="flex items-center justify-between">
-              <code class="text-lg font-mono text-blue-600 font-semibold">{callSafeHandle}</code>
-              <button
-                on:click={() => copyToClipboard(callSafeHandle)}
-                class="ml-4 bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm font-semibold transition-colors duration-200"
-              >
-                {copied ? 'Copied!' : 'Copy'}
-              </button>
-            </div>
-          </div>
-        </div>
         <!-- Embed Code -->
         <div class="mb-4">
           <h3 class="text-sm font-medium text-gray-700 mb-2">Embed Code:</h3>
