@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import jwt from 'jsonwebtoken';
 
-const JWT_SECRET = '***REDACTED***';
+const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-change-in-production';
 
 export async function POST({ request }) {
   console.log('[REFRESH API] POST request received');

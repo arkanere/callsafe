@@ -1,5 +1,6 @@
 import { io, Socket } from 'socket.io-client';
 import { AuthManager } from './auth-manager';
+import { env } from '$env/dynamic/public';
 
 export class ConnectionManager {
   private socket: Socket | null = null;
@@ -17,8 +18,9 @@ export class ConnectionManager {
     }
     console.log('[CONNECTION MANAGER] Authentication token retrieved');
 
-    console.log('[CONNECTION MANAGER] Creating socket.io connection to http://localhost:3000');
-    this.socket = io('http://localhost:3000', {
+    const socketUrl = env.VITE_SIGNALING_SERVER_URL || 'https://tunnel.callsafe.tech';
+    console.log('[CONNECTION MANAGER] Creating socket.io connection to', socketUrl);
+    this.socket = io(socketUrl, {
       auth: { token },
       transports: ['websocket', 'polling'],
       timeout: 30000, // 30-second timeout for consistency

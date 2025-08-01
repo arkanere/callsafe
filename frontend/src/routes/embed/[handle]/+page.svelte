@@ -2,6 +2,7 @@
   import { page } from '$app/stores';
   import { onMount, onDestroy } from 'svelte';
   import { io, type Socket } from 'socket.io-client';
+  import { env } from '$env/dynamic/public';
   import { WebRTCManager } from '$lib/managers/webrtc-manager';
   import { customerCallState } from '$lib/stores/call-state';
   import { generateUUID } from '$lib/utils/uuid';
@@ -129,7 +130,8 @@
   async function connectToSignalingServer(): Promise<void> {
     console.log('[EMBED PAGE] Attempting to connect to signaling server');
     return new Promise((resolve, reject) => {
-      socket = io('http://localhost:3000', {
+      const socketUrl = env.VITE_SIGNALING_SERVER_URL || 'https://tunnel.callsafe.tech';
+      socket = io(socketUrl, {
         transports: ['websocket', 'polling'],
         timeout: 30000 // 30-second timeout for consistency
       });

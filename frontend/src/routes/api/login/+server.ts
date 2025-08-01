@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import jwt from 'jsonwebtoken';
 
-const JWT_SECRET = '***REDACTED***';
+const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-change-in-production';
 
 export async function POST({ request }) {
   console.log('[LOGIN API] POST request received');
@@ -26,7 +26,7 @@ export async function POST({ request }) {
     const tokenPayload = {
       email,
       handle,
-      sourceId: 'demo-source',
+      sourceId: 'website',
       exp: Math.floor(Date.now() / 1000) + (24 * 60 * 60) // 24 hours
     };
     const token = jwt.sign(tokenPayload, JWT_SECRET);
@@ -38,7 +38,7 @@ export async function POST({ request }) {
       user: {
         email,
         handle,
-        sourceId: 'demo-source'
+        sourceId: 'website'
       }
     };
     console.log('[LOGIN API] Login successful, returning response:', { ...responseData, token: '[REDACTED]' });
