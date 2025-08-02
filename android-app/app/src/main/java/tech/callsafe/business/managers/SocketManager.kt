@@ -341,23 +341,55 @@ class SocketManager private constructor(private val context: Context) {
     }
     
     private fun handleWebRTCIceCandidate(data: JSONObject) {
+        Log.d(TAG, "[ICE] handleWebRTCIceCandidate() - ENTRY POINT")
+        Log.d(TAG, "[ICE] Raw data received: $data")
+        
         try {
+            Log.d(TAG, "[ICE] Extracting callAttemptId from data")
             val callAttemptId = data.getString("callAttemptId")
-            val candidateObject = data.getJSONObject("candidate")
-            val candidate = candidateObject.getString("candidate")
-            val sdpMLineIndex = candidateObject.getInt("sdpMLineIndex")
-            val sdpMid = candidateObject.getString("sdpMid")
+            Log.d(TAG, "[ICE] callAttemptId: $callAttemptId")
             
+            Log.d(TAG, "[ICE] Extracting candidate object from data")
+            val candidateObject = data.getJSONObject("candidate")
+            Log.d(TAG, "[ICE] candidateObject: $candidateObject")
+            
+            Log.d(TAG, "[ICE] Extracting candidate SDP string")
+            val candidate = candidateObject.getString("candidate")
+            Log.d(TAG, "[ICE] candidate SDP: $candidate")
+            
+            Log.d(TAG, "[ICE] Extracting sdpMLineIndex")
+            val sdpMLineIndex = candidateObject.getInt("sdpMLineIndex")
+            Log.d(TAG, "[ICE] sdpMLineIndex: $sdpMLineIndex")
+            
+            Log.d(TAG, "[ICE] Extracting sdpMid")
+            val sdpMid = candidateObject.getString("sdpMid")
+            Log.d(TAG, "[ICE] sdpMid: $sdpMid")
+            
+            Log.d(TAG, "[ICE] Creating IceCandidate object")
             // Create IceCandidate from server data
             val iceCandidate = IceCandidate(sdpMid, sdpMLineIndex, candidate)
+            Log.d(TAG, "[ICE] IceCandidate created successfully")
+            Log.d(TAG, "[ICE] IceCandidate details - sdpMid: ${iceCandidate.sdpMid}, sdpMLineIndex: ${iceCandidate.sdpMLineIndex}")
+            Log.d(TAG, "[ICE] IceCandidate SDP: ${iceCandidate.sdp}")
             
-            // Route to active WebRTC manager
-            webrtcEventListener?.onWebRTCIceCandidate(callAttemptId, iceCandidate)
+            Log.d(TAG, "[ICE] Checking if webrtcEventListener is available")
+            if (webrtcEventListener != null) {
+                Log.d(TAG, "[ICE] webrtcEventListener is available, calling onWebRTCIceCandidate")
+                // Route to active WebRTC manager
+                webrtcEventListener?.onWebRTCIceCandidate(callAttemptId, iceCandidate)
+                Log.d(TAG, "[ICE] Successfully routed to webrtcEventListener")
+            } else {
+                Log.w(TAG, "[ICE] webrtcEventListener is NULL - cannot route ICE candidate!")
+            }
             
         } catch (e: Exception) {
-            Log.e("SocketManager", "Error handling WebRTC ICE candidate", e)
+            Log.e(TAG, "[ICE] Error handling WebRTC ICE candidate: ${e.message}", e)
+            Log.e(TAG, "[ICE] Exception details: ${e.javaClass.simpleName}")
+            Log.e(TAG, "[ICE] Stack trace: ${e.stackTrace.contentToString()}")
             // ICE candidate failures are usually non-fatal, just log the error
         }
+        
+        Log.d(TAG, "[ICE] handleWebRTCIceCandidate() - EXIT POINT")
     }
     
     private fun handleServerError(error: JSONObject) {

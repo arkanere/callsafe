@@ -1,11 +1,15 @@
 package tech.callsafe.business.activities
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import tech.callsafe.business.databinding.ActivityLoginBinding
@@ -17,6 +21,7 @@ class LoginActivity : AppCompatActivity() {
     
     companion object {
         private const val TAG = "LoginActivity"
+        private const val MICROPHONE_PERMISSION_REQUEST_CODE = 1001
     }
     
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -85,11 +90,9 @@ class LoginActivity : AppCompatActivity() {
                 
                 Log.d(TAG, "[LOGIN] Authentication response received - success: ${response.success}")
                 if (response.success) {
-                    Log.d(TAG, "[LOGIN] Login successful, navigating to MainActivity")
-                    // Login successful, navigate to main activity
-                    val intent = Intent(this@LoginActivity, MainActivity::class.java)
-                    startActivity(intent)
-                    finish()
+                    Log.d(TAG, "[LOGIN] Login successful, checking microphone permission")
+                    // Login successful, check microphone permission before navigating
+                    checkAndRequestMicrophonePermission()
                 } else {
                     Log.w(TAG, "[LOGIN] Login failed - response.success = false")
                     Toast.makeText(this@LoginActivity, "Login failed: ${response.message}", Toast.LENGTH_SHORT).show()
@@ -104,5 +107,52 @@ class LoginActivity : AppCompatActivity() {
                 binding.loginButton.text = "Login"
             }
         }
+    }
+    
+    private fun checkAndRequestMicrophonePermission() {
+        Log.d(TAG, "[LOGIN] checkAndRequestMicrophonePermission() - Checking RECORD_AUDIO permission")
+        
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) 
+            == PackageManager.PERMISSION_GRANTED) {
+            Log.d(TAG, "[LOGIN] checkAndRequestMicrophonePermission() - Permission already granted, navigating to MainActivity")
+            navigateToMainActivity()
+        } else {
+            Log.d(TAG, "[LOGIN] checkAndRequestMicrophonePermission() - Permission not granted, requesting permission")
+            Toast.makeText(this, "Microphone permission is required for making calls", Toast.LENGTH_LONG).show()
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.RECORD_AUDIO),
+                MICROPHONE_PERMISSION_REQUEST_CODE
+            )
+        }
+    }
+    
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        
+        when (requestCode) {
+            MICROPHONE_PERMISSION_REQUEST_CODE -> {
+                if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                    Log.d(TAG, "[LOGIN] onRequestPermissionsResult() - Microphone permission granted, navigating to MainActivity")
+                    navigateToMainActivity()
+                } else {
+                    Log.w(TAG, "[LOGIN] onRequestPermissionsResult() - Microphone permission denied, closing app")
+                    Toast.makeText(this, "Microphone permission is required for the app to function. App will close.", Toast.LENGTH_LONG).show()
+                    // Close the app if permission denied
+                    finishAffinity()
+                }
+            }
+        }
+    }
+    
+    private fun navigateToMainActivity() {
+        Log.d(TAG, "[LOGIN] navigateToMainActivity() - Navigating to MainActivity")
+        val intent = Intent(this@LoginActivity, MainActivity::class.java)
+        startActivity(intent)
+        finish()
     }
 }

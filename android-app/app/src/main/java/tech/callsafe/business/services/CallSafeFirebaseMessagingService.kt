@@ -21,15 +21,18 @@ class CallSafeFirebaseMessagingService : FirebaseMessagingService() {
     
     override fun onMessageReceived(remoteMessage: RemoteMessage) {
         super.onMessageReceived(remoteMessage)
+        android.util.Log.d("CallSafeFirebase", "[FLOW] onMessageReceived() - Entry point for FCM notification")
         
         val messageType = remoteMessage.data["type"]
         
         when (messageType) {
             "call:incoming" -> {
+                android.util.Log.d("CallSafeFirebase", "[FLOW] onMessageReceived() - Processing call:incoming notification")
                 val callAttemptId = remoteMessage.data["callAttemptId"] ?: return
                 val sourceId = remoteMessage.data["sourceId"] ?: return
                 val timestamp = remoteMessage.data["timestamp"]?.toLongOrNull() ?: return
                 
+                android.util.Log.d("CallSafeFirebase", "[FLOW] onMessageReceived() - Calling showIncomingCallNotification()")
                 showIncomingCallNotification(callAttemptId, sourceId, timestamp)
                 
                 // Start ringtone
@@ -37,7 +40,9 @@ class CallSafeFirebaseMessagingService : FirebaseMessagingService() {
             }
             
             "call:cancelled" -> {
+                android.util.Log.d("CallSafeFirebase", "[FLOW] onMessageReceived() - Processing call:cancelled notification")
                 val callAttemptId = remoteMessage.data["callAttemptId"] ?: return
+                android.util.Log.d("CallSafeFirebase", "[FLOW] onMessageReceived() - Calling cancelIncomingCallNotification()")
                 cancelIncomingCallNotification(callAttemptId)
                 
                 // Stop ringtone when call is cancelled
@@ -48,6 +53,7 @@ class CallSafeFirebaseMessagingService : FirebaseMessagingService() {
     
     override fun onNewToken(token: String) {
         super.onNewToken(token)
+        android.util.Log.d("CallSafeFirebase", "[FLOW] onNewToken() - FCM token updated")
         
         // Update FCM token on server
         updateFCMToken(token)
@@ -58,10 +64,12 @@ class CallSafeFirebaseMessagingService : FirebaseMessagingService() {
         sourceId: String,
         timestamp: Long
     ) {
+        android.util.Log.d("CallSafeFirebase", "[FLOW] showIncomingCallNotification() - Creating incoming call UI")
         // Create notification channel if needed
         createNotificationChannel()
         
         // Create full-screen incoming call intent
+        android.util.Log.d("CallSafeFirebase", "[FLOW] showIncomingCallNotification() - Creating intent for IncomingCallActivity")
         val fullScreenIntent = Intent(this, IncomingCallActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             putExtra("callAttemptId", callAttemptId)
@@ -109,9 +117,11 @@ class CallSafeFirebaseMessagingService : FirebaseMessagingService() {
         
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         notificationManager.notify(callAttemptId.hashCode(), notification)
+        android.util.Log.d("CallSafeFirebase", "[FLOW] showIncomingCallNotification() - Notification displayed, triggering IncomingCallActivity")
     }
     
     private fun cancelIncomingCallNotification(callAttemptId: String) {
+        android.util.Log.d("CallSafeFirebase", "[FLOW] cancelIncomingCallNotification() - Cancelling notification for callAttemptId: $callAttemptId")
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         notificationManager.cancel(callAttemptId.hashCode())
     }
@@ -131,6 +141,7 @@ class CallSafeFirebaseMessagingService : FirebaseMessagingService() {
     }
     
     private fun updateFCMToken(token: String) {
+        android.util.Log.d("CallSafeFirebase", "[FLOW] updateFCMToken() - Storing FCM token locally")
         // Store token locally for device registration
         val sharedPreferences = getSharedPreferences("CallSafePrefs", Context.MODE_PRIVATE)
         sharedPreferences.edit().putString("fcm_token", token).apply()

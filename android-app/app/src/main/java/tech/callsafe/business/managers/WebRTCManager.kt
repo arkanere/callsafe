@@ -14,6 +14,7 @@ class WebRTCManager(private val context: Context) {
     private var factory: PeerConnectionFactory? = null
     private var audioManager: AudioManager? = null
     private var listener: WebRTCListener? = null
+    private var callAttemptId: String? = null
     // Note: Connection timeout handled by signaling server (30 seconds)
     
     interface WebRTCListener {
@@ -42,53 +43,104 @@ class WebRTCManager(private val context: Context) {
             .setOptions(options)
             .createPeerConnectionFactory()
         
-        // Create peer connection
+        // Create peer connection with Unified Plan
         val rtcConfig = PeerConnection.RTCConfiguration(
             listOf(
                 PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
                 PeerConnection.IceServer.builder("stun:stun1.l.google.com:19302").createIceServer()
             )
-        )
+        ).apply {
+            // Explicitly enable Unified Plan for modern WebRTC compatibility
+            sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
+        }
         
         peerConnection = factory?.createPeerConnection(rtcConfig, object : PeerConnection.Observer {
             override fun onIceCandidate(candidate: IceCandidate) {
+                android.util.Log.d("WebRTCManager", "[ICE] onIceCandidate() - Local candidate generated")
+                android.util.Log.d("WebRTCManager", "[ICE] Local candidate SDP: ${candidate.sdp}")
+                android.util.Log.d("WebRTCManager", "[ICE] Local candidate sdpMid: ${candidate.sdpMid}")
+                android.util.Log.d("WebRTCManager", "[ICE] Local candidate sdpMLineIndex: ${candidate.sdpMLineIndex}")
                 sendIceCandidate(candidate)
+                android.util.Log.d("WebRTCManager", "[ICE] Local candidate sent to server")
             }
             
             override fun onAddStream(stream: MediaStream) {
+                // Legacy callback - should not be used with Unified Plan
                 listener.onRemoteStreamReceived(stream)
-                // Server manages connection timeout - no client-side timeout needed
             }
             
             override fun onIceConnectionChange(state: PeerConnection.IceConnectionState) {
+                android.util.Log.d("WebRTCManager", "[ICE] Connection state changed to: $state")
+                android.util.Log.d("WebRTCManager", "[ICE] Current signaling state: ${peerConnection?.signalingState()}")
+                android.util.Log.d("WebRTCManager", "[ICE] Current connection state: ${peerConnection?.connectionState()}")
                 when (state) {
+                    PeerConnection.IceConnectionState.NEW -> {
+                        android.util.Log.d("WebRTCManager", "[ICE] Connection state: NEW - ICE agent is gathering addresses")
+                    }
+                    PeerConnection.IceConnectionState.CHECKING -> {
+                        android.util.Log.d("WebRTCManager", "[ICE] Connection state: CHECKING - ICE agent has received remote candidates and is checking pairs")
+                    }
                     PeerConnection.IceConnectionState.CONNECTED -> {
+                        android.util.Log.d("WebRTCManager", "[ICE] Connection state: CONNECTED - ICE agent has found a usable connection")
                         listener.onConnectionEstablished()
-                        // Server manages connection timeout - no client-side timeout needed
+                    }
+                    PeerConnection.IceConnectionState.COMPLETED -> {
+                        android.util.Log.d("WebRTCManager", "[ICE] Connection state: COMPLETED - ICE agent has finished gathering candidates")
+                        listener.onConnectionEstablished()
                     }
                     PeerConnection.IceConnectionState.FAILED -> {
+                        android.util.Log.d("WebRTCManager", "[ICE] Connection state: FAILED - ICE agent failed to find a usable connection")
+                        android.util.Log.d("WebRTCManager", "[ICE] This usually means candidates couldn't establish connectivity")
                         listener.onConnectionFailed("ICE connection failed")
-                        // Server manages connection timeout - no client-side timeout needed
                     }
-                    else -> { /* Handle other states if needed */ }
+                    PeerConnection.IceConnectionState.DISCONNECTED -> {
+                        android.util.Log.d("WebRTCManager", "[ICE] Connection state: DISCONNECTED - ICE agent has lost connectivity")
+                    }
+                    PeerConnection.IceConnectionState.CLOSED -> {
+                        android.util.Log.d("WebRTCManager", "[ICE] Connection state: CLOSED - ICE agent has shut down")
+                    }
+                    else -> {
+                        android.util.Log.d("WebRTCManager", "[ICE] Connection state: $state")
+                    }
                 }
             }
             
-            override fun onSignalingChange(state: PeerConnection.SignalingState) {}
-            override fun onIceGatheringChange(state: PeerConnection.IceGatheringState) {}
+            override fun onSignalingChange(state: PeerConnection.SignalingState) {
+                android.util.Log.d("WebRTCManager", "[SIGNALING] State changed to: $state")
+            }
+            
+            override fun onIceGatheringChange(state: PeerConnection.IceGatheringState) {
+                android.util.Log.d("WebRTCManager", "[ICE] Gathering state changed to: $state")
+                when (state) {
+                    PeerConnection.IceGatheringState.NEW -> {
+                        android.util.Log.d("WebRTCManager", "[ICE] Gathering: NEW - ICE agent has not started gathering")
+                    }
+                    PeerConnection.IceGatheringState.GATHERING -> {
+                        android.util.Log.d("WebRTCManager", "[ICE] Gathering: GATHERING - ICE agent is gathering candidates")
+                    }
+                    PeerConnection.IceGatheringState.COMPLETE -> {
+                        android.util.Log.d("WebRTCManager", "[ICE] Gathering: COMPLETE - ICE agent has finished gathering candidates")
+                    }
+                }
+            }
             override fun onRemoveStream(stream: MediaStream) {}
             override fun onDataChannel(channel: DataChannel) {}
             override fun onRenegotiationNeeded() {}
-            override fun onAddTrack(receiver: RtpReceiver, streams: Array<MediaStream>) {}
+            override fun onAddTrack(receiver: RtpReceiver, streams: Array<MediaStream>) {
+                // Modern Unified Plan callback for receiving remote tracks
+                if (streams.isNotEmpty()) {
+                    listener.onRemoteStreamReceived(streams[0])
+                }
+            }
             override fun onIceConnectionReceivingChange(receiving: Boolean) {}
             override fun onIceCandidatesRemoved(candidates: Array<IceCandidate>) {}
         })
         
+        // Setup audio manager first
+        audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        
         // Create local audio stream
         createLocalAudioStream()
-        
-        // Setup audio manager
-        audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     }
     
     private fun createLocalAudioStream() {
@@ -107,36 +159,52 @@ class WebRTCManager(private val context: Context) {
         localAudioSource = factory?.createAudioSource(audioConstraints)
         localAudioTrack = factory?.createAudioTrack("audio_track", localAudioSource)
         
-        val localStream = factory?.createLocalMediaStream("local_stream")
-        localStream?.addTrack(localAudioTrack)
-        
-        peerConnection?.addStream(localStream)
+        // Use addTrack instead of addStream for Unified Plan compatibility
+        localAudioTrack?.let { track ->
+            peerConnection?.addTrack(track, listOf("local_stream"))
+        }
     }
     
     fun createAnswer(offer: SessionDescription, callAttemptId: String) {
+        this.callAttemptId = callAttemptId
+        android.util.Log.d("WebRTCManager", "[SDP] Starting createAnswer process")
+        android.util.Log.d("WebRTCManager", "[SDP] Setting remote description (offer)")
+        
         peerConnection?.setRemoteDescription(object : SdpObserver {
             override fun onCreateSuccess(description: SessionDescription) {}
             
             override fun onSetSuccess() {
+                android.util.Log.d("WebRTCManager", "[SDP] Remote description (offer) set successfully")
+                android.util.Log.d("WebRTCManager", "[SDP] Creating answer")
+                
                 // Create answer
                 peerConnection?.createAnswer(object : SdpObserver {
                     override fun onCreateSuccess(answer: SessionDescription) {
+                        android.util.Log.d("WebRTCManager", "[SDP] Answer created successfully")
+                        android.util.Log.d("WebRTCManager", "[SDP] Setting local description (answer)")
+                        
                         peerConnection?.setLocalDescription(object : SdpObserver {
                             override fun onCreateSuccess(description: SessionDescription) {}
                             override fun onSetSuccess() {
+                                android.util.Log.d("WebRTCManager", "[SDP] Local description (answer) set successfully")
+                                android.util.Log.d("WebRTCManager", "[SDP] Sending answer to server")
                                 sendWebRTCAnswer(answer, callAttemptId)
+                                android.util.Log.d("WebRTCManager", "[SDP] Answer sent - offer/answer exchange complete")
                                 // Note: Connection timeout handled by signaling server
                             }
                             override fun onCreateFailure(error: String) {
+                                android.util.Log.e("WebRTCManager", "[SDP] Failed to create local description: $error")
                                 listener?.onConnectionFailed("Failed to set local description: $error")
                             }
                             override fun onSetFailure(error: String) {
+                                android.util.Log.e("WebRTCManager", "[SDP] Failed to set local description: $error")
                                 listener?.onConnectionFailed("Failed to set local description: $error")
                             }
                         }, answer)
                     }
                     
                     override fun onCreateFailure(error: String) {
+                        android.util.Log.e("WebRTCManager", "[SDP] Failed to create answer: $error")
                         listener?.onConnectionFailed("Failed to create answer: $error")
                     }
                     
@@ -146,17 +214,37 @@ class WebRTCManager(private val context: Context) {
             }
             
             override fun onCreateFailure(error: String) {
+                android.util.Log.e("WebRTCManager", "[SDP] Failed to create remote description: $error")
                 listener?.onConnectionFailed("Failed to set remote description: $error")
             }
             
             override fun onSetFailure(error: String) {
+                android.util.Log.e("WebRTCManager", "[SDP] Failed to set remote description: $error")
                 listener?.onConnectionFailed("Failed to set remote description: $error")
             }
         }, offer)
     }
     
     fun addIceCandidate(candidate: IceCandidate) {
-        peerConnection?.addIceCandidate(candidate)
+        android.util.Log.d("WebRTCManager", "[ICE] addIceCandidate() called")
+        android.util.Log.d("WebRTCManager", "[ICE] Candidate SDP: ${candidate.sdp}")
+        android.util.Log.d("WebRTCManager", "[ICE] Candidate sdpMid: ${candidate.sdpMid}")
+        android.util.Log.d("WebRTCManager", "[ICE] Candidate sdpMLineIndex: ${candidate.sdpMLineIndex}")
+        
+        try {
+            android.util.Log.d("WebRTCManager", "[ICE] PeerConnection state before adding candidate: ${peerConnection?.signalingState()}")
+            android.util.Log.d("WebRTCManager", "[ICE] PeerConnection ice connection state: ${peerConnection?.iceConnectionState()}")
+            android.util.Log.d("WebRTCManager", "[ICE] PeerConnection gathering state: ${peerConnection?.iceGatheringState()}")
+            
+            val result = peerConnection?.addIceCandidate(candidate)
+            android.util.Log.d("WebRTCManager", "[ICE] addIceCandidate result: $result")
+            
+            android.util.Log.d("WebRTCManager", "[ICE] PeerConnection state after adding candidate: ${peerConnection?.signalingState()}")
+            android.util.Log.d("WebRTCManager", "[ICE] PeerConnection ice connection state after: ${peerConnection?.iceConnectionState()}")
+            android.util.Log.d("WebRTCManager", "[ICE] Successfully added ICE candidate")
+        } catch (e: Exception) {
+            android.util.Log.e("WebRTCManager", "[ICE] Error adding ICE candidate: ${e.message}", e)
+        }
     }
     
     fun setMicrophoneEnabled(enabled: Boolean) {
@@ -196,6 +284,7 @@ class WebRTCManager(private val context: Context) {
         val socketManager = SocketManager.getInstance(context)
         val candidateData = JSONObject().apply {
             put("type", "webrtc:ice-candidate")
+            put("callAttemptId", callAttemptId)
             put("candidate", JSONObject().apply {
                 put("candidate", candidate.sdp)
                 put("sdpMLineIndex", candidate.sdpMLineIndex)

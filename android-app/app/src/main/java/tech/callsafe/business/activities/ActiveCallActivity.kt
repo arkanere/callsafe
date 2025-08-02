@@ -30,6 +30,7 @@ class ActiveCallActivity : AppCompatActivity() {
     
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        android.util.Log.d("ActiveCallActivity", "[FLOW] onCreate() - ActiveCallActivity started for active call")
         
         // Keep screen on during call
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -39,19 +40,26 @@ class ActiveCallActivity : AppCompatActivity() {
         
         callAttemptId = intent.getStringExtra("callAttemptId")
         sourceId = intent.getStringExtra("sourceId")
+        android.util.Log.d("ActiveCallActivity", "[FLOW] onCreate() - Call data: callAttemptId=$callAttemptId, sourceId=$sourceId")
         
         webRTCManager = WebRTCManager(this)
         callManager = CallManager.getInstance(this)
         socketManager = SocketManager.getInstance(this)
         
+        android.util.Log.d("ActiveCallActivity", "[FLOW] onCreate() - Calling setupUI()")
         setupUI()
+        android.util.Log.d("ActiveCallActivity", "[FLOW] onCreate() - Calling setupWebRTC()")
         setupWebRTC()
+        android.util.Log.d("ActiveCallActivity", "[FLOW] onCreate() - Calling setupWebRTCEventHandling()")
         setupWebRTCEventHandling()
+        android.util.Log.d("ActiveCallActivity", "[FLOW] onCreate() - Calling setupClickListeners()")
         setupClickListeners()
+        android.util.Log.d("ActiveCallActivity", "[FLOW] onCreate() - Calling startCallTimer()")
         startCallTimer()
     }
     
     private fun setupUI() {
+        android.util.Log.d("ActiveCallActivity", "[FLOW] setupUI() - Setting up active call UI")
         binding.apply {
             callerInfo.text = "Connected to customer from $sourceId"
             callStatus.text = "Connecting..."
@@ -65,8 +73,10 @@ class ActiveCallActivity : AppCompatActivity() {
     }
     
     private fun setupWebRTC() {
+        android.util.Log.d("ActiveCallActivity", "[FLOW] setupWebRTC() - Initializing WebRTC manager")
         webRTCManager.initialize(object : WebRTCManager.WebRTCListener {
             override fun onConnectionEstablished() {
+                android.util.Log.d("ActiveCallActivity", "[FLOW] onConnectionEstablished() - WebRTC connection successful")
                 runOnUiThread {
                     binding.callStatus.text = "Connected"
                     callStartTime = System.currentTimeMillis()
@@ -74,6 +84,7 @@ class ActiveCallActivity : AppCompatActivity() {
             }
             
             override fun onConnectionFailed(error: String) {
+                android.util.Log.d("ActiveCallActivity", "[FLOW] onConnectionFailed() - WebRTC connection failed: $error")
                 runOnUiThread {
                     binding.callStatus.text = "Connection failed"
                     // Auto-end call after failure
@@ -84,6 +95,7 @@ class ActiveCallActivity : AppCompatActivity() {
             }
             
             override fun onRemoteStreamReceived(stream: MediaStream) {
+                android.util.Log.d("ActiveCallActivity", "[FLOW] onRemoteStreamReceived() - Remote audio stream received")
                 // Audio stream received - connection established
                 runOnUiThread {
                     binding.callStatus.text = "Call active"
@@ -93,11 +105,14 @@ class ActiveCallActivity : AppCompatActivity() {
     }
     
     private fun setupWebRTCEventHandling() {
+        android.util.Log.d("ActiveCallActivity", "[FLOW] setupWebRTCEventHandling() - Registering for WebRTC socket events")
         // Register for WebRTC events from SocketManager
         socketManager.setWebRTCEventListener(object : SocketManager.WebRTCEventListener {
             override fun onWebRTCOffer(callAttemptId: String, offer: SessionDescription) {
+                android.util.Log.d("ActiveCallActivity", "[FLOW] onWebRTCOffer() - Received WebRTC offer from server")
                 // Only handle offers for our current call
                 if (callAttemptId == this@ActiveCallActivity.callAttemptId) {
+                    android.util.Log.d("ActiveCallActivity", "[FLOW] onWebRTCOffer() - Calling WebRTCManager.createAnswer()")
                     runOnUiThread {
                         webRTCManager.createAnswer(offer, callAttemptId)
                     }
@@ -105,31 +120,58 @@ class ActiveCallActivity : AppCompatActivity() {
             }
             
             override fun onWebRTCIceCandidate(callAttemptId: String, candidate: IceCandidate) {
+                android.util.Log.d("ActiveCallActivity", "[ICE] onWebRTCIceCandidate() - ENTRY POINT")
+                android.util.Log.d("ActiveCallActivity", "[ICE] Received ICE candidate from server")
+                android.util.Log.d("ActiveCallActivity", "[ICE] callAttemptId from server: $callAttemptId")
+                android.util.Log.d("ActiveCallActivity", "[ICE] this.callAttemptId: ${this@ActiveCallActivity.callAttemptId}")
+                android.util.Log.d("ActiveCallActivity", "[ICE] Candidate SDP: ${candidate.sdp}")
+                android.util.Log.d("ActiveCallActivity", "[ICE] Candidate sdpMid: ${candidate.sdpMid}")
+                android.util.Log.d("ActiveCallActivity", "[ICE] Candidate sdpMLineIndex: ${candidate.sdpMLineIndex}")
+                
                 // Only handle ICE candidates for our current call
                 if (callAttemptId == this@ActiveCallActivity.callAttemptId) {
+                    android.util.Log.d("ActiveCallActivity", "[ICE] CallAttemptId matches - processing candidate")
+                    android.util.Log.d("ActiveCallActivity", "[ICE] Calling runOnUiThread to add candidate")
                     runOnUiThread {
-                        webRTCManager.addIceCandidate(candidate)
+                        android.util.Log.d("ActiveCallActivity", "[ICE] Inside UI thread - calling WebRTCManager.addIceCandidate()")
+                        try {
+                            webRTCManager.addIceCandidate(candidate)
+                            android.util.Log.d("ActiveCallActivity", "[ICE] Successfully called WebRTCManager.addIceCandidate()")
+                        } catch (e: Exception) {
+                            android.util.Log.e("ActiveCallActivity", "[ICE] Error calling WebRTCManager.addIceCandidate(): ${e.message}", e)
+                        }
                     }
+                } else {
+                    android.util.Log.w("ActiveCallActivity", "[ICE] CallAttemptId MISMATCH - ignoring candidate")
+                    android.util.Log.w("ActiveCallActivity", "[ICE] Expected: ${this@ActiveCallActivity.callAttemptId}")
+                    android.util.Log.w("ActiveCallActivity", "[ICE] Received: $callAttemptId")
                 }
+                
+                android.util.Log.d("ActiveCallActivity", "[ICE] onWebRTCIceCandidate() - EXIT POINT")
             }
         })
     }
     
     private fun setupClickListeners() {
+        android.util.Log.d("ActiveCallActivity", "[FLOW] setupClickListeners() - Setting up call control buttons")
         binding.muteButton.setOnClickListener {
+            android.util.Log.d("ActiveCallActivity", "[FLOW] Mute button clicked - Calling toggleMute()")
             toggleMute()
         }
         
         binding.speakerButton.setOnClickListener {
+            android.util.Log.d("ActiveCallActivity", "[FLOW] Speaker button clicked - Calling toggleSpeaker()")
             toggleSpeaker()
         }
         
         binding.endCallButton.setOnClickListener {
+            android.util.Log.d("ActiveCallActivity", "[FLOW] End call button clicked - Calling endCall()")
             endCall()
         }
     }
     
     private fun toggleMute() {
+        android.util.Log.d("ActiveCallActivity", "[FLOW] toggleMute() - Toggling microphone: isMuted will be ${!isMuted}")
         isMuted = !isMuted
         webRTCManager.setMicrophoneEnabled(!isMuted)
         
@@ -151,6 +193,7 @@ class ActiveCallActivity : AppCompatActivity() {
     }
     
     private fun toggleSpeaker() {
+        android.util.Log.d("ActiveCallActivity", "[FLOW] toggleSpeaker() - Toggling speaker: isSpeakerOn will be ${!isSpeakerOn}")
         isSpeakerOn = !isSpeakerOn
         webRTCManager.setSpeakerEnabled(isSpeakerOn)
         
@@ -172,7 +215,9 @@ class ActiveCallActivity : AppCompatActivity() {
     }
     
     private fun endCall() {
+        android.util.Log.d("ActiveCallActivity", "[FLOW] endCall() - User initiated call termination")
         callAttemptId?.let { id ->
+            android.util.Log.d("ActiveCallActivity", "[FLOW] endCall() - Calling CallManager.endCall()")
             callManager.endCall(
                 callAttemptId = id,
                 initiator = "business",
@@ -180,11 +225,13 @@ class ActiveCallActivity : AppCompatActivity() {
             )
         }
         
+        android.util.Log.d("ActiveCallActivity", "[FLOW] endCall() - Calling cleanup() and finishing activity")
         cleanup()
         finish()
     }
     
     private fun startCallTimer() {
+        android.util.Log.d("ActiveCallActivity", "[FLOW] startCallTimer() - Starting call duration timer")
         callTimer = Timer()
         callTimer?.scheduleAtFixedRate(object : TimerTask() {
             override fun run() {
@@ -202,6 +249,7 @@ class ActiveCallActivity : AppCompatActivity() {
     }
     
     private fun cleanup() {
+        android.util.Log.d("ActiveCallActivity", "[FLOW] cleanup() - Cleaning up call resources")
         callTimer?.cancel()
         callTimer = null
         webRTCManager.cleanup()
@@ -211,6 +259,7 @@ class ActiveCallActivity : AppCompatActivity() {
     
     override fun onDestroy() {
         super.onDestroy()
+        android.util.Log.d("ActiveCallActivity", "[FLOW] onDestroy() - ActiveCallActivity destroyed")
         cleanup()
     }
 }

@@ -18,6 +18,7 @@ class IncomingCallActivity : AppCompatActivity() {
     
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        android.util.Log.d("IncomingCallActivity", "[FLOW] onCreate() - IncomingCallActivity started")
         
         // Configure full-screen incoming call
         window.addFlags(
@@ -36,11 +37,15 @@ class IncomingCallActivity : AppCompatActivity() {
         sourceId = intent.getStringExtra("sourceId")
         val timestamp = intent.getLongExtra("timestamp", 0)
         
+        android.util.Log.d("IncomingCallActivity", "[FLOW] onCreate() - Call data: callAttemptId=$callAttemptId, sourceId=$sourceId")
+        android.util.Log.d("IncomingCallActivity", "[FLOW] onCreate() - Calling setupUI()")
         setupUI()
+        android.util.Log.d("IncomingCallActivity", "[FLOW] onCreate() - Calling setupClickListeners()")
         setupClickListeners()
     }
     
     private fun setupUI() {
+        android.util.Log.d("IncomingCallActivity", "[FLOW] setupUI() - Setting up incoming call UI")
         binding.apply {
             callerInfo.text = "Customer calling from $sourceId"
             callTime.text = "Incoming call..."
@@ -73,20 +78,25 @@ class IncomingCallActivity : AppCompatActivity() {
     }
     
     private fun setupClickListeners() {
+        android.util.Log.d("IncomingCallActivity", "[FLOW] setupClickListeners() - Setting up button click handlers")
         binding.acceptButton.setOnClickListener {
+            android.util.Log.d("IncomingCallActivity", "[FLOW] Accept button clicked - Calling acceptCall()")
             acceptCall()
         }
         
         binding.declineButton.setOnClickListener {
+            android.util.Log.d("IncomingCallActivity", "[FLOW] Decline button clicked - Calling declineCall()")
             declineCall()
         }
     }
     
     private fun acceptCall() {
+        android.util.Log.d("IncomingCallActivity", "[FLOW] acceptCall() - User accepted the call")
         // Stop ringtone
         RingtoneManager.getInstance(this).stopRingtone()
         
         callAttemptId?.let { id ->
+            android.util.Log.d("IncomingCallActivity", "[FLOW] acceptCall() - Calling CallManager.acceptCall()")
             callManager.acceptCall(
                 callAttemptId = id,
                 deviceType = "mobile",
@@ -94,6 +104,7 @@ class IncomingCallActivity : AppCompatActivity() {
             )
             
             // Navigate to active call activity
+            android.util.Log.d("IncomingCallActivity", "[FLOW] acceptCall() - Starting ActiveCallActivity")
             val intent = Intent(this, ActiveCallActivity::class.java).apply {
                 putExtra("callAttemptId", id)
                 putExtra("sourceId", sourceId)
@@ -104,10 +115,12 @@ class IncomingCallActivity : AppCompatActivity() {
     }
     
     private fun declineCall() {
+        android.util.Log.d("IncomingCallActivity", "[FLOW] declineCall() - User declined the call")
         // Stop ringtone
         RingtoneManager.getInstance(this).stopRingtone()
         
         callAttemptId?.let { id ->
+            android.util.Log.d("IncomingCallActivity", "[FLOW] declineCall() - Calling CallManager.rejectCall()")
             callManager.rejectCall(
                 callAttemptId = id,
                 deviceType = "mobile"
@@ -118,6 +131,7 @@ class IncomingCallActivity : AppCompatActivity() {
     
     override fun onDestroy() {
         super.onDestroy()
+        android.util.Log.d("IncomingCallActivity", "[FLOW] onDestroy() - IncomingCallActivity destroyed")
         
         // Stop ringtone if activity is destroyed
         RingtoneManager.getInstance(this).stopRingtone()
