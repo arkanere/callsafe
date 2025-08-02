@@ -1,5 +1,8 @@
 package tech.callsafe.business.activities
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.util.Log
@@ -23,7 +26,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var socketManager: SocketManager
     private lateinit var callHistoryManager: CallHistoryManager
     private lateinit var authenticationManager: AuthenticationManager
-    private var isOnline = false
+    private var isOnline = true
     
     companion object {
         private const val TAG = "MainActivity"
@@ -34,6 +37,9 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        
+        Log.d(TAG, "[MAIN] Creating notification channel")
+        createNotificationChannel()
         
         Log.d(TAG, "[MAIN] Initializing managers")
         socketManager = SocketManager.getInstance(this)
@@ -69,12 +75,6 @@ class MainActivity : AppCompatActivity() {
     private fun setupUI() {
         Log.d(TAG, "[MAIN] Setting up UI elements")
         binding.apply {
-            // Status indicator
-            statusIndicator.setOnClickListener {
-                Log.d(TAG, "[MAIN] Status indicator clicked")
-                toggleOnlineStatus()
-            }
-            
             // Settings button
             settingsButton.setOnClickListener {
                 Log.d(TAG, "[MAIN] Settings button clicked")
@@ -87,6 +87,9 @@ class MainActivity : AppCompatActivity() {
                 performLogout()
             }
         }
+        
+        // Initialize as online and update UI
+        initializeOnlineStatus()
         Log.d(TAG, "[MAIN] UI setup complete")
     }
     
@@ -105,46 +108,24 @@ class MainActivity : AppCompatActivity() {
         Log.d(TAG, "[MAIN] ViewPager setup complete")
     }
     
-    private fun toggleOnlineStatus() {
-        Log.d(TAG, "[MAIN] Toggling online status from $isOnline to ${!isOnline}")
-        isOnline = !isOnline
+    private fun initializeOnlineStatus() {
+        Log.d(TAG, "[MAIN] Initializing online status")
         
         val deviceId = getUniqueDeviceId(this)
-        val status = if (isOnline) "available" else "unavailable"
-        Log.d(TAG, "[MAIN] Updating device status - deviceId: $deviceId, status: $status")
+        val status = "available"
+        Log.d(TAG, "[MAIN] Setting device status - deviceId: $deviceId, status: $status")
         
         CallManager.getInstance(this).updateDeviceStatus(
             deviceId = deviceId,
             status = status
         )
         
-        Log.d(TAG, "[MAIN] Updating status UI")
-        updateStatusUI(isOnline)
+        Log.d(TAG, "[MAIN] Device status set to online")
         
-        if (isOnline) {
-            Log.d(TAG, "[MAIN] Starting call reception service")
-            startCallReceptionService()
-        } else {
-            Log.d(TAG, "[MAIN] Stopping call reception service")
-            stopCallReceptionService()
-        }
+        Log.d(TAG, "[MAIN] Starting call reception service")
+        startCallReceptionService()
     }
     
-    private fun updateStatusUI(online: Boolean) {
-        Log.d(TAG, "[MAIN] Updating status UI - online: $online")
-        binding.apply {
-            if (online) {
-                statusIndicator.setImageResource(R.drawable.ic_online)
-                statusText.text = "Online - Ready for calls"
-                statusText.setTextColor(ContextCompat.getColor(this@MainActivity, R.color.green))
-            } else {
-                statusIndicator.setImageResource(R.drawable.ic_offline)
-                statusText.text = "Offline - Not receiving calls"
-                statusText.setTextColor(ContextCompat.getColor(this@MainActivity, R.color.gray))
-            }
-        }
-        Log.d(TAG, "[MAIN] Status UI updated")
-    }
     
     private fun startCallReceptionService() {
         val intent = Intent(this, CallReceptionService::class.java).apply {
@@ -181,5 +162,19 @@ class MainActivity : AppCompatActivity() {
         finish()
         
         Log.d(TAG, "[MAIN] Logout complete")
+    }
+    
+    private fun createNotificationChannel() {
+        val channel = NotificationChannel(
+            "call_notifications",
+            "Incoming Calls",
+            NotificationManager.IMPORTANCE_HIGH
+        ).apply {
+            description = "Notifications for incoming calls"
+            setShowBadge(true)
+        }
+        
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.createNotificationChannel(channel)
     }
 }

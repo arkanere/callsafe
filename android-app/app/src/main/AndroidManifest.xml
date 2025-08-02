@@ -39,6 +39,14 @@
         android:theme="@style/Theme.CallSafe"
         tools:targetApi="31">
         
+        <!-- Default notification channel metadata -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="call_notifications" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_call" />
+        
         <!-- Main Activity -->
         <activity
             android:name=".activities.MainActivity"

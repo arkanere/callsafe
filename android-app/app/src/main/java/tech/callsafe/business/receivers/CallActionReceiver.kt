@@ -6,6 +6,7 @@ import android.content.Intent
 import tech.callsafe.business.activities.ActiveCallActivity
 import tech.callsafe.business.managers.CallManager
 import tech.callsafe.business.utils.getUniqueDeviceId
+import tech.callsafe.business.utils.RingtoneManager
 
 class CallActionReceiver : BroadcastReceiver() {
     
@@ -15,6 +16,9 @@ class CallActionReceiver : BroadcastReceiver() {
         
         when (intent.action) {
             "ACCEPT_CALL" -> {
+                // Stop ringtone
+                RingtoneManager.getInstance(context).stopRingtone()
+                
                 // Accept the call
                 callManager.acceptCall(
                     callAttemptId = callAttemptId,
@@ -35,6 +39,9 @@ class CallActionReceiver : BroadcastReceiver() {
             }
             
             "DECLINE_CALL" -> {
+                // Stop ringtone
+                RingtoneManager.getInstance(context).stopRingtone()
+                
                 // Decline the call
                 callManager.rejectCall(
                     callAttemptId = callAttemptId,

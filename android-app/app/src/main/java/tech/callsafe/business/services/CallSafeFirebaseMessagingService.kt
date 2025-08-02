@@ -11,6 +11,7 @@ import com.google.firebase.messaging.RemoteMessage
 import tech.callsafe.business.R
 import tech.callsafe.business.activities.IncomingCallActivity
 import tech.callsafe.business.receivers.CallActionReceiver
+import tech.callsafe.business.utils.RingtoneManager
 
 class CallSafeFirebaseMessagingService : FirebaseMessagingService() {
     
@@ -30,11 +31,17 @@ class CallSafeFirebaseMessagingService : FirebaseMessagingService() {
                 val timestamp = remoteMessage.data["timestamp"]?.toLongOrNull() ?: return
                 
                 showIncomingCallNotification(callAttemptId, sourceId, timestamp)
+                
+                // Start ringtone
+                RingtoneManager.getInstance(this).startRingtone()
             }
             
             "call:cancelled" -> {
                 val callAttemptId = remoteMessage.data["callAttemptId"] ?: return
                 cancelIncomingCallNotification(callAttemptId)
+                
+                // Stop ringtone when call is cancelled
+                RingtoneManager.getInstance(this).stopRingtone()
             }
         }
     }

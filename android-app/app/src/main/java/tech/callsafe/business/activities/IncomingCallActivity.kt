@@ -8,6 +8,7 @@ import androidx.appcompat.app.AppCompatActivity
 import tech.callsafe.business.databinding.ActivityIncomingCallBinding
 import tech.callsafe.business.managers.CallManager
 import tech.callsafe.business.utils.getUniqueDeviceId
+import tech.callsafe.business.utils.RingtoneManager
 
 class IncomingCallActivity : AppCompatActivity() {
     private lateinit var binding: ActivityIncomingCallBinding
@@ -82,6 +83,9 @@ class IncomingCallActivity : AppCompatActivity() {
     }
     
     private fun acceptCall() {
+        // Stop ringtone
+        RingtoneManager.getInstance(this).stopRingtone()
+        
         callAttemptId?.let { id ->
             callManager.acceptCall(
                 callAttemptId = id,
@@ -100,6 +104,9 @@ class IncomingCallActivity : AppCompatActivity() {
     }
     
     private fun declineCall() {
+        // Stop ringtone
+        RingtoneManager.getInstance(this).stopRingtone()
+        
         callAttemptId?.let { id ->
             callManager.rejectCall(
                 callAttemptId = id,
@@ -111,6 +118,10 @@ class IncomingCallActivity : AppCompatActivity() {
     
     override fun onDestroy() {
         super.onDestroy()
+        
+        // Stop ringtone if activity is destroyed
+        RingtoneManager.getInstance(this).stopRingtone()
+        
         // Cancel notification if activity is destroyed
         callAttemptId?.let { id ->
             val notificationManager = getSystemService(NOTIFICATION_SERVICE) as android.app.NotificationManager
