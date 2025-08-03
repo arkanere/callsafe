@@ -16,23 +16,29 @@ import tech.callsafe.business.utils.RingtoneManager
 class CallSafeFirebaseMessagingService : FirebaseMessagingService() {
     
     companion object {
-        const val CALL_CHANNEL_ID = "call_notifications"
+        const val CALL_CHANNEL_ID = "calls"
+    }
+    
+    override fun onCreate() {
+        super.onCreate()
+        android.util.Log.d("CallSafeFirebase", "[FCM] onCreate() - Initializing FCM service")
+        createNotificationChannel()
     }
     
     override fun onMessageReceived(remoteMessage: RemoteMessage) {
         super.onMessageReceived(remoteMessage)
-        android.util.Log.d("CallSafeFirebase", "[FLOW] onMessageReceived() - Entry point for FCM notification")
+        android.util.Log.d("CallSafeFirebase", "[FCM] onMessageReceived() - Processing FCM message")
         
         val messageType = remoteMessage.data["type"]
         
         when (messageType) {
             "call:incoming" -> {
-                android.util.Log.d("CallSafeFirebase", "[FLOW] onMessageReceived() - Processing call:incoming notification")
+                android.util.Log.d("CallSafeFirebase", "[FCM] onMessageReceived() - Handling call:incoming message")
                 val callAttemptId = remoteMessage.data["callAttemptId"] ?: return
                 val sourceId = remoteMessage.data["sourceId"] ?: return
                 val timestamp = remoteMessage.data["timestamp"]?.toLongOrNull() ?: return
                 
-                android.util.Log.d("CallSafeFirebase", "[FLOW] onMessageReceived() - Calling showIncomingCallNotification()")
+                android.util.Log.d("CallSafeFirebase", "[FCM] onMessageReceived() - Creating incoming call notification")
                 showIncomingCallNotification(callAttemptId, sourceId, timestamp)
                 
                 // Start ringtone
@@ -40,9 +46,9 @@ class CallSafeFirebaseMessagingService : FirebaseMessagingService() {
             }
             
             "call:cancelled" -> {
-                android.util.Log.d("CallSafeFirebase", "[FLOW] onMessageReceived() - Processing call:cancelled notification")
+                android.util.Log.d("CallSafeFirebase", "[FCM] onMessageReceived() - Handling call:cancelled message")
                 val callAttemptId = remoteMessage.data["callAttemptId"] ?: return
-                android.util.Log.d("CallSafeFirebase", "[FLOW] onMessageReceived() - Calling cancelIncomingCallNotification()")
+                android.util.Log.d("CallSafeFirebase", "[FCM] onMessageReceived() - Cancelling incoming call notification")
                 cancelIncomingCallNotification(callAttemptId)
                 
                 // Stop ringtone when call is cancelled
@@ -53,7 +59,7 @@ class CallSafeFirebaseMessagingService : FirebaseMessagingService() {
     
     override fun onNewToken(token: String) {
         super.onNewToken(token)
-        android.util.Log.d("CallSafeFirebase", "[FLOW] onNewToken() - FCM token updated")
+        android.util.Log.d("CallSafeFirebase", "[FCM] onNewToken() - FCM token refreshed")
         
         // Update FCM token on server
         updateFCMToken(token)
@@ -64,12 +70,12 @@ class CallSafeFirebaseMessagingService : FirebaseMessagingService() {
         sourceId: String,
         timestamp: Long
     ) {
-        android.util.Log.d("CallSafeFirebase", "[FLOW] showIncomingCallNotification() - Creating incoming call UI")
+        android.util.Log.d("CallSafeFirebase", "[NOTIFICATION] showIncomingCallNotification() - Building notification with actions")
         // Create notification channel if needed
         createNotificationChannel()
         
         // Create full-screen incoming call intent
-        android.util.Log.d("CallSafeFirebase", "[FLOW] showIncomingCallNotification() - Creating intent for IncomingCallActivity")
+        android.util.Log.d("CallSafeFirebase", "[NOTIFICATION] showIncomingCallNotification() - Creating full-screen intent")
         val fullScreenIntent = Intent(this, IncomingCallActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             putExtra("callAttemptId", callAttemptId)
@@ -117,16 +123,17 @@ class CallSafeFirebaseMessagingService : FirebaseMessagingService() {
         
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         notificationManager.notify(callAttemptId.hashCode(), notification)
-        android.util.Log.d("CallSafeFirebase", "[FLOW] showIncomingCallNotification() - Notification displayed, triggering IncomingCallActivity")
+        android.util.Log.d("CallSafeFirebase", "[NOTIFICATION] showIncomingCallNotification() - Notification displayed with actions")
     }
     
     private fun cancelIncomingCallNotification(callAttemptId: String) {
-        android.util.Log.d("CallSafeFirebase", "[FLOW] cancelIncomingCallNotification() - Cancelling notification for callAttemptId: $callAttemptId")
+        android.util.Log.d("CallSafeFirebase", "[NOTIFICATION] cancelIncomingCallNotification() - Removing notification: $callAttemptId")
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         notificationManager.cancel(callAttemptId.hashCode())
     }
     
     private fun createNotificationChannel() {
+        android.util.Log.d("CallSafeFirebase", "[CHANNEL] createNotificationChannel() - Creating 'calls' channel")
         val channel = NotificationChannel(
             CALL_CHANNEL_ID,
             "Incoming Calls",
@@ -141,7 +148,7 @@ class CallSafeFirebaseMessagingService : FirebaseMessagingService() {
     }
     
     private fun updateFCMToken(token: String) {
-        android.util.Log.d("CallSafeFirebase", "[FLOW] updateFCMToken() - Storing FCM token and sending to server")
+        android.util.Log.d("CallSafeFirebase", "[TOKEN] updateFCMToken() - Processing new FCM token")
         // Store token locally
         val sharedPreferences = getSharedPreferences("CallSafePrefs", Context.MODE_PRIVATE)
         sharedPreferences.edit().putString("fcm_token", token).apply()
@@ -151,14 +158,14 @@ class CallSafeFirebaseMessagingService : FirebaseMessagingService() {
     }
     
     private fun sendTokenToServer(token: String) {
-        android.util.Log.d("CallSafeFirebase", "[FLOW] sendTokenToServer() - Establishing temporary connection")
+        android.util.Log.d("CallSafeFirebase", "[TOKEN] sendTokenToServer() - Sending token to signaling server")
         
         // Only send if user is logged in
         val sharedPreferences = getSharedPreferences("CallSafePrefs", Context.MODE_PRIVATE)
         val isLoggedIn = sharedPreferences.getBoolean("is_logged_in", false)
         
         if (!isLoggedIn) {
-            android.util.Log.d("CallSafeFirebase", "[FLOW] sendTokenToServer() - User not logged in, skipping")
+            android.util.Log.d("CallSafeFirebase", "[TOKEN] sendTokenToServer() - User not authenticated, skipping")
             return
         }
         
@@ -167,7 +174,7 @@ class CallSafeFirebaseMessagingService : FirebaseMessagingService() {
             val socketManager = tech.callsafe.business.managers.SocketManager.getInstance(this)
             socketManager.registerFCMTokenOnly(token)
         } catch (e: Exception) {
-            android.util.Log.e("CallSafeFirebase", "[ERROR] sendTokenToServer() failed", e)
+            android.util.Log.e("CallSafeFirebase", "[TOKEN] sendTokenToServer() - Failed to send token", e)
         }
     }
 }
