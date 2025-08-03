@@ -86,9 +86,9 @@
         // Stop the stream immediately - we just needed permission
         stream.getTracks().forEach(track => track.stop());
         
-        console.log('[CONNECTION] Microphone permission granted - audio autoplay enabled');
+        console.log('[CONNECTION] initializeConnection(): Microphone permission granted - audio autoplay enabled');
       } catch (micError) {
-        console.warn('[CONNECTION] Microphone permission denied:', micError);
+        console.warn('[CONNECTION] initializeConnection(): Microphone permission denied:', micError);
         errorMessage = 'Microphone access required for calls. Please refresh and allow microphone access.';
       }
 
@@ -96,7 +96,7 @@
       registerDevice();
 
     } catch (error) {
-      console.error('Connection failed:', error);
+      console.error('[CONNECTION] initializeConnection(): Connection failed:', error);
       errorMessage = 'Failed to connect to server';
       socketConnected = false;
       connectionStatus = 'Failed';
@@ -108,14 +108,14 @@
 
     // Incoming call handler
     socket.on('call:incoming', (data: CallIncomingEvent) => {
-      console.log('=== INCOMING CALL DATA FORMAT ===');
-      console.log('Raw data received:', data);
-      console.log('Data type:', typeof data);
-      console.log('Data keys:', Object.keys(data));
-      console.log('Data values:', Object.values(data));
-      console.log('JSON stringified:', JSON.stringify(data, null, 2));
-      console.log('=== END INCOMING CALL DATA ===');
-      console.log('Incoming call:', data);
+      console.log('[CONNECTION] setupSocketEventHandlers(): === INCOMING CALL DATA FORMAT ===');
+      console.log('[CONNECTION] setupSocketEventHandlers(): Raw data received:', data);
+      console.log('[CONNECTION] setupSocketEventHandlers(): Data type:', typeof data);
+      console.log('[CONNECTION] setupSocketEventHandlers(): Data keys:', Object.keys(data));
+      console.log('[CONNECTION] setupSocketEventHandlers(): Data values:', Object.values(data));
+      console.log('[CONNECTION] setupSocketEventHandlers(): JSON stringified:', JSON.stringify(data, null, 2));
+      console.log('[CONNECTION] setupSocketEventHandlers(): === END INCOMING CALL DATA ===');
+      console.log('[CONNECTION] setupSocketEventHandlers(): Incoming call:', data);
       
       incomingCalls = [...incomingCalls, {
         callId: data.callAttemptId,
@@ -144,7 +144,7 @@
 
     // Call accepted handler (confirmation from server)
     socket.on('call:accepted', async (data: CallAcceptedEvent) => {
-      console.log('Call accepted:', data);
+      console.log('[CONNECTION] setupSocketEventHandlers(): Call accepted:', data);
       // WebRTC is already initialized when accepting the call
       // This event confirms the call was accepted on the server side
       currentPhase = 'connecting';
@@ -152,7 +152,7 @@
 
     // WebRTC offer handler (business receives offer from customer)
     socket.on('webrtc:offer', async (data: WebRTCOfferEvent) => {
-      console.log('Received WebRTC offer');
+      console.log('[CONNECTION] setupSocketEventHandlers(): Received WebRTC offer');
       
       if (webrtcManager) {
         try {
@@ -170,18 +170,18 @@
             } : null
           }));
         } catch (error) {
-          console.error('Failed to create WebRTC answer:', error);
+          console.error('[CONNECTION] setupSocketEventHandlers(): Failed to create WebRTC answer:', error);
           handleCallFailure('Failed to establish connection');
         }
       } else {
-        console.error('WebRTC manager not initialized when receiving offer');
+        console.error('[CONNECTION] setupSocketEventHandlers(): WebRTC manager not initialized when receiving offer');
         handleCallFailure('Failed to establish connection');
       }
     });
 
     // WebRTC answer handler
     socket.on('webrtc:answer', async (data: WebRTCAnswerEvent) => {
-      console.log('Received WebRTC answer');
+      console.log('[CONNECTION] setupSocketEventHandlers(): Received WebRTC answer');
       
       if (webrtcManager) {
         try {
@@ -189,7 +189,7 @@
           currentPhase = 'active';
           startCallTimer();
         } catch (error) {
-          console.error('WebRTC set remote description failed:', error);
+          console.error('[CONNECTION] setupSocketEventHandlers(): WebRTC set remote description failed:', error);
           handleCallFailure('Failed to establish connection');
         }
       }
@@ -201,14 +201,14 @@
         try {
           await webrtcManager.addIceCandidate(data.candidate);
         } catch (error) {
-          console.error('Failed to add ICE candidate:', error);
+          console.error('[CONNECTION] setupSocketEventHandlers(): Failed to add ICE candidate:', error);
         }
       }
     });
 
     // Call ended handler
     socket.on('call:ended', (data: CallEndedEvent) => {
-      console.log('Call ended:', data);
+      console.log('[CONNECTION] setupSocketEventHandlers(): Call ended:', data);
       
       // Save to call history
       saveCallToHistory({
@@ -226,7 +226,7 @@
 
     // Call failed handler
     socket.on('call:failed', (data: CallFailedEvent) => {
-      console.log('Call failed:', data);
+      console.log('[CONNECTION] setupSocketEventHandlers(): Call failed:', data);
       
       const errorMessage = data.reason === 'connection_timeout'
         ? 'Call connection timed out. Please try again.'
@@ -307,7 +307,7 @@
       webrtcManager = new WebRTCManager(socket!);
       await webrtcManager.initialize(callId);
     } catch (error) {
-      console.error('WebRTC initialization failed:', error);
+      console.error('[CONNECTION] acceptCall(): WebRTC initialization failed:', error);
       handleCallFailure('Failed to initialize audio');
       return;
     }
@@ -456,7 +456,7 @@
     if (audioElement) {
       audioElement.loop = true;
       audioElement.play().catch(error => {
-        console.log('Could not play ringtone:', error);
+        console.log('[CONNECTION] playIncomingCallSound(): Could not play ringtone:', error);
         // Fallback: Show visual notification if audio fails
         if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
           new Notification('Incoming Call', {
@@ -491,7 +491,7 @@
         callHistory = JSON.parse(saved);
       }
     } catch (error) {
-      console.error('Failed to load call history:', error);
+      console.error('[CONNECTION] loadCallHistory(): Failed to load call history:', error);
     }
   }
 

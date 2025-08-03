@@ -35,9 +35,9 @@
   let showCallControls = false;
 
   onMount(() => {
-    console.log('[EMBED PAGE] Component mounted');
-    console.log('[EMBED PAGE] Handle:', handle);
-    console.log('[EMBED PAGE] Source ID:', sourceId);
+    console.log('[EMBED PAGE] onMount(): Component mounted');
+    console.log('[EMBED PAGE] onMount(): Handle:', handle);
+    console.log('[EMBED PAGE] onMount(): Source ID:', sourceId);
     
     // Initialize customer call state
     customerCallState.update(state => ({
@@ -46,27 +46,27 @@
       sourceId
     }));
     
-    console.log('[EMBED PAGE] Customer call state initialized');
+    console.log('[EMBED PAGE] onMount(): Customer call state initialized');
   });
 
   onDestroy(() => {
-    console.log('[EMBED PAGE] Component destroying, cleaning up');
+    console.log('[EMBED PAGE] onDestroy(): Component destroying, cleaning up');
     cleanup();
   });
 
   async function initiateCall() {
-    console.log('[EMBED PAGE] Initiate call requested, current state:', callState);
+    console.log('[EMBED PAGE] initiateCall(): Initiate call requested, current state:', callState);
     if (callState !== 'idle') {
-      console.log('[EMBED PAGE] Call already in progress, ignoring');
+      console.log('[EMBED PAGE] initiateCall(): Call already in progress, ignoring');
       return;
     }
 
-    console.log('[EMBED PAGE] Starting call initiation process');
+    console.log('[EMBED PAGE] initiateCall(): Starting call initiation process');
     try {
       callAttemptId = generateUUID();
-      console.log('[EMBED PAGE] Generated call attempt ID:', callAttemptId);
+      console.log('[EMBED PAGE] initiateCall(): Generated call attempt ID:', callAttemptId);
       
-      console.log('[EMBED PAGE] Requesting user media access');
+      console.log('[EMBED PAGE] initiateCall(): Requesting user media access');
       // Get user media first
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -76,9 +76,9 @@
         },
         video: false
       });
-      console.log('[EMBED PAGE] User media obtained successfully');
+      console.log('[EMBED PAGE] initiateCall(): User media obtained successfully');
 
-      console.log('[EMBED PAGE] Updating UI state to connecting');
+      console.log('[EMBED PAGE] initiateCall(): Updating UI state to connecting');
       // Update UI state
       callState = 'connecting';
       statusMessage = 'Finding agent...';
@@ -101,17 +101,17 @@
         }
       }));
 
-      console.log('[EMBED PAGE] Connecting to signaling server');
+      console.log('[EMBED PAGE] initiateCall(): Connecting to signaling server');
       // Connect to signaling server
       await connectToSignalingServer();
-      console.log('[EMBED PAGE] Connected to signaling server');
+      console.log('[EMBED PAGE] initiateCall(): Connected to signaling server');
 
-      console.log('[EMBED PAGE] Initializing WebRTC');
+      console.log('[EMBED PAGE] initiateCall(): Initializing WebRTC');
       // Initialize WebRTC
       await initializeCustomerWebRTC(callAttemptId, stream);
-      console.log('[EMBED PAGE] WebRTC initialized');
+      console.log('[EMBED PAGE] initiateCall(): WebRTC initialized');
 
-      console.log('[EMBED PAGE] Sending call initiate event');
+      console.log('[EMBED PAGE] initiateCall(): Sending call initiate event');
       // Send call initiate - handle is from URL path parameter
       socket!.emit('call:initiate', {
         callAttemptId,
@@ -119,47 +119,47 @@
         sourceId,
         timestamp: Date.now()
       });
-      console.log('[EMBED PAGE] Call initiate event sent');
+      console.log('[EMBED PAGE] initiateCall(): Call initiate event sent');
 
     } catch (error) {
-      console.error('[EMBED PAGE] Error during call initiation:', error);
+      console.error('[EMBED PAGE] initiateCall(): Error during call initiation:', error);
       handleMediaAccessError(error);
     }
   }
 
   async function connectToSignalingServer(): Promise<void> {
-    console.log('[EMBED PAGE] Attempting to connect to signaling server');
+    console.log('[EMBED PAGE] connectToSignalingServer(): Attempting to connect to signaling server');
     return new Promise((resolve, reject) => {
       const socketUrl = env.VITE_SIGNALING_SERVER_URL || 'https://tunnel.callsafe.tech';
       socket = io(socketUrl, {
         transports: ['websocket', 'polling'],
         timeout: 30000 // 30-second timeout for consistency
       });
-      console.log('[EMBED PAGE] Socket.io instance created');
+      console.log('[EMBED PAGE] connectToSignalingServer(): Socket.io instance created');
 
       socket.on('connect', () => {
-        console.log('[EMBED PAGE] Socket connected successfully');
+        console.log('[EMBED PAGE] connectToSignalingServer(): Socket connected successfully');
         setupSocketEventHandlers();
         resolve();
       });
 
       socket.on('connect_error', (error) => {
-        console.error('[EMBED PAGE] Socket connection error:', error);
+        console.error('[EMBED PAGE] connectToSignalingServer(): Socket connection error:', error);
         reject(error);
       });
     });
   }
 
   function setupSocketEventHandlers() {
-    console.log('[EMBED PAGE] Setting up socket event handlers');
+    console.log('[EMBED PAGE] setupSocketEventHandlers(): Setting up socket event handlers');
     if (!socket) {
-      console.error('[EMBED PAGE] Socket is null, cannot setup handlers');
+      console.error('[EMBED PAGE] setupSocketEventHandlers(): Socket is null, cannot setup handlers');
       return;
     }
 
     // Call accepted
     socket.on('call:accepted', async (data: CallAcceptedEvent) => {
-      console.log('[EMBED PAGE] Call accepted event received:', data);
+      console.log('[EMBED PAGE] setupSocketEventHandlers(): Call accepted event received:', data);
       callState = 'ringing';
       statusMessage = 'Agent accepted, connecting...';
 
@@ -172,72 +172,72 @@
         }
       }));
 
-      console.log('[EMBED PAGE] Creating WebRTC offer');
+      console.log('[EMBED PAGE] setupSocketEventHandlers(): Creating WebRTC offer');
       // Create and send WebRTC offer
       if (webrtcManager) {
         try {
           await webrtcManager.createOffer(data.callAttemptId);
-          console.log('[EMBED PAGE] WebRTC offer created successfully');
+          console.log('[EMBED PAGE] setupSocketEventHandlers(): WebRTC offer created successfully');
         } catch (error) {
-          console.error('[EMBED PAGE] Failed to create WebRTC offer:', error);
+          console.error('[EMBED PAGE] setupSocketEventHandlers(): Failed to create WebRTC offer:', error);
           handleConnectionFailure();
         }
       } else {
-        console.error('[EMBED PAGE] WebRTC manager is null');
+        console.error('[EMBED PAGE] setupSocketEventHandlers(): WebRTC manager is null');
       }
     });
 
     // WebRTC answer
     socket.on('webrtc:answer', async (data: WebRTCAnswerEvent) => {
-      console.log('[EMBED PAGE] WebRTC answer received:', data);
+      console.log('[EMBED PAGE] setupSocketEventHandlers(): WebRTC answer received:', data);
       if (webrtcManager) {
         try {
           await webrtcManager.setRemoteDescription(data.answer);
-          console.log('[EMBED PAGE] Remote description set successfully');
+          console.log('[EMBED PAGE] setupSocketEventHandlers(): Remote description set successfully');
           // Server handles timeout management - connection is progressing
         } catch (error) {
-          console.error('[EMBED PAGE] Failed to set remote description:', error);
+          console.error('[EMBED PAGE] setupSocketEventHandlers(): Failed to set remote description:', error);
           handleConnectionFailure();
         }
       } else {
-        console.error('[EMBED PAGE] WebRTC manager is null when processing answer');
+        console.error('[EMBED PAGE] setupSocketEventHandlers(): WebRTC manager is null when processing answer');
       }
     });
 
     // ICE candidate
     socket.on('webrtc:ice-candidate', async (data: WebRTCIceCandidateEvent) => {
-      console.log('[EMBED PAGE] ICE candidate received:', data);
+      console.log('[EMBED PAGE] setupSocketEventHandlers(): ICE candidate received:', data);
       if (webrtcManager) {
         try {
           await webrtcManager.addIceCandidate(data.candidate);
-          console.log('[EMBED PAGE] ICE candidate added successfully');
+          console.log('[EMBED PAGE] setupSocketEventHandlers(): ICE candidate added successfully');
         } catch (error) {
-          console.error('[EMBED PAGE] Failed to add ICE candidate:', error);
+          console.error('[EMBED PAGE] setupSocketEventHandlers(): Failed to add ICE candidate:', error);
         }
       } else {
-        console.error('[EMBED PAGE] WebRTC manager is null when processing ICE candidate');
+        console.error('[EMBED PAGE] setupSocketEventHandlers(): WebRTC manager is null when processing ICE candidate');
       }
     });
 
     // Call failures
     socket.on('call:busy', (data: CallBusyEvent) => {
-      console.log('[EMBED PAGE] Call busy event received:', data);
+      console.log('[EMBED PAGE] setupSocketEventHandlers(): Call busy event received:', data);
       handleCallFailure('All agents are busy. Please try again later.');
     });
 
     socket.on('call:unavailable', (data: CallUnavailableEvent) => {
-      console.log('[EMBED PAGE] Call unavailable event received:', data);
+      console.log('[EMBED PAGE] setupSocketEventHandlers(): Call unavailable event received:', data);
       handleCallFailure('No agents available right now.');
     });
 
     socket.on('call:timeout', (data: CallTimeoutEvent) => {
-      console.log('[EMBED PAGE] Call timeout event received:', data);
+      console.log('[EMBED PAGE] setupSocketEventHandlers(): Call timeout event received:', data);
       handleCallFailure('No response from agents. Please try again.');
     });
 
     // Call failed (WebRTC connection failures and timeouts)
     socket.on('call:failed', (data: CallFailedEvent) => {
-      console.log('[EMBED PAGE] Call failed event received:', data);
+      console.log('[EMBED PAGE] setupSocketEventHandlers(): Call failed event received:', data);
       const message = data?.reason === 'connection_timeout'
         ? 'Connection timeout. Please try again.'
         : 'Connection failed. Please try again.';
@@ -246,11 +246,11 @@
 
     // Call ended
     socket.on('call:ended', (data: CallEndedEvent) => {
-      console.log('[EMBED PAGE] Call ended event received:', data);
+      console.log('[EMBED PAGE] setupSocketEventHandlers(): Call ended event received:', data);
       endCall();
     });
     
-    console.log('[EMBED PAGE] All socket event handlers setup complete');
+    console.log('[EMBED PAGE] setupSocketEventHandlers(): All socket event handlers setup complete');
   }
 
   async function initializeCustomerWebRTC(callId: string, localStream: MediaStream) {
@@ -295,7 +295,7 @@
   }
 
   function handleConnectionFailure() {
-    console.error('Customer WebRTC connection failed');
+    console.error('[EMBED PAGE] handleConnectionFailure(): Customer WebRTC connection failed');
 
     // Emit call:failed event
     if (socket && callAttemptId) {
@@ -329,7 +329,7 @@
   }
 
   function handleMediaAccessError(error: Error) {
-    console.error('Media access error:', error);
+    console.error('[EMBED PAGE] handleMediaAccessError(): Media access error:', error);
 
     callState = 'failed';
     statusMessage = 'Please allow microphone access to make calls.';
