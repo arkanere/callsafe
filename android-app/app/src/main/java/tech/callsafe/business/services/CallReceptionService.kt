@@ -50,15 +50,13 @@ class CallReceptionService : Service() {
         // Connect to signaling server
         socketManager.connect()
         
-        // Start foreground service
-        val notification = createServiceNotification()
-        startForeground(NOTIFICATION_ID, notification)
+        // Run as background service without persistent notification
+        // FCM will handle incoming call notifications
     }
     
     private fun stopService() {
         isServiceStarted = false
         socketManager.disconnect()
-        stopForeground(true)
         stopSelf()
     }
     

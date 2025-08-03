@@ -405,4 +405,91 @@ class SocketManager private constructor(private val context: Context) {
         Log.d(TAG, "[SOCKET] FCM token: ${if (token != null) "[PRESENT]" else "[NULL]"}")
         return token
     }
+    
+    /**
+     * Registers FCM token with server via temporary socket connection
+     * Used for automatic token refresh (WhatsApp-like behavior)
+     */
+    fun registerFCMTokenOnly(fcmToken: String) {
+        Log.d(TAG, "[FCM-REGISTRATION] registerFCMTokenOnly() called with token")
+        
+        val token = authManager.getStoredToken()
+        if (token == null) {
+            Log.w(TAG, "[FCM-REGISTRATION] No auth token, cannot register FCM token")
+            return
+        }
+        
+        // Create temporary socket connection
+        val options = IO.Options().apply {
+            auth = mapOf("token" to token)
+            transports = arrayOf("websocket", "polling")
+            timeout = 10000 // Shorter timeout for token registration
+            forceNew = true
+        }
+        
+        try {
+            val tempSocket = IO.socket("wss://tunnel.callsafe.tech", options)
+            var isDisconnected = false
+            
+            // Helper function to safely disconnect once
+            val safeDisconnect = {
+                if (!isDisconnected) {
+                    isDisconnected = true
+                    Log.d(TAG, "[FCM-REGISTRATION] Disconnecting temporary socket")
+                    tempSocket.disconnect()
+                }
+            }
+            
+            // Listen for successful device registration
+            tempSocket.on("device:connected") { args ->
+                Log.d(TAG, "[FCM-REGISTRATION] Device successfully registered with server")
+                safeDisconnect()
+            }
+            
+            // Listen for registration errors
+            tempSocket.on("error") { args ->
+                Log.e(TAG, "[FCM-REGISTRATION] Registration failed: ${args?.firstOrNull()}")
+                safeDisconnect()
+            }
+            
+            // Set up one-time connection for token registration
+            tempSocket.on(Socket.EVENT_CONNECT) {
+                Log.d(TAG, "[FCM-REGISTRATION] Temporary socket connected, registering FCM token")
+                
+                val deviceId = getUniqueDeviceId(context)
+                val deviceConnectEvent = JSONObject().apply {
+                    put("type", "device:connect")
+                    put("deviceType", "mobile")
+                    put("deviceId", deviceId)
+                    put("pushToken", fcmToken)
+                    put("timestamp", System.currentTimeMillis())
+                }
+                
+                tempSocket.emit("device:connect", deviceConnectEvent)
+            }
+            
+            tempSocket.on(Socket.EVENT_CONNECT_ERROR) { args ->
+                Log.e(TAG, "[FCM-REGISTRATION] Temporary socket connection failed: ${args?.firstOrNull()}")
+                safeDisconnect()
+            }
+            
+            tempSocket.on(Socket.EVENT_DISCONNECT) {
+                Log.d(TAG, "[FCM-REGISTRATION] Temporary socket disconnected")
+            }
+            
+            // Safety timeout as fallback (10 seconds)
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                if (!isDisconnected) {
+                    Log.w(TAG, "[FCM-REGISTRATION] Timeout waiting for server response, disconnecting")
+                    safeDisconnect()
+                }
+            }, 10000)
+            
+            // Connect temporarily
+            tempSocket.connect()
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "[FCM-REGISTRATION] Failed to create temporary socket", e)
+        }
+    }
 }

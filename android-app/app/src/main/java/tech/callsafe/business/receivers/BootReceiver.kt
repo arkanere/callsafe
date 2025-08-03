@@ -16,11 +16,8 @@ class BootReceiver : BroadcastReceiver() {
             // Check if user is authenticated
             val authManager = AuthenticationManager(context)
             if (authManager.isTokenValid()) {
-                // Start call reception service automatically
-                val serviceIntent = Intent(context, CallReceptionService::class.java).apply {
-                    action = CallReceptionService.ACTION_START_SERVICE
-                }
-                ContextCompat.startForegroundService(context, serviceIntent)
+                // App will receive calls via FCM automatically
+                // No persistent service needed
             }
         }
     }

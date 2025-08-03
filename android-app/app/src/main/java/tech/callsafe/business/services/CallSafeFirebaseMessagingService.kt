@@ -141,11 +141,33 @@ class CallSafeFirebaseMessagingService : FirebaseMessagingService() {
     }
     
     private fun updateFCMToken(token: String) {
-        android.util.Log.d("CallSafeFirebase", "[FLOW] updateFCMToken() - Storing FCM token locally")
-        // Store token locally for device registration
+        android.util.Log.d("CallSafeFirebase", "[FLOW] updateFCMToken() - Storing FCM token and sending to server")
+        // Store token locally
         val sharedPreferences = getSharedPreferences("CallSafePrefs", Context.MODE_PRIVATE)
         sharedPreferences.edit().putString("fcm_token", token).apply()
         
-        // TODO: Send token to server when socket connects
+        // Send token to server immediately via temporary socket connection
+        sendTokenToServer(token)
+    }
+    
+    private fun sendTokenToServer(token: String) {
+        android.util.Log.d("CallSafeFirebase", "[FLOW] sendTokenToServer() - Establishing temporary connection")
+        
+        // Only send if user is logged in
+        val sharedPreferences = getSharedPreferences("CallSafePrefs", Context.MODE_PRIVATE)
+        val isLoggedIn = sharedPreferences.getBoolean("is_logged_in", false)
+        
+        if (!isLoggedIn) {
+            android.util.Log.d("CallSafeFirebase", "[FLOW] sendTokenToServer() - User not logged in, skipping")
+            return
+        }
+        
+        try {
+            // Get SocketManager instance and register token
+            val socketManager = tech.callsafe.business.managers.SocketManager.getInstance(this)
+            socketManager.registerFCMTokenOnly(token)
+        } catch (e: Exception) {
+            android.util.Log.e("CallSafeFirebase", "[ERROR] sendTokenToServer() failed", e)
+        }
     }
 }

@@ -9,6 +9,7 @@ import android.util.Log
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
+import android.content.Context
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
@@ -150,9 +151,33 @@ class LoginActivity : AppCompatActivity() {
     }
     
     private fun navigateToMainActivity() {
-        Log.d(TAG, "[LOGIN] navigateToMainActivity() - Navigating to MainActivity")
+        Log.d(TAG, "[LOGIN] navigateToMainActivity() - Registering FCM token and navigating to MainActivity")
+        
+        // Register FCM token immediately after successful login
+        registerFCMTokenAfterLogin()
+        
         val intent = Intent(this@LoginActivity, MainActivity::class.java)
         startActivity(intent)
         finish()
+    }
+    
+    private fun registerFCMTokenAfterLogin() {
+        Log.d(TAG, "[LOGIN] registerFCMTokenAfterLogin() - Registering FCM token with server")
+        
+        // Get stored FCM token
+        val sharedPreferences = getSharedPreferences("CallSafePrefs", Context.MODE_PRIVATE)
+        val fcmToken = sharedPreferences.getString("fcm_token", null)
+        
+        if (fcmToken != null) {
+            Log.d(TAG, "[LOGIN] registerFCMTokenAfterLogin() - FCM token found, sending to server")
+            try {
+                val socketManager = tech.callsafe.business.managers.SocketManager.getInstance(this)
+                socketManager.registerFCMTokenOnly(fcmToken)
+            } catch (e: Exception) {
+                Log.e(TAG, "[LOGIN] registerFCMTokenAfterLogin() - Failed to register FCM token", e)
+            }
+        } else {
+            Log.w(TAG, "[LOGIN] registerFCMTokenAfterLogin() - No FCM token found, will register when token arrives")
+        }
     }
 }

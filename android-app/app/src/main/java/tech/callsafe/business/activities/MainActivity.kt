@@ -18,7 +18,6 @@ import tech.callsafe.business.managers.AuthenticationManager
 import tech.callsafe.business.managers.CallHistoryManager
 import tech.callsafe.business.managers.CallManager
 import tech.callsafe.business.managers.SocketManager
-import tech.callsafe.business.services.CallReceptionService
 import tech.callsafe.business.utils.getUniqueDeviceId
 
 class MainActivity : AppCompatActivity() {
@@ -122,31 +121,16 @@ class MainActivity : AppCompatActivity() {
         
         Log.d(TAG, "[MAIN] Device status set to online")
         
-        Log.d(TAG, "[MAIN] Starting call reception service")
-        startCallReceptionService()
+        Log.d(TAG, "[MAIN] App ready to receive calls via FCM")
     }
     
     
-    private fun startCallReceptionService() {
-        val intent = Intent(this, CallReceptionService::class.java).apply {
-            action = CallReceptionService.ACTION_START_SERVICE
-        }
-        ContextCompat.startForegroundService(this, intent)
-    }
-    
-    private fun stopCallReceptionService() {
-        val intent = Intent(this, CallReceptionService::class.java).apply {
-            action = CallReceptionService.ACTION_STOP_SERVICE
-        }
-        startService(intent)
-    }
     
     private fun performLogout() {
         Log.d(TAG, "[MAIN] performLogout() called")
         
-        // Stop services and disconnect socket
-        Log.d(TAG, "[MAIN] Stopping services and disconnecting socket")
-        stopCallReceptionService()
+        // Disconnect socket if connected
+        Log.d(TAG, "[MAIN] Disconnecting socket")
         socketManager.disconnect()
         
         // Clear authentication data

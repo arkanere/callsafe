@@ -42,6 +42,7 @@ class AuthenticationManager(context: Context) {
                 .putString(USER_EMAIL, response.user.email)
                 .putString(USER_HANDLE, response.user.handle)
                 .putString(USER_SOURCE_ID, response.user.sourceId)
+                .putBoolean("is_logged_in", true)
                 .apply()
             Log.d(TAG, "[AUTH] Token and user data stored successfully")
         } else {
@@ -104,6 +105,7 @@ class AuthenticationManager(context: Context) {
             .remove(USER_EMAIL)
             .remove(USER_HANDLE)
             .remove(USER_SOURCE_ID)
+            .remove("is_logged_in")
             .apply()
         Log.d(TAG, "[AUTH] Logout complete - all credentials cleared")
     }
