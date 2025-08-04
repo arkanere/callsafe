@@ -319,18 +319,60 @@ class ActiveCallActivity : AppCompatActivity() {
         // Stop ringtone if playing
         tech.callsafe.business.utils.RingtoneManager.getInstance(this).stopRingtone()
         
-        // Accept the call using CallManager
-        callManager.acceptCall(
-            callAttemptId = callAttemptId,
-            deviceType = "mobile",
-            deviceId = tech.callsafe.business.utils.getUniqueDeviceId(this)
-        )
-        
         // Cancel the notification
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
         notificationManager.cancel(callAttemptId.hashCode())
         
-        android.util.Log.d("ActiveCallActivity", "[FLOW] acceptIncomingCall() - Call acceptance completed")
+        // Ensure socket connection before accepting call
+        ensureSocketConnectionAndAccept(callAttemptId)
+    }
+    
+    private fun ensureSocketConnectionAndAccept(callAttemptId: String) {
+        android.util.Log.d("ActiveCallActivity", "[SOCKET] ensureSocketConnectionAndAccept() - Checking socket connection")
+        
+        // Try to connect SocketManager if not already connected
+        if (!socketManager.connect()) {
+            android.util.Log.e("ActiveCallActivity", "[SOCKET] Failed to initialize socket connection")
+            binding.callStatus.text = "Connection failed"
+            Handler(Looper.getMainLooper()).postDelayed({ endCall() }, 3000)
+            return
+        }
+        
+        // Wait for socket connection with timeout
+        var retryCount = 0
+        val maxRetries = 10 // 5 seconds total
+        
+        val connectionChecker = object : Runnable {
+            override fun run() {
+                android.util.Log.d("ActiveCallActivity", "[SOCKET] Connection check attempt ${retryCount + 1}/$maxRetries")
+                
+                if (socketManager.isConnected()) {
+                    android.util.Log.d("ActiveCallActivity", "[SOCKET] Socket connected - accepting call")
+                    // Socket is connected, now accept the call
+                    callManager.acceptCall(
+                        callAttemptId = callAttemptId,
+                        deviceType = "mobile",
+                        deviceId = tech.callsafe.business.utils.getUniqueDeviceId(this@ActiveCallActivity)
+                    )
+                    android.util.Log.d("ActiveCallActivity", "[FLOW] acceptIncomingCall() - Call acceptance completed")
+                    
+                } else if (retryCount < maxRetries) {
+                    // Retry after 500ms
+                    retryCount++
+                    android.util.Log.d("ActiveCallActivity", "[SOCKET] Socket not connected yet, retrying in 500ms")
+                    Handler(Looper.getMainLooper()).postDelayed(this, 500)
+                    
+                } else {
+                    // Connection timeout
+                    android.util.Log.e("ActiveCallActivity", "[SOCKET] Socket connection timeout - ending call")
+                    binding.callStatus.text = "Connection timeout"
+                    Handler(Looper.getMainLooper()).postDelayed({ endCall() }, 2000)
+                }
+            }
+        }
+        
+        // Start checking connection immediately
+        connectionChecker.run()
     }
     
     private fun cleanup() {

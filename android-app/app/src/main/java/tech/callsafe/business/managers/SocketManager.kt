@@ -41,6 +41,12 @@ class SocketManager private constructor(private val context: Context) {
             return false
         }
         
+        // If already connected, return true
+        if (socket?.connected() == true) {
+            Log.d(TAG, "[SOCKET] Already connected")
+            return true
+        }
+        
         Log.d(TAG, "[SOCKET] Creating socket with token: [PRESENT]")
         val options = IO.Options().apply {
             auth = mapOf("token" to token)
@@ -223,6 +229,10 @@ class SocketManager private constructor(private val context: Context) {
         socket?.disconnect()
         socket = null
         Log.d(TAG, "[SOCKET] Socket disconnected and cleared")
+    }
+    
+    fun isConnected(): Boolean {
+        return socket?.connected() == true
     }
     
     fun setWebRTCEventListener(listener: WebRTCEventListener?) {
