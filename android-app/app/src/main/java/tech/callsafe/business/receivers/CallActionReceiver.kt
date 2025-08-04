@@ -1,20 +1,37 @@
 package tech.callsafe.business.receivers
 
+import android.app.ActivityManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import tech.callsafe.business.activities.ActiveCallActivity
 import tech.callsafe.business.managers.CallManager
+import tech.callsafe.business.services.CallLauncherService
 import tech.callsafe.business.utils.getUniqueDeviceId
 import tech.callsafe.business.utils.RingtoneManager
 
 class CallActionReceiver : BroadcastReceiver() {
     
+    private fun isAppInForeground(context: Context): Boolean {
+        val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        val appProcesses = activityManager.runningAppProcesses ?: return false
+        
+        val packageName = context.packageName
+        for (appProcess in appProcesses) {
+            if (appProcess.importance == ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND && 
+                appProcess.processName == packageName) {
+                return true
+            }
+        }
+        return false
+    }
+    
     override fun onReceive(context: Context, intent: Intent) {
         android.util.Log.d("CallActionReceiver", "[FLOW] onReceive() - Notification action received")
         val callAttemptId = intent.getStringExtra("callAttemptId") ?: return
+        val sourceId = intent.getStringExtra("sourceId")
         val callManager = CallManager.getInstance(context)
-        android.util.Log.d("CallActionReceiver", "[FLOW] onReceive() - Action: ${intent.action}, callAttemptId: $callAttemptId")
+        android.util.Log.d("CallActionReceiver", "[FLOW] onReceive() - Action: ${intent.action}, callAttemptId: $callAttemptId, sourceId: $sourceId")
         
         when (intent.action) {
             "ACCEPT_CALL" -> {
@@ -30,13 +47,9 @@ class CallActionReceiver : BroadcastReceiver() {
                     deviceId = getUniqueDeviceId(context)
                 )
                 
-                // Start active call activity
-                android.util.Log.d("CallActionReceiver", "[FLOW] onReceive() - Starting ActiveCallActivity from notification")
-                val activeCallIntent = Intent(context, ActiveCallActivity::class.java).apply {
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-                    putExtra("callAttemptId", callAttemptId)
-                }
-                context.startActivity(activeCallIntent)
+                // Launch ActiveCallActivity via foreground service (bypasses background launch restrictions)
+                android.util.Log.d("CallActionReceiver", "[FLOW] onReceive() - Starting ActiveCallActivity via CallLauncherService")
+                CallLauncherService.startActiveCall(context, callAttemptId, sourceId)
                 
                 // Cancel notification
                 android.util.Log.d("CallActionReceiver", "[FLOW] onReceive() - Cancelling notification after accept")

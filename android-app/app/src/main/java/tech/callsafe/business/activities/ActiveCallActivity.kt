@@ -1,5 +1,6 @@
 package tech.callsafe.business.activities
 
+import android.content.Context
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -21,6 +22,10 @@ class ActiveCallActivity : AppCompatActivity() {
     private lateinit var callManager: CallManager
     private lateinit var socketManager: SocketManager
     
+    init {
+        android.util.Log.d("ActiveCallActivity", "[CONSTRUCTOR] ActiveCallActivity instance created")
+    }
+    
     private var callAttemptId: String? = null
     private var sourceId: String? = null
     private var callStartTime: Long = 0
@@ -29,39 +34,99 @@ class ActiveCallActivity : AppCompatActivity() {
     private var isSpeakerOn = false
     
     override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        android.util.Log.d("ActiveCallActivity", "[FLOW] onCreate() - ActiveCallActivity started for active call")
+        android.util.Log.d("ActiveCallActivity", "[ACTIVITY] ==================== ACTIVITY STARTING ====================")
+        android.util.Log.d("ActiveCallActivity", "[ACTIVITY] onCreate() - ENTRY POINT - ActiveCallActivity onCreate called")
+        
+        try {
+            super.onCreate(savedInstanceState)
+            android.util.Log.d("ActiveCallActivity", "[ACTIVITY] onCreate() - super.onCreate() completed successfully")
+        } catch (e: Exception) {
+            android.util.Log.e("ActiveCallActivity", "[ACTIVITY] onCreate() - CRITICAL ERROR in super.onCreate()", e)
+            return
+        }
+        android.util.Log.d("ActiveCallActivity", "[ACTIVITY] onCreate() - Task ID: ${taskId}, Intent: ${intent}")
         
         // Keep screen on during call
+        android.util.Log.d("ActiveCallActivity", "[ACTIVITY] onCreate() - Setting window flags")
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         
-        binding = ActivityActiveCallBinding.inflate(layoutInflater)
-        setContentView(binding.root)
+        android.util.Log.d("ActiveCallActivity", "[ACTIVITY] onCreate() - Inflating layout")
+        try {
+            binding = ActivityActiveCallBinding.inflate(layoutInflater)
+            android.util.Log.d("ActiveCallActivity", "[ACTIVITY] onCreate() - Layout inflated successfully")
+            setContentView(binding.root)
+            android.util.Log.d("ActiveCallActivity", "[ACTIVITY] onCreate() - Content view set successfully")
+        } catch (e: Exception) {
+            android.util.Log.e("ActiveCallActivity", "[ACTIVITY] onCreate() - ERROR during layout inflation/setup", e)
+            finish()
+            return
+        }
         
         callAttemptId = intent.getStringExtra("callAttemptId")
         sourceId = intent.getStringExtra("sourceId")
-        android.util.Log.d("ActiveCallActivity", "[FLOW] onCreate() - Call data: callAttemptId=$callAttemptId, sourceId=$sourceId")
+        val autoAccept = intent.getBooleanExtra("autoAccept", false)
+        android.util.Log.d("ActiveCallActivity", "[ACTIVITY] onCreate() - Call data: callAttemptId=$callAttemptId, sourceId=$sourceId, autoAccept=$autoAccept")
         
-        webRTCManager = WebRTCManager(this)
-        callManager = CallManager.getInstance(this)
-        socketManager = SocketManager.getInstance(this)
+        if (callAttemptId == null) {
+            android.util.Log.e("ActiveCallActivity", "[ACTIVITY] onCreate() - ERROR: callAttemptId is null, finishing activity")
+            finish()
+            return
+        }
         
-        android.util.Log.d("ActiveCallActivity", "[FLOW] onCreate() - Calling setupUI()")
-        setupUI()
-        android.util.Log.d("ActiveCallActivity", "[FLOW] onCreate() - Calling setupWebRTC()")
-        setupWebRTC()
-        android.util.Log.d("ActiveCallActivity", "[FLOW] onCreate() - Calling setupWebRTCEventHandling()")
-        setupWebRTCEventHandling()
-        android.util.Log.d("ActiveCallActivity", "[FLOW] onCreate() - Calling setupClickListeners()")
-        setupClickListeners()
-        android.util.Log.d("ActiveCallActivity", "[FLOW] onCreate() - Calling startCallTimer()")
-        startCallTimer()
+        try {
+            webRTCManager = WebRTCManager(this)
+            callManager = CallManager.getInstance(this)
+            socketManager = SocketManager.getInstance(this)
+            android.util.Log.d("ActiveCallActivity", "[ACTIVITY] onCreate() - All managers initialized successfully")
+        } catch (e: Exception) {
+            android.util.Log.e("ActiveCallActivity", "[ACTIVITY] onCreate() - ERROR: Failed to initialize managers", e)
+            finish()
+            return
+        }
+        
+        android.util.Log.d("ActiveCallActivity", "[ACTIVITY] onCreate() - Initializing managers and UI")
+        try {
+            setupUI()
+            android.util.Log.d("ActiveCallActivity", "[ACTIVITY] onCreate() - UI setup completed")
+            
+            setupWebRTC()
+            android.util.Log.d("ActiveCallActivity", "[ACTIVITY] onCreate() - WebRTC setup completed")
+            
+            setupWebRTCEventHandling()
+            android.util.Log.d("ActiveCallActivity", "[ACTIVITY] onCreate() - WebRTC event handling setup completed")
+            
+            setupClickListeners()
+            android.util.Log.d("ActiveCallActivity", "[ACTIVITY] onCreate() - Click listeners setup completed")
+            
+            startCallTimer()
+            android.util.Log.d("ActiveCallActivity", "[ACTIVITY] onCreate() - Call timer started, initialization complete")
+            
+            // Handle auto-accept if launched directly from notification (WhatsApp style)
+            if (autoAccept && callAttemptId != null) {
+                android.util.Log.d("ActiveCallActivity", "[ACTIVITY] onCreate() - Auto-accepting call from full-screen intent")
+                acceptIncomingCall(callAttemptId!!)
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("ActiveCallActivity", "[ACTIVITY] onCreate() - ERROR during initialization", e)
+            binding.callStatus.text = "Initialization failed: ${e.message}"
+            
+            // Don't finish immediately, let user see the error and manually end call
+            Handler(Looper.getMainLooper()).postDelayed({
+                if (!isFinishing) {
+                    finish()
+                }
+            }, 3000)
+        }
     }
     
     private fun setupUI() {
         android.util.Log.d("ActiveCallActivity", "[FLOW] setupUI() - Setting up active call UI")
         binding.apply {
-            callerInfo.text = "Connected to customer from $sourceId"
+            callerInfo.text = if (sourceId != null) {
+                "Connected to customer from $sourceId"
+            } else {
+                "Connected to customer"
+            }
             callStatus.text = "Connecting..."
             callDuration.text = "00:00"
             
@@ -248,6 +313,26 @@ class ActiveCallActivity : AppCompatActivity() {
         }, 0, 1000)
     }
     
+    private fun acceptIncomingCall(callAttemptId: String) {
+        android.util.Log.d("ActiveCallActivity", "[FLOW] acceptIncomingCall() - Auto-accepting call from notification")
+        
+        // Stop ringtone if playing
+        tech.callsafe.business.utils.RingtoneManager.getInstance(this).stopRingtone()
+        
+        // Accept the call using CallManager
+        callManager.acceptCall(
+            callAttemptId = callAttemptId,
+            deviceType = "mobile",
+            deviceId = tech.callsafe.business.utils.getUniqueDeviceId(this)
+        )
+        
+        // Cancel the notification
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+        notificationManager.cancel(callAttemptId.hashCode())
+        
+        android.util.Log.d("ActiveCallActivity", "[FLOW] acceptIncomingCall() - Call acceptance completed")
+    }
+    
     private fun cleanup() {
         android.util.Log.d("ActiveCallActivity", "[FLOW] cleanup() - Cleaning up call resources")
         callTimer?.cancel()
@@ -257,9 +342,29 @@ class ActiveCallActivity : AppCompatActivity() {
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
     
+    override fun onStart() {
+        super.onStart()
+        android.util.Log.d("ActiveCallActivity", "[ACTIVITY] onStart() - Activity becoming visible")
+    }
+    
+    override fun onResume() {
+        super.onResume()
+        android.util.Log.d("ActiveCallActivity", "[ACTIVITY] onResume() - Activity in foreground")
+    }
+    
+    override fun onPause() {
+        super.onPause()
+        android.util.Log.d("ActiveCallActivity", "[ACTIVITY] onPause() - Activity paused")
+    }
+    
+    override fun onStop() {
+        super.onStop()
+        android.util.Log.d("ActiveCallActivity", "[ACTIVITY] onStop() - Activity no longer visible")
+    }
+    
     override fun onDestroy() {
         super.onDestroy()
-        android.util.Log.d("ActiveCallActivity", "[FLOW] onDestroy() - ActiveCallActivity destroyed")
+        android.util.Log.d("ActiveCallActivity", "[ACTIVITY] onDestroy() - Activity destroyed")
         cleanup()
     }
 }

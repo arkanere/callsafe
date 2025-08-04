@@ -9,6 +9,7 @@ import androidx.core.app.NotificationCompat
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import tech.callsafe.business.R
+import tech.callsafe.business.activities.ActiveCallActivity
 import tech.callsafe.business.activities.IncomingCallActivity
 import tech.callsafe.business.receivers.CallActionReceiver
 import tech.callsafe.business.utils.RingtoneManager
@@ -70,11 +71,11 @@ class CallSafeFirebaseMessagingService : FirebaseMessagingService() {
         sourceId: String,
         timestamp: Long
     ) {
-        android.util.Log.d("CallSafeFirebase", "[NOTIFICATION] showIncomingCallNotification() - Building notification with actions")
+        android.util.Log.d("CallSafeFirebase", "[NOTIFICATION] showIncomingCallNotification() - Building CallStyle notification")
         // Create notification channel if needed
         createNotificationChannel()
         
-        // Create full-screen incoming call intent
+        // Create full-screen intent to IncomingCallActivity for standard UI
         android.util.Log.d("CallSafeFirebase", "[NOTIFICATION] showIncomingCallNotification() - Creating full-screen intent")
         val fullScreenIntent = Intent(this, IncomingCallActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -88,12 +89,14 @@ class CallSafeFirebaseMessagingService : FirebaseMessagingService() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         
-        // Accept call action
-        val acceptIntent = Intent(this, CallActionReceiver::class.java).apply {
-            action = "ACCEPT_CALL"
+        // Accept call action - directly launch ActiveCallActivity with auto-accept
+        val acceptIntent = Intent(this, ActiveCallActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             putExtra("callAttemptId", callAttemptId)
+            putExtra("sourceId", sourceId)
+            putExtra("autoAccept", true) // Auto-accept when launched from Accept button
         }
-        val acceptPendingIntent = PendingIntent.getBroadcast(
+        val acceptPendingIntent = PendingIntent.getActivity(
             this, 1, acceptIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
@@ -108,22 +111,30 @@ class CallSafeFirebaseMessagingService : FirebaseMessagingService() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         
-        // Build notification
+        // Build call notification using Android's CallStyle
+        val person = androidx.core.app.Person.Builder()
+            .setName("Customer from $sourceId")
+            .setImportant(true)
+            .build()
+            
         val notification = NotificationCompat.Builder(this, CALL_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_call)
-            .setContentTitle("Incoming Call")
-            .setContentText("Customer calling from $sourceId")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_CALL)
             .setAutoCancel(true)
             .setFullScreenIntent(fullScreenPendingIntent, true)
-            .addAction(R.drawable.ic_call_accept, "Accept", acceptPendingIntent)
-            .addAction(R.drawable.ic_call_decline, "Decline", declinePendingIntent)
+            .setStyle(
+                NotificationCompat.CallStyle.forIncomingCall(
+                    person,
+                    declinePendingIntent,
+                    acceptPendingIntent
+                )
+            )
             .build()
         
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         notificationManager.notify(callAttemptId.hashCode(), notification)
-        android.util.Log.d("CallSafeFirebase", "[NOTIFICATION] showIncomingCallNotification() - Notification displayed with actions")
+        android.util.Log.d("CallSafeFirebase", "[NOTIFICATION] showIncomingCallNotification() - CallStyle notification displayed")
     }
     
     private fun cancelIncomingCallNotification(callAttemptId: String) {
