@@ -10,7 +10,11 @@ data class CallRecord(
     val startTime: Long,
     val endTime: Long,
     val duration: Int, // in seconds
-    val device: String, // "mobile"
-    val status: String, // "completed", "missed", "rejected"
-    val timestamp: Long = System.currentTimeMillis()
+    val device: String, // "mobile", "web"
+    val status: String, // "completed", "missed", "rejected", "cancelled", "failed", "answered_elsewhere", "timeout"
+    val timestamp: Long = System.currentTimeMillis(),
+    val reason: String? = null, // Additional details about call outcome (customer_cancelled, timeout, etc.)
+    val callType: String = "incoming", // "incoming", "outgoing" 
+    val deviceInfo: String? = null, // Additional device information
+    val connectionType: String? = null // "webrtc", "pstn", etc.
 )

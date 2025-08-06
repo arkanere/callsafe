@@ -30,6 +30,7 @@
             android:textColor="@color/gray"
             android:layout_marginTop="4dp" />
 
+
     </LinearLayout>
 
     <LinearLayout
@@ -53,6 +54,16 @@
             android:text="Completed"
             android:textSize="12sp"
             android:layout_marginTop="4dp" />
+
+        <TextView
+            android:id="@+id/callIdText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="#ABC123"
+            android:textSize="10sp"
+            android:textColor="@color/gray"
+            android:layout_marginTop="2dp"
+            android:fontFamily="monospace" />
 
     </LinearLayout>
 

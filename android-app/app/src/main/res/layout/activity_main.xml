@@ -13,44 +13,63 @@
         app:title="CallSafe Business"
         app:titleTextColor="@android:color/white" />
 
-    <!-- Call History Content -->
-    <FrameLayout
+    <!-- Recent Calls Container -->
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1">
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:padding="16dp">
 
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/recyclerView"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:padding="8dp" />
-
-        <LinearLayout
-            android:id="@+id/emptyView"
+        <!-- Recent Calls Heading -->
+        <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_gravity="center"
-            android:orientation="vertical"
-            android:gravity="center"
-            android:visibility="gone">
+            android:text="Recent Calls"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:textColor="@color/black"
+            android:layout_marginBottom="16dp" />
 
-            <TextView
+        <!-- Call History Content -->
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1">
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/recyclerView"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
+
+            <LinearLayout
+                android:id="@+id/emptyView"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="No call history"
-                android:textSize="18sp"
-                android:textColor="@color/gray" />
+                android:layout_gravity="center"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:visibility="gone">
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Your call history will appear here"
-                android:textSize="14sp"
-                android:textColor="@color/gray"
-                android:layout_marginTop="8dp" />
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="No call history"
+                    android:textSize="18sp"
+                    android:textColor="@color/gray" />
 
-        </LinearLayout>
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Your call history will appear here"
+                    android:textSize="14sp"
+                    android:textColor="@color/gray"
+                    android:layout_marginTop="8dp" />
 
-    </FrameLayout>
+            </LinearLayout>
+
+        </FrameLayout>
+
+    </LinearLayout>
 
 </LinearLayout>

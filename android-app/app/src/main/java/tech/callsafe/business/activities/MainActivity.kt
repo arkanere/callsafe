@@ -105,20 +105,37 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun loadCallHistory() {
-        Log.d(TAG, "[MAIN] Loading call history")
+        Log.d(TAG, "[MAIN] loadCallHistory() - ENTRY POINT - Loading call history")
         
+        Log.d(TAG, "[MAIN] loadCallHistory() - Setting up observer for call history LiveData")
         callHistoryManager.getAllCalls().observe(this) { callRecords ->
-            if (callRecords.isNotEmpty()) {
-                Log.d(TAG, "[MAIN] Loaded ${callRecords.size} call records")
+            Log.d(TAG, "[MAIN] loadCallHistory() - Observer triggered with call records")
+            Log.d(TAG, "[MAIN] loadCallHistory() - Received callRecords: ${callRecords?.size ?: 0} records")
+            
+            if (callRecords != null && callRecords.isNotEmpty()) {
+                Log.d(TAG, "[MAIN] loadCallHistory() - Found ${callRecords.size} call records")
+                Log.d(TAG, "[MAIN] loadCallHistory() - First few records:")
+                callRecords.take(3).forEachIndexed { index, record ->
+                    Log.d(TAG, "[MAIN] loadCallHistory() - Record $index: $record")
+                }
+                
+                Log.d(TAG, "[MAIN] loadCallHistory() - Submitting list to adapter")
                 callHistoryAdapter.submitList(callRecords)
+                
+                Log.d(TAG, "[MAIN] loadCallHistory() - Showing RecyclerView, hiding empty view")
                 binding.recyclerView.visibility = android.view.View.VISIBLE
                 binding.emptyView.visibility = android.view.View.GONE
             } else {
-                Log.d(TAG, "[MAIN] No call records found")
+                Log.d(TAG, "[MAIN] loadCallHistory() - No call records found or empty list")
+                Log.d(TAG, "[MAIN] loadCallHistory() - Hiding RecyclerView, showing empty view")
                 binding.recyclerView.visibility = android.view.View.GONE
                 binding.emptyView.visibility = android.view.View.VISIBLE
             }
+            
+            Log.d(TAG, "[MAIN] loadCallHistory() - Observer processing complete")
         }
+        
+        Log.d(TAG, "[MAIN] loadCallHistory() - EXIT POINT")
     }
     
     private fun initializeOnlineStatus() {

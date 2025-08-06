@@ -43,6 +43,11 @@ class CallManager private constructor(context: Context) {
         Log.d(TAG, "[CALL] Emitting call:accept event with data: $acceptData")
         Log.d(TAG, "[FLOW] acceptCall() - Calling SocketManager.emit() to send acceptance to server")
         socketManager.emit("call:accept", acceptData)
+        
+        // Mark call as accepted for history tracking
+        Log.d(TAG, "[CALL] acceptCall() - Marking call as accepted for history tracking")
+        socketManager.markCallAccepted(callAttemptId)
+        Log.d(TAG, "[CALL] acceptCall() - Call marked as accepted successfully")
     }
     
     fun rejectCall(callAttemptId: String, deviceType: String, reason: String? = null) {
@@ -79,6 +84,11 @@ class CallManager private constructor(context: Context) {
         Log.d(TAG, "[CALL] Emitting call:end event with data: $endData")
         Log.d(TAG, "[FLOW] endCall() - Calling SocketManager.emit() to send end signal to server")
         socketManager.emit("call:end", endData)
+        
+        // Also save to call history locally since server might not send call:ended event
+        Log.d(TAG, "[CALL] endCall() - Saving call to history locally")
+        socketManager.saveCallEndedLocally(callAttemptId, reason)
+        Log.d(TAG, "[CALL] endCall() - Call saved to history locally")
         
         Log.d(TAG, "[CALL] Call state changed to ENDED, clearing currentCallAttemptId")
         callState = CallState.ENDED

@@ -16,4 +16,7 @@ interface CallHistoryDao {
     
     @Query("SELECT COUNT(*) FROM call_history")
     suspend fun getCallCount(): Int
+    
+    @Query("DELETE FROM call_history WHERE callAttemptId NOT IN (SELECT callAttemptId FROM call_history ORDER BY timestamp DESC LIMIT 20)")
+    suspend fun keepOnlyLatest20Calls()
 }

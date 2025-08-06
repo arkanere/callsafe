@@ -314,17 +314,33 @@ class ActiveCallActivity : AppCompatActivity() {
     }
     
     private fun acceptIncomingCall(callAttemptId: String) {
-        android.util.Log.d("ActiveCallActivity", "[FLOW] acceptIncomingCall() - Auto-accepting call from notification")
+        android.util.Log.d("ActiveCallActivity", "[ACTIVITY] acceptIncomingCall() - ENTRY POINT - Auto-accepting call from notification")
+        android.util.Log.d("ActiveCallActivity", "[ACTIVITY] acceptIncomingCall() - callAttemptId: $callAttemptId")
+        android.util.Log.d("ActiveCallActivity", "[ACTIVITY] acceptIncomingCall() - sourceId: $sourceId")
+        
+        // Register this call with SocketManager for call history tracking
+        android.util.Log.d("ActiveCallActivity", "[ACTIVITY] acceptIncomingCall() - Registering call with SocketManager")
+        sourceId?.let { sourceIdValue ->
+            android.util.Log.d("ActiveCallActivity", "[ACTIVITY] acceptIncomingCall() - Calling SocketManager.registerIncomingCall()")
+            socketManager.registerIncomingCall(callAttemptId, sourceIdValue)
+            android.util.Log.d("ActiveCallActivity", "[ACTIVITY] acceptIncomingCall() - Call registered with SocketManager successfully")
+        } ?: run {
+            android.util.Log.w("ActiveCallActivity", "[ACTIVITY] acceptIncomingCall() - WARNING: sourceId is null, cannot register call")
+        }
         
         // Stop ringtone if playing
+        android.util.Log.d("ActiveCallActivity", "[ACTIVITY] acceptIncomingCall() - Stopping ringtone")
         tech.callsafe.business.utils.RingtoneManager.getInstance(this).stopRingtone()
         
         // Cancel the notification
+        android.util.Log.d("ActiveCallActivity", "[ACTIVITY] acceptIncomingCall() - Cancelling notification")
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
         notificationManager.cancel(callAttemptId.hashCode())
         
         // Ensure socket connection before accepting call
+        android.util.Log.d("ActiveCallActivity", "[ACTIVITY] acceptIncomingCall() - Ensuring socket connection")
         ensureSocketConnectionAndAccept(callAttemptId)
+        android.util.Log.d("ActiveCallActivity", "[ACTIVITY] acceptIncomingCall() - EXIT POINT")
     }
     
     private fun ensureSocketConnectionAndAccept(callAttemptId: String) {

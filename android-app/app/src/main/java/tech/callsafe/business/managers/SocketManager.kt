@@ -4,6 +4,9 @@ import android.content.Context
 import android.util.Log
 import io.socket.client.IO
 import io.socket.client.Socket
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import org.json.JSONObject
 import org.webrtc.IceCandidate
 import org.webrtc.SessionDescription
@@ -12,6 +15,7 @@ import tech.callsafe.business.utils.getUniqueDeviceId
 class SocketManager private constructor(private val context: Context) {
     private var socket: Socket? = null
     private val authManager: AuthenticationManager = AuthenticationManager(context)
+    private val callHistoryManager: CallHistoryManager = CallHistoryManager(context)
     
     // WebRTC event listener interface for communication with active call
     interface WebRTCEventListener {
@@ -20,6 +24,16 @@ class SocketManager private constructor(private val context: Context) {
     }
     
     private var webrtcEventListener: WebRTCEventListener? = null
+    
+    // Call tracking for history
+    private val activeCallsData = mutableMapOf<String, CallData>()
+    
+    private data class CallData(
+        val callAttemptId: String,
+        val sourceId: String,
+        val startTime: Long,
+        var acceptedTime: Long? = null
+    )
     
     companion object {
         private const val TAG = "SocketManager"
@@ -239,6 +253,119 @@ class SocketManager private constructor(private val context: Context) {
         webrtcEventListener = listener
     }
     
+    fun markCallAccepted(callAttemptId: String) {
+        Log.d(TAG, "[SOCKET] markCallAccepted() - ENTRY POINT - callAttemptId: $callAttemptId")
+        Log.d(TAG, "[SOCKET] markCallAccepted() - Checking if call exists in activeCallsData")
+        
+        val callData = activeCallsData[callAttemptId]
+        if (callData != null) {
+            Log.d(TAG, "[SOCKET] markCallAccepted() - Call found, setting accepted time")
+            val acceptedTime = System.currentTimeMillis()
+            callData.acceptedTime = acceptedTime
+            Log.d(TAG, "[SOCKET] markCallAccepted() - Accepted time set to: $acceptedTime")
+            Log.d(TAG, "[SOCKET] markCallAccepted() - Call marked as accepted successfully")
+        } else {
+            Log.w(TAG, "[SOCKET] markCallAccepted() - WARNING: Call not found in activeCallsData")
+            Log.w(TAG, "[SOCKET] markCallAccepted() - Current activeCallsData keys: ${activeCallsData.keys}")
+        }
+        
+        Log.d(TAG, "[SOCKET] markCallAccepted() - EXIT POINT")
+    }
+    
+    fun registerIncomingCall(callAttemptId: String, sourceId: String, timestamp: Long = System.currentTimeMillis()) {
+        Log.d(TAG, "[SOCKET] registerIncomingCall() - ENTRY POINT - callAttemptId: $callAttemptId, sourceId: $sourceId, timestamp: $timestamp")
+        
+        // Register this call for history tracking
+        Log.d(TAG, "[SOCKET] registerIncomingCall() - Creating CallData object")
+        val callData = CallData(
+            callAttemptId = callAttemptId,
+            sourceId = sourceId,
+            startTime = timestamp
+        )
+        
+        Log.d(TAG, "[SOCKET] registerIncomingCall() - Adding to activeCallsData map")
+        activeCallsData[callAttemptId] = callData
+        
+        Log.d(TAG, "[SOCKET] registerIncomingCall() - Call registered successfully")
+        Log.d(TAG, "[SOCKET] registerIncomingCall() - Current activeCallsData size: ${activeCallsData.size}")
+        Log.d(TAG, "[SOCKET] registerIncomingCall() - EXIT POINT")
+    }
+    
+    fun saveCallEndedLocally(callAttemptId: String, reason: String) {
+        Log.d(TAG, "[SOCKET] saveCallEndedLocally() - ENTRY POINT - callAttemptId: $callAttemptId, reason: $reason")
+        Log.d(TAG, "[SOCKET] saveCallEndedLocally() - Current activeCallsData size: ${activeCallsData.size}")
+        Log.d(TAG, "[SOCKET] saveCallEndedLocally() - All activeCallsData keys: ${activeCallsData.keys}")
+        
+        // Get call data if available
+        Log.d(TAG, "[SOCKET] saveCallEndedLocally() - Looking up call data for callAttemptId")
+        val callData = activeCallsData[callAttemptId]
+        if (callData != null) {
+            Log.d(TAG, "[SOCKET] saveCallEndedLocally() - Call data found")
+            Log.d(TAG, "[SOCKET] saveCallEndedLocally() - Call data: sourceId=${callData.sourceId}, startTime=${callData.startTime}, acceptedTime=${callData.acceptedTime}")
+            
+            // Calculate duration based on accepted time or start time
+            Log.d(TAG, "[SOCKET] saveCallEndedLocally() - Calculating call duration")
+            val endTime = System.currentTimeMillis()
+            val startTime = callData.acceptedTime ?: callData.startTime
+            val duration = if (callData.acceptedTime != null) {
+                // Call was accepted, calculate actual call duration
+                val calculatedDuration = ((endTime - callData.acceptedTime!!) / 1000).toInt()
+                Log.d(TAG, "[SOCKET] saveCallEndedLocally() - Call was accepted, duration: ${calculatedDuration}s")
+                calculatedDuration
+            } else {
+                // Call was never accepted, duration is 0
+                Log.d(TAG, "[SOCKET] saveCallEndedLocally() - Call was never accepted, duration: 0s")
+                0
+            }
+            
+            Log.d(TAG, "[SOCKET] saveCallEndedLocally() - Final values - startTime: $startTime, endTime: $endTime, duration: ${duration}s")
+            
+            // Save to call history
+            Log.d(TAG, "[SOCKET] saveCallEndedLocally() - Starting coroutine to save call history")
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    val status = if (duration > 0) "completed" else "missed"
+                    Log.d(TAG, "[SOCKET] saveCallEndedLocally() - Determined status: $status")
+                    
+                    Log.d(TAG, "[SOCKET] saveCallEndedLocally() - Calling CallHistoryManager.saveCall()")
+                    callHistoryManager.saveCall(
+                        callAttemptId = callAttemptId,
+                        sourceId = callData.sourceId,
+                        startTime = startTime,
+                        endTime = endTime,
+                        duration = duration,
+                        status = status,
+                        reason = reason,
+                        callType = "incoming",
+                        deviceInfo = "Android Mobile",
+                        connectionType = "webrtc"
+                    )
+                    Log.d(TAG, "[SOCKET] saveCallEndedLocally() - Call saved to history successfully")
+                    Log.d(TAG, "[SOCKET] saveCallEndedLocally() - Saved with: duration=${duration}s, status=$status")
+                } catch (e: Exception) {
+                    Log.e(TAG, "[SOCKET] saveCallEndedLocally() - EXCEPTION while saving to history", e)
+                    Log.e(TAG, "[SOCKET] saveCallEndedLocally() - Exception type: ${e.javaClass.simpleName}")
+                    Log.e(TAG, "[SOCKET] saveCallEndedLocally() - Exception message: ${e.message}")
+                }
+            }
+        } else {
+            Log.w(TAG, "[SOCKET] saveCallEndedLocally() - WARNING: Call data not found")
+            Log.w(TAG, "[SOCKET] saveCallEndedLocally() - Searched for callAttemptId: $callAttemptId")
+            Log.w(TAG, "[SOCKET] saveCallEndedLocally() - Available keys: ${activeCallsData.keys}")
+        }
+        
+        // Clean up tracking data
+        Log.d(TAG, "[SOCKET] saveCallEndedLocally() - Cleaning up activeCallsData")
+        val removedData = activeCallsData.remove(callAttemptId)
+        if (removedData != null) {
+            Log.d(TAG, "[SOCKET] saveCallEndedLocally() - Successfully removed call data from activeCallsData")
+        } else {
+            Log.w(TAG, "[SOCKET] saveCallEndedLocally() - WARNING: No data to remove from activeCallsData")
+        }
+        Log.d(TAG, "[SOCKET] saveCallEndedLocally() - Final activeCallsData size: ${activeCallsData.size}")
+        Log.d(TAG, "[SOCKET] saveCallEndedLocally() - EXIT POINT")
+    }
+    
     private fun attemptReconnection() {
         Log.d(TAG, "[SOCKET] attemptReconnection() called")
         // Implement reconnection logic if needed
@@ -263,6 +390,13 @@ class SocketManager private constructor(private val context: Context) {
     private fun handleIncomingCall(callAttemptId: String, sourceId: String, timestamp: Long) {
         Log.d(TAG, "[SOCKET] handleIncomingCall() - callAttemptId: $callAttemptId, sourceId: $sourceId, timestamp: $timestamp")
         
+        // Track this call for history
+        activeCallsData[callAttemptId] = CallData(
+            callAttemptId = callAttemptId,
+            sourceId = sourceId,
+            startTime = timestamp
+        )
+        
         // TODO: Implement incoming call handling
         // For now, let's just log and auto-reject to test the flow
         Log.w(TAG, "[SOCKET] INCOMING CALL RECEIVED! This should trigger IncomingCallActivity")
@@ -279,19 +413,151 @@ class SocketManager private constructor(private val context: Context) {
         
         socket?.emit("call:reject", rejectData)
         Log.d(TAG, "[SOCKET] Auto-reject sent for testing")
+        
+        // Save rejected call to history
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                callHistoryManager.saveCall(
+                    callAttemptId = callAttemptId,
+                    sourceId = sourceId,
+                    startTime = timestamp,
+                    endTime = System.currentTimeMillis(),
+                    duration = 0,
+                    status = "rejected",
+                    reason = "auto_rejected_for_testing",
+                    callType = "incoming",
+                    deviceInfo = "Android Mobile",
+                    connectionType = "webrtc"
+                )
+                Log.d(TAG, "[SOCKET] Rejected call saved to history")
+            } catch (e: Exception) {
+                Log.e(TAG, "[SOCKET] Failed to save rejected call to history", e)
+            }
+        }
+        
+        // Clean up tracking data
+        activeCallsData.remove(callAttemptId)
     }
     
     private fun handleCallCancelled(callAttemptId: String, reason: String) {
         Log.d(TAG, "[SOCKET] handleCallCancelled() - callAttemptId: $callAttemptId, reason: $reason")
-        // Handle call cancellation
+        
+        // Get call data if available
+        val callData = activeCallsData[callAttemptId]
+        if (callData != null) {
+            // Save cancelled call to history
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    val status = when (reason) {
+                        "customer_cancelled" -> "cancelled"
+                        "timeout" -> "missed"
+                        "other_device_accepted" -> "answered_elsewhere"
+                        else -> "cancelled"
+                    }
+                    
+                    callHistoryManager.saveCall(
+                        callAttemptId = callAttemptId,
+                        sourceId = callData.sourceId,
+                        startTime = callData.startTime,
+                        endTime = System.currentTimeMillis(),
+                        duration = 0,
+                        status = status,
+                        reason = reason,
+                        callType = "incoming",
+                        deviceInfo = "Android Mobile",
+                        connectionType = "webrtc"
+                    )
+                    Log.d(TAG, "[SOCKET] Cancelled call saved to history with status: $status")
+                } catch (e: Exception) {
+                    Log.e(TAG, "[SOCKET] Failed to save cancelled call to history", e)
+                }
+            }
+        }
+        
+        // Clean up tracking data
+        activeCallsData.remove(callAttemptId)
     }
     
     private fun handleCallEnded(callAttemptId: String, duration: Int, reason: String?) {
-        Log.d(TAG, "[SOCKET] handleCallEnded() - callAttemptId: $callAttemptId, duration: $duration, reason: $reason")
-        // Handle call ended
+        Log.d(TAG, "[SOCKET] handleCallEnded() - ENTRY POINT - callAttemptId: $callAttemptId, duration: $duration, reason: $reason")
+        Log.d(TAG, "[SOCKET] handleCallEnded() - Current activeCallsData size: ${activeCallsData.size}")
+        
+        // Get call data if available
+        Log.d(TAG, "[SOCKET] handleCallEnded() - Looking up call data")
+        val callData = activeCallsData[callAttemptId]
+        if (callData != null) {
+            Log.d(TAG, "[SOCKET] handleCallEnded() - Call data found")
+            Log.d(TAG, "[SOCKET] handleCallEnded() - Call data: sourceId=${callData.sourceId}, startTime=${callData.startTime}, acceptedTime=${callData.acceptedTime}")
+            
+            // Save completed call to history
+            Log.d(TAG, "[SOCKET] handleCallEnded() - Starting coroutine to save completed call")
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    Log.d(TAG, "[SOCKET] handleCallEnded() - Calculating timestamps")
+                    val endTime = System.currentTimeMillis()
+                    val startTime = callData.acceptedTime ?: callData.startTime
+                    
+                    Log.d(TAG, "[SOCKET] handleCallEnded() - Calling CallHistoryManager.saveCall() for completed call")
+                    callHistoryManager.saveCall(
+                        callAttemptId = callAttemptId,
+                        sourceId = callData.sourceId,
+                        startTime = startTime,
+                        endTime = endTime,
+                        duration = duration,
+                        status = "completed",
+                        reason = reason,
+                        callType = "incoming",
+                        deviceInfo = "Android Mobile",
+                        connectionType = "webrtc"
+                    )
+                    Log.d(TAG, "[SOCKET] handleCallEnded() - Completed call saved to history successfully")
+                    Log.d(TAG, "[SOCKET] handleCallEnded() - Saved with duration: ${duration}s, status: completed")
+                } catch (e: Exception) {
+                    Log.e(TAG, "[SOCKET] handleCallEnded() - EXCEPTION while saving completed call", e)
+                    Log.e(TAG, "[SOCKET] handleCallEnded() - Exception details: ${e.message}")
+                }
+            }
+        } else {
+            Log.w(TAG, "[SOCKET] handleCallEnded() - WARNING: Call data not found")
+            Log.w(TAG, "[SOCKET] handleCallEnded() - Cannot save to history for callAttemptId: $callAttemptId")
+            Log.w(TAG, "[SOCKET] handleCallEnded() - Available keys: ${activeCallsData.keys}")
+        }
+        
+        // Clean up tracking data
+        Log.d(TAG, "[SOCKET] handleCallEnded() - Cleaning up activeCallsData")
+        activeCallsData.remove(callAttemptId)
+        Log.d(TAG, "[SOCKET] handleCallEnded() - Final activeCallsData size: ${activeCallsData.size}")
+        Log.d(TAG, "[SOCKET] handleCallEnded() - EXIT POINT")
     }
     
     private fun handleCallFailed(callAttemptId: String, reason: String) {
+        Log.d(TAG, "[SOCKET] handleCallFailed() - callAttemptId: $callAttemptId, reason: $reason")
+        
+        // Get call data if available
+        val callData = activeCallsData[callAttemptId]
+        if (callData != null) {
+            // Save failed call to history
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    callHistoryManager.saveCall(
+                        callAttemptId = callAttemptId,
+                        sourceId = callData.sourceId,
+                        startTime = callData.startTime,
+                        endTime = System.currentTimeMillis(),
+                        duration = 0,
+                        status = "failed",
+                        reason = reason,
+                        callType = "incoming",
+                        deviceInfo = "Android Mobile",
+                        connectionType = "webrtc"
+                    )
+                    Log.d(TAG, "[SOCKET] Failed call saved to history with reason: $reason")
+                } catch (e: Exception) {
+                    Log.e(TAG, "[SOCKET] Failed to save failed call to history", e)
+                }
+            }
+        }
+        
         // Handle call failure from server (e.g., connection_timeout, webrtc_failed)
         when (reason) {
             "connection_timeout" -> {
@@ -316,6 +582,9 @@ class SocketManager private constructor(private val context: Context) {
                 notifyCallFailure(callAttemptId, "Call failed due to technical issues")
             }
         }
+        
+        // Clean up tracking data
+        activeCallsData.remove(callAttemptId)
     }
     
     private fun notifyCallFailure(callAttemptId: String, errorMessage: String) {
