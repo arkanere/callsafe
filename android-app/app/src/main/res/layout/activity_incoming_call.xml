@@ -1,40 +1,63 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:gravity="center"
-    android:padding="32dp"
-    android:background="@color/primary_dark">
+    android:background="@color/call_background">
 
-    <TextView
-        android:id="@+id/callerInfo"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Incoming Call"
-        android:textSize="24sp"
-        android:textColor="@color/white"
-        android:textStyle="bold"
-        android:layout_marginBottom="16dp" />
-
-    <TextView
-        android:id="@+id/callTime"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Incoming call..."
-        android:textSize="16sp"
-        android:textColor="@color/white"
-        android:layout_marginBottom="64dp" />
-
-    <!-- Call Action Buttons -->
+    <!-- Top Section with Caller Info -->
     <LinearLayout
+        android:id="@+id/topSection"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center"
-        android:layout_marginTop="64dp">
+        android:layout_alignParentTop="true"
+        android:layout_marginTop="80dp"
+        android:orientation="vertical"
+        android:gravity="center">
 
+        <!-- Avatar placeholder -->
+        <ImageView
+            android:id="@+id/callerAvatar"
+            android:layout_width="120dp"
+            android:layout_height="120dp"
+            android:layout_marginBottom="24dp"
+            android:src="@drawable/ic_call"
+            android:background="@drawable/circle_avatar_background"
+            android:padding="32dp"
+            android:scaleType="centerInside" />
+
+        <TextView
+            android:id="@+id/callerInfo"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Customer"
+            android:textSize="28sp"
+            android:textColor="@color/white"
+            android:textStyle="bold"
+            android:layout_marginBottom="8dp" />
+
+        <TextView
+            android:id="@+id/callTime"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Incoming call..."
+            android:textSize="16sp"
+            android:textColor="@color/white"
+            android:alpha="0.8" />
+
+    </LinearLayout>
+
+    <!-- Bottom Section with Action Buttons -->
+    <LinearLayout
+        android:id="@+id/bottomSection"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentBottom="true"
+        android:layout_marginBottom="80dp"
+        android:orientation="horizontal"
+        android:gravity="center">
+
+        <!-- Decline Button -->
         <com.google.android.material.floatingactionbutton.FloatingActionButton
             android:id="@+id/declineButton"
             android:layout_width="wrap_content"
@@ -42,16 +65,20 @@
             android:layout_marginEnd="64dp"
             android:backgroundTint="@color/call_decline"
             android:src="@drawable/ic_call_decline"
-            app:tint="@color/white" />
+            app:tint="@color/white"
+            app:fabSize="normal" />
 
+        <!-- Accept Button -->
         <com.google.android.material.floatingactionbutton.FloatingActionButton
             android:id="@+id/acceptButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:backgroundTint="@color/call_accept"
             android:src="@drawable/ic_call_accept"
-            app:tint="@color/white" />
+            app:tint="@color/white"
+            app:fabSize="normal" />
 
     </LinearLayout>
 
-</LinearLayout>
+
+</RelativeLayout>

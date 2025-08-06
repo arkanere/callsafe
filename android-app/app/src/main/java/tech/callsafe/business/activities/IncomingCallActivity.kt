@@ -47,14 +47,14 @@ class IncomingCallActivity : AppCompatActivity() {
     private fun setupUI() {
         android.util.Log.d("IncomingCallActivity", "[FLOW] setupUI() - Setting up incoming call UI")
         binding.apply {
-            callerInfo.text = "Customer calling from $sourceId"
+            callerInfo.text = sourceId ?: "Customer"
             callTime.text = "Incoming call..."
             
-            // Set up ripple effects for call buttons
+            // Set up ripple effects for all buttons
             acceptButton.setOnTouchListener { view, event ->
                 when (event.action) {
                     MotionEvent.ACTION_DOWN -> {
-                        view.animate().scaleX(0.95f).scaleY(0.95f).setDuration(100).start()
+                        view.animate().scaleX(0.9f).scaleY(0.9f).setDuration(100).start()
                     }
                     MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                         view.animate().scaleX(1.0f).scaleY(1.0f).setDuration(100).start()
@@ -66,7 +66,7 @@ class IncomingCallActivity : AppCompatActivity() {
             declineButton.setOnTouchListener { view, event ->
                 when (event.action) {
                     MotionEvent.ACTION_DOWN -> {
-                        view.animate().scaleX(0.95f).scaleY(0.95f).setDuration(100).start()
+                        view.animate().scaleX(0.9f).scaleY(0.9f).setDuration(100).start()
                     }
                     MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                         view.animate().scaleX(1.0f).scaleY(1.0f).setDuration(100).start()
@@ -74,6 +74,7 @@ class IncomingCallActivity : AppCompatActivity() {
                 }
                 false
             }
+            
         }
     }
     
@@ -88,6 +89,7 @@ class IncomingCallActivity : AppCompatActivity() {
             android.util.Log.d("IncomingCallActivity", "[FLOW] Decline button clicked - Calling declineCall()")
             declineCall()
         }
+        
     }
     
     private fun acceptCall() {

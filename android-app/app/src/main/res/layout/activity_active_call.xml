@@ -6,7 +6,7 @@
     android:orientation="vertical"
     android:gravity="center"
     android:padding="32dp"
-    android:background="@color/primary_dark">
+    android:background="@color/call_background">
 
     <TextView
         android:id="@+id/callerInfo"
