@@ -38,6 +38,12 @@ export interface CallTimeoutEvent {
   timestamp: number;
 }
 
+export interface CallCancelledEvent {
+  callAttemptId: string;
+  reason: 'customer_cancelled' | 'other_device_accepted' | 'timeout';
+  timestamp: number;
+}
+
 export interface WebRTCOfferEvent {
   callAttemptId: string;
   offer: RTCSessionDescription;

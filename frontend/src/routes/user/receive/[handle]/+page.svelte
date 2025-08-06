@@ -13,6 +13,7 @@
     CallAcceptedEvent,
     CallEndedEvent,
     CallFailedEvent,
+    CallCancelledEvent,
     WebRTCOfferEvent,
     WebRTCAnswerEvent,
     WebRTCIceCandidateEvent
@@ -233,6 +234,73 @@
         : 'Call connection failed. Please try again.';
       
       handleCallFailure(errorMessage);
+    });
+
+    // Call cancelled handler
+    socket.on('call:cancelled', (data: CallCancelledEvent) => {
+      console.log('[CONNECTION] setupSocketEventHandlers(): Call cancelled:', data);
+      
+      // Stop any playing ringtone
+      stopIncomingCallSound();
+      
+      // Remove from incoming calls UI
+      incomingCalls = incomingCalls.filter(call => call.callId !== data.callAttemptId);
+      
+      // Update UI to show cancellation reason
+      let statusMessage = '';
+      switch (data.reason) {
+        case 'customer_cancelled':
+          statusMessage = 'Customer cancelled the call';
+          break;
+        case 'other_device_accepted':
+          statusMessage = 'Call answered on another device';
+          break;
+        case 'timeout':
+          statusMessage = 'Call timed out';
+          break;
+        default:
+          statusMessage = 'Call was cancelled';
+      }
+      
+      // Clean up any WebRTC resources if they were initialized
+      if (webrtcManager) {
+        webrtcManager.cleanup();
+        webrtcManager = null;
+      }
+      
+      // Update call state
+      callState.update(state => ({
+        ...state,
+        currentCall: state.currentCall?.callAttemptId === data.callAttemptId ? null : state.currentCall,
+        ui: {
+          ...state.ui,
+          showIncomingCallModal: false,
+          showCallControls: false,
+          status: isOnline ? 'available' : 'unavailable'
+        }
+      }));
+      
+      // Show brief notification if this was an incoming call that got cancelled
+      if (data.reason !== 'other_device_accepted') {
+        errorMessage = statusMessage;
+        setTimeout(() => {
+          errorMessage = '';
+        }, 3000);
+      }
+      
+      // Reset call state after brief delay
+      setTimeout(() => {
+        currentPhase = 'terminated';
+        currentCallStartTime = null;
+        callDuration = 0;
+        isMuted = false;
+        
+        // Stop call timer if running
+        if (durationInterval) {
+          clearInterval(durationInterval);
+          durationInterval = null;
+        }
+      }, 1000);
     });
 
     // Connection events
