@@ -6,13 +6,13 @@ import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.util.Log
+import android.view.Menu
+import android.view.MenuItem
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
-import androidx.fragment.app.FragmentPagerAdapter
-import androidx.viewpager2.adapter.FragmentStateAdapter
-import com.google.android.material.tabs.TabLayoutMediator
+import androidx.recyclerview.widget.LinearLayoutManager
 import tech.callsafe.business.R
-import tech.callsafe.business.adapters.DashboardPagerAdapter
+import tech.callsafe.business.adapters.CallHistoryAdapter
 import tech.callsafe.business.databinding.ActivityMainBinding
 import tech.callsafe.business.managers.AuthenticationManager
 import tech.callsafe.business.managers.CallHistoryManager
@@ -25,6 +25,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var socketManager: SocketManager
     private lateinit var callHistoryManager: CallHistoryManager
     private lateinit var authenticationManager: AuthenticationManager
+    private lateinit var callHistoryAdapter: CallHistoryAdapter
     private var isOnline = true
     
     companion object {
@@ -45,9 +46,12 @@ class MainActivity : AppCompatActivity() {
         callHistoryManager = CallHistoryManager(this)
         authenticationManager = AuthenticationManager(this)
         
-        Log.d(TAG, "[MAIN] Setting up UI and ViewPager")
+        Log.d(TAG, "[MAIN] Setting up toolbar")
+        setSupportActionBar(binding.toolbar)
+        
+        Log.d(TAG, "[MAIN] Setting up UI and Call History")
         setupUI()
-        setupViewPager()
+        setupCallHistory()
         
         Log.d(TAG, "[MAIN] Checking authentication and connecting")
         checkAuthenticationAndConnect()
@@ -73,38 +77,48 @@ class MainActivity : AppCompatActivity() {
     
     private fun setupUI() {
         Log.d(TAG, "[MAIN] Setting up UI elements")
-        binding.apply {
-            // Settings button
-            settingsButton.setOnClickListener {
-                Log.d(TAG, "[MAIN] Settings button clicked")
-                startActivity(Intent(this@MainActivity, SettingsActivity::class.java))
-            }
-            
-            // Logout button
-            logoutButton.setOnClickListener {
-                Log.d(TAG, "[MAIN] Logout button clicked")
-                performLogout()
-            }
-        }
         
         // Initialize as online and update UI
         initializeOnlineStatus()
         Log.d(TAG, "[MAIN] UI setup complete")
     }
     
-    private fun setupViewPager() {
-        Log.d(TAG, "[MAIN] Setting up ViewPager")
-        val adapter = DashboardPagerAdapter(supportFragmentManager, lifecycle)
-        binding.viewPager.adapter = adapter
+    private fun setupCallHistory() {
+        Log.d(TAG, "[MAIN] Setting up Call History")
         
-        TabLayoutMediator(binding.tabLayout, binding.viewPager) { tab, position ->
-            tab.text = when (position) {
-                0 -> "Dashboard"
-                1 -> "Call History"
-                else -> "Settings"
+        // Initialize adapter with click handler
+        callHistoryAdapter = CallHistoryAdapter { callRecord ->
+            Log.d(TAG, "[MAIN] Call history item clicked: ${callRecord.callAttemptId}")
+            // Handle call record click if needed
+        }
+        
+        // Setup RecyclerView
+        binding.recyclerView.apply {
+            adapter = callHistoryAdapter
+            layoutManager = LinearLayoutManager(this@MainActivity)
+        }
+        
+        // Load call history data
+        loadCallHistory()
+        
+        Log.d(TAG, "[MAIN] Call History setup complete")
+    }
+    
+    private fun loadCallHistory() {
+        Log.d(TAG, "[MAIN] Loading call history")
+        
+        callHistoryManager.getAllCalls().observe(this) { callRecords ->
+            if (callRecords.isNotEmpty()) {
+                Log.d(TAG, "[MAIN] Loaded ${callRecords.size} call records")
+                callHistoryAdapter.submitList(callRecords)
+                binding.recyclerView.visibility = android.view.View.VISIBLE
+                binding.emptyView.visibility = android.view.View.GONE
+            } else {
+                Log.d(TAG, "[MAIN] No call records found")
+                binding.recyclerView.visibility = android.view.View.GONE
+                binding.emptyView.visibility = android.view.View.VISIBLE
             }
-        }.attach()
-        Log.d(TAG, "[MAIN] ViewPager setup complete")
+        }
     }
     
     private fun initializeOnlineStatus() {
@@ -160,5 +174,21 @@ class MainActivity : AppCompatActivity() {
         
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         notificationManager.createNotificationChannel(channel)
+    }
+    
+    override fun onCreateOptionsMenu(menu: Menu?): Boolean {
+        menuInflater.inflate(R.menu.main_menu, menu)
+        return true
+    }
+    
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        return when (item.itemId) {
+            R.id.action_settings -> {
+                Log.d(TAG, "[MAIN] Settings menu item clicked")
+                startActivity(Intent(this, SettingsActivity::class.java))
+                true
+            }
+            else -> super.onOptionsItemSelected(item)
+        }
     }
 }
