@@ -31,6 +31,7 @@
       console.log('[MAIN PAGE] Opening login modal');
       showLoginModal = true;
       resetForm();
+      isSignUpMode = true;
       console.log('[MAIN PAGE] Login modal opened, form reset');
     }
     
@@ -240,24 +241,18 @@
     <section class="py-20 px-4">
       <div class="max-w-6xl mx-auto text-center">
         <h1 class="text-5xl md:text-6xl font-bold text-gray-900 mb-6">
-          Increase Your Lead Conversion by <span class="text-blue-600">47%</span>
+          Customer to Business Anonymous Call Solution
         </h1>
         <p class="text-xl md:text-2xl text-gray-600 mb-8 max-w-3xl mx-auto">
           CallSafe eliminates phone number barriers that cost you customers. Let prospects call you anonymously through their browser.
         </p>
         <div class="flex flex-col sm:flex-row gap-4 justify-center items-center">
-          <a 
-            href="/agent" 
+          <button 
+            on:click={openLoginModal}
             class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-4 px-8 rounded-xl text-lg transition-colors duration-200"
           >
             Start Free Trial
-          </a>
-          <a 
-            href="/customer" 
-            class="border-2 border-blue-600 text-blue-600 hover:bg-blue-50 font-semibold py-4 px-8 rounded-xl text-lg transition-colors duration-200"
-          >
-            Try Demo Call
-          </a>
+          </button>
         </div>
       </div>
     </section>
@@ -274,20 +269,7 @@
           </p>
         </div>
         
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
-          <div class="text-center p-6 bg-red-50 rounded-xl">
-            <div class="text-4xl font-bold text-red-600 mb-2">33-47%</div>
-            <p class="text-gray-700">Lead drop-off rate when phone numbers are required</p>
-          </div>
-          <div class="text-center p-6 bg-red-50 rounded-xl">
-            <div class="text-4xl font-bold text-red-600 mb-2">$25.4B</div>
-            <p class="text-gray-700">Annual losses to spam calls create phone number distrust</p>
-          </div>
-          <div class="text-center p-6 bg-red-50 rounded-xl">
-            <div class="text-4xl font-bold text-red-600 mb-2">67%</div>
-            <p class="text-gray-700">Of consumers worry about sharing phone data</p>
-          </div>
-        </div>
+      
       </div>
     </section>
   
@@ -375,7 +357,7 @@
       <div class="max-w-6xl mx-auto">
         <div class="text-center mb-12">
           <h2 class="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
-            Why Businesses Choose CallSafe
+            Why Businesses Should Choose CallSafe
           </h2>
         </div>
         
@@ -433,18 +415,12 @@
           Start your free trial today and see the difference anonymous calling makes
         </p>
         <div class="flex flex-col sm:flex-row gap-4 justify-center items-center">
-          <a 
-            href="/agent" 
+          <button 
+            on:click={openLoginModal}
             class="bg-white text-blue-600 hover:bg-gray-100 font-semibold py-4 px-8 rounded-xl text-lg transition-colors duration-200"
           >
             Start Free Trial
-          </a>
-          <a 
-            href="/customer" 
-            class="border-2 border-white text-white hover:bg-white hover:text-blue-600 font-semibold py-4 px-8 rounded-xl text-lg transition-colors duration-200"
-          >
-            Try Demo Call
-          </a>
+          </button>
         </div>
       </div>
     </section>
