@@ -25,7 +25,14 @@ class SocketManager private constructor(private val context: Context) {
         fun onWebRTCIceCandidate(callAttemptId: String, candidate: IceCandidate)
     }
     
+    // Call event listener interface for call lifecycle notifications
+    interface CallEventListener {
+        fun onCallEnded(callAttemptId: String, duration: Int, reason: String?)
+        fun onCallFailed(callAttemptId: String, reason: String)
+    }
+    
     private var webrtcEventListener: WebRTCEventListener? = null
+    private var callEventListener: CallEventListener? = null
     
     // Call tracking for history
     private val activeCallsData = mutableMapOf<String, CallData>()
@@ -253,6 +260,10 @@ class SocketManager private constructor(private val context: Context) {
     
     fun setWebRTCEventListener(listener: WebRTCEventListener?) {
         webrtcEventListener = listener
+    }
+    
+    fun setCallEventListener(listener: CallEventListener?) {
+        callEventListener = listener
     }
     
     fun markCallAccepted(callAttemptId: String) {
@@ -542,6 +553,11 @@ class SocketManager private constructor(private val context: Context) {
         Log.d(TAG, "[SOCKET] handleCallEnded() - Cleaning up activeCallsData")
         activeCallsData.remove(callAttemptId)
         Log.d(TAG, "[SOCKET] handleCallEnded() - Final activeCallsData size: ${activeCallsData.size}")
+        
+        // Notify activity about call ending
+        Log.d(TAG, "[SOCKET] handleCallEnded() - Notifying call event listener")
+        callEventListener?.onCallEnded(callAttemptId, duration, reason)
+        
         Log.d(TAG, "[SOCKET] handleCallEnded() - EXIT POINT")
     }
     
@@ -600,6 +616,9 @@ class SocketManager private constructor(private val context: Context) {
         
         // Clean up tracking data
         activeCallsData.remove(callAttemptId)
+        
+        // Notify activity about call failure
+        callEventListener?.onCallFailed(callAttemptId, reason)
     }
     
     private fun notifyCallFailure(callAttemptId: String, errorMessage: String) {

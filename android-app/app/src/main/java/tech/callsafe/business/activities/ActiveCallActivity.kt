@@ -16,7 +16,7 @@ import tech.callsafe.business.managers.SocketManager
 import tech.callsafe.business.managers.WebRTCManager
 import java.util.*
 
-class ActiveCallActivity : AppCompatActivity() {
+class ActiveCallActivity : AppCompatActivity(), SocketManager.CallEventListener {
     private lateinit var binding: ActivityActiveCallBinding
     private lateinit var webRTCManager: WebRTCManager
     private lateinit var callManager: CallManager
@@ -77,6 +77,7 @@ class ActiveCallActivity : AppCompatActivity() {
             webRTCManager = WebRTCManager(this)
             callManager = CallManager.getInstance(this)
             socketManager = SocketManager.getInstance(this)
+            socketManager.setCallEventListener(this)
             android.util.Log.d("ActiveCallActivity", "[ACTIVITY] onCreate() - All managers initialized successfully")
         } catch (e: Exception) {
             android.util.Log.e("ActiveCallActivity", "[ACTIVITY] onCreate() - ERROR: Failed to initialize managers", e)
@@ -424,5 +425,33 @@ class ActiveCallActivity : AppCompatActivity() {
         super.onDestroy()
         android.util.Log.d("ActiveCallActivity", "[ACTIVITY] onDestroy() - Activity destroyed")
         cleanup()
+        socketManager.setCallEventListener(null) // Unregister call event listener
+    }
+    
+    // CallEventListener implementation
+    override fun onCallEnded(callAttemptId: String, duration: Int, reason: String?) {
+        android.util.Log.d("ActiveCallActivity", "[CALLBACK] onCallEnded() - Call ended from server: $callAttemptId, duration: ${duration}s, reason: $reason")
+        if (this.callAttemptId == callAttemptId) {
+            android.util.Log.d("ActiveCallActivity", "[CALLBACK] onCallEnded() - Call IDs match, ending activity")
+            runOnUiThread {
+                android.util.Log.d("ActiveCallActivity", "[CALLBACK] onCallEnded() - Ending activity on UI thread")
+                endCall()
+            }
+        } else {
+            android.util.Log.w("ActiveCallActivity", "[CALLBACK] onCallEnded() - Call ID mismatch: expected ${this.callAttemptId}, got $callAttemptId")
+        }
+    }
+    
+    override fun onCallFailed(callAttemptId: String, reason: String) {
+        android.util.Log.d("ActiveCallActivity", "[CALLBACK] onCallFailed() - Call failed from server: $callAttemptId, reason: $reason")
+        if (this.callAttemptId == callAttemptId) {
+            android.util.Log.d("ActiveCallActivity", "[CALLBACK] onCallFailed() - Call IDs match, ending activity")
+            runOnUiThread {
+                android.util.Log.d("ActiveCallActivity", "[CALLBACK] onCallFailed() - Ending activity on UI thread due to failure")
+                endCall()
+            }
+        } else {
+            android.util.Log.w("ActiveCallActivity", "[CALLBACK] onCallFailed() - Call ID mismatch: expected ${this.callAttemptId}, got $callAttemptId")
+        }
     }
 }
