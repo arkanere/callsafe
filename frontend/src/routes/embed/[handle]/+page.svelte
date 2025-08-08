@@ -33,6 +33,7 @@
   let isMuted = false;
   let showCallButton = true;
   let showCallControls = false;
+  let cleanupTimeout: any = null;
 
   onMount(() => {
     console.log('[EMBED PAGE] onMount(): Component mounted');
@@ -247,7 +248,14 @@
     // Call ended
     socket.on('call:ended', (data: CallEndedEvent) => {
       console.log('[EMBED PAGE] setupSocketEventHandlers(): Call ended event received:', data);
-      endCall();
+      
+      // Clear any pending cleanup timeout since server responded
+      if (cleanupTimeout) {
+        clearTimeout(cleanupTimeout);
+        cleanupTimeout = null;
+      }
+      
+      cleanup(); // Call cleanup directly - server already confirmed call end
     });
     
     console.log('[EMBED PAGE] setupSocketEventHandlers(): All socket event handlers setup complete');
@@ -356,9 +364,17 @@
         reason: 'user_action',
         timestamp: Date.now()
       });
+      // Don't cleanup here - wait for server's call:ended response to confirm
+      
+      // Failsafe: cleanup after 5 seconds if server doesn't respond
+      cleanupTimeout = setTimeout(() => {
+        console.log('[EMBED PAGE] endCall(): Server didn\'t respond to call:end, forcing cleanup');
+        cleanup();
+      }, 5000);
+    } else {
+      // If no socket or callAttemptId, cleanup immediately
+      cleanup();
     }
-
-    cleanup();
   }
 
   function toggleMute() {
@@ -398,6 +414,12 @@
   }
 
   function cleanup() {
+    // Clear any pending cleanup timeout
+    if (cleanupTimeout) {
+      clearTimeout(cleanupTimeout);
+      cleanupTimeout = null;
+    }
+
     // Stop media streams and close connections
     if (webrtcManager) {
       webrtcManager.cleanup();
