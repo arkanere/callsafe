@@ -1,5 +1,6 @@
 package tech.callsafe.business.managers
 
+import android.app.NotificationManager
 import android.content.Context
 import android.util.Log
 import io.socket.client.IO
@@ -10,6 +11,7 @@ import kotlinx.coroutines.launch
 import org.json.JSONObject
 import org.webrtc.IceCandidate
 import org.webrtc.SessionDescription
+import tech.callsafe.business.utils.RingtoneManager
 import tech.callsafe.business.utils.getUniqueDeviceId
 
 class SocketManager private constructor(private val context: Context) {
@@ -472,6 +474,19 @@ class SocketManager private constructor(private val context: Context) {
                     Log.e(TAG, "[SOCKET] Failed to save cancelled call to history", e)
                 }
             }
+        }
+        
+        // Dismiss notification and stop ringtone (matching FCM handler behavior)
+        try {
+            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            notificationManager.cancel(callAttemptId.hashCode())
+            Log.d(TAG, "[SOCKET] Notification cancelled for callAttemptId: $callAttemptId")
+            
+            // Stop ringtone
+            RingtoneManager.getInstance(context).stopRingtone()
+            Log.d(TAG, "[SOCKET] Ringtone stopped")
+        } catch (e: Exception) {
+            Log.e(TAG, "[SOCKET] Failed to cancel notification", e)
         }
         
         // Clean up tracking data
