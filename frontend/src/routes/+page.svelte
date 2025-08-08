@@ -220,8 +220,14 @@
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div class="flex justify-between items-center py-4">
           <!-- Left side - Logo/Brand -->
-          <div class="flex items-center">
+          <div class="flex items-center space-x-6">
             <h1 class="text-2xl font-bold text-gray-900">CallSafe</h1>
+            <a 
+              href="/pricing" 
+              class="text-gray-700 hover:text-blue-600 font-medium transition-colors duration-200"
+            >
+              Pricing
+            </a>
           </div>
           
           <!-- Right side - Login Button -->
@@ -424,6 +430,26 @@
         </div>
       </div>
     </section>
+
+    <!-- Footer -->
+    <footer class="bg-gray-50 border-t border-gray-200 py-8">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="text-center space-x-6">
+          <a 
+            href="/privacy-policy" 
+            class="text-gray-600 hover:text-blue-600 font-medium transition-colors duration-200"
+          >
+            Privacy Policy
+          </a>
+          <a 
+            href="/terms-of-service" 
+            class="text-gray-600 hover:text-blue-600 font-medium transition-colors duration-200"
+          >
+            Terms of Service
+          </a>
+        </div>
+      </div>
+    </footer>
   </div>
   
   <!-- Enhanced Login/Signup Modal -->
