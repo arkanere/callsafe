@@ -1,49 +1,229 @@
 (function() {
   'use strict';
   
+  // Configuration constants
+  const CONFIG = {
+    DEFAULT_SIGNALING_SERVER: 'https://tunnel.callsafe.tech',
+    CONNECTION_TIMEOUT: 30000,
+    CLEANUP_DELAY: 5000,
+    AUTO_RESET_DELAY: 3000,
+    CONNECTION_CHECK_INTERVAL: 1000,
+    SOCKET_IO_CDN: 'https://cdn.socket.io/4.7.4/socket.io.min.js'
+  };
+
   // Security and validation utilities
   function sanitizeInput(input) {
     return String(input)
-      .replace(/[<>'"&]/g, '')
+      .replace(/[<>'\"&]/g, '')
       .substring(0, 255);
   }
-  
+
   function validateHandle(handle) {
     return /^[a-f0-9]{16}$/.test(handle);
   }
-  
+
   function validateCallAttemptId(id) {
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
   }
-  
+
   function validateSourceId(sourceId) {
     return /^[a-zA-Z0-9-_]{1,50}$/.test(sourceId);
   }
-  
+
   function escapeHTML(str) {
     const div = document.createElement('div');
     div.textContent = str;
     return div.innerHTML;
   }
-  
+
+  // WebRTC Manager Class
+  class WebRTCManager {
+    constructor(socket) {
+      this.socket = socket;
+      this.peerConnection = null;
+      this.localStream = null;
+      this.remoteStream = null;
+      this.callId = null;
+      this.connectionState = 'idle';
+      this.connectionCheckInterval = null;
+    }
+
+    async initialize(callId, localStream) {
+      this.callId = callId;
+      this.localStream = localStream;
+      
+      // Create peer connection
+      this.peerConnection = new RTCPeerConnection({
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' }
+        ]
+      });
+
+      // Add local stream
+      if (this.localStream) {
+        this.localStream.getTracks().forEach(track => {
+          this.peerConnection.addTrack(track, this.localStream);
+        });
+      }
+
+      // Handle remote stream
+      this.peerConnection.ontrack = (event) => {
+        this.remoteStream = event.streams[0];
+        this.playRemoteAudio(this.remoteStream);
+        this.connectionState = 'connected';
+      };
+
+      // Handle ICE candidates
+      this.peerConnection.onicecandidate = (event) => {
+        if (event.candidate && this.socket && this.callId) {
+          this.socket.emit('webrtc:ice-candidate', {
+            callAttemptId: this.callId,
+            candidate: event.candidate,
+            timestamp: Date.now()
+          });
+        }
+      };
+
+      // Handle connection state changes
+      this.peerConnection.oniceconnectionstatechange = () => {
+        const state = this.peerConnection.iceConnectionState;
+        if (state === 'connected' || state === 'completed') {
+          this.connectionState = 'connected';
+        } else if (state === 'failed' || state === 'disconnected') {
+          this.connectionState = 'failed';
+        }
+      };
+
+      // Start connection monitoring
+      this.startConnectionMonitoring();
+    }
+
+    startConnectionMonitoring() {
+      this.connectionCheckInterval = setInterval(() => {
+        if (this.peerConnection) {
+          const state = this.peerConnection.iceConnectionState;
+          if (state === 'connected' || state === 'completed') {
+            this.connectionState = 'connected';
+          } else if (state === 'failed' || state === 'closed') {
+            this.connectionState = 'failed';
+            this.stopConnectionMonitoring();
+          }
+        }
+      }, CONFIG.CONNECTION_CHECK_INTERVAL);
+    }
+
+    stopConnectionMonitoring() {
+      if (this.connectionCheckInterval) {
+        clearInterval(this.connectionCheckInterval);
+        this.connectionCheckInterval = null;
+      }
+    }
+
+    async createOffer(callAttemptId) {
+      if (!this.peerConnection) {
+        throw new Error('Peer connection not initialized');
+      }
+
+      const offer = await this.peerConnection.createOffer();
+      await this.peerConnection.setLocalDescription(offer);
+
+      this.socket.emit('webrtc:offer', {
+        callAttemptId: callAttemptId,
+        offer: offer,
+        timestamp: Date.now()
+      });
+    }
+
+    async setRemoteDescription(answer) {
+      if (!this.peerConnection) {
+        throw new Error('Peer connection not initialized');
+      }
+      await this.peerConnection.setRemoteDescription(answer);
+    }
+
+    async addIceCandidate(candidate) {
+      if (this.peerConnection) {
+        await this.peerConnection.addIceCandidate(candidate);
+      }
+    }
+
+    toggleMute() {
+      if (!this.localStream) return false;
+
+      const audioTracks = this.localStream.getAudioTracks();
+      if (audioTracks.length > 0) {
+        const isCurrentlyMuted = !audioTracks[0].enabled;
+        audioTracks.forEach(track => {
+          track.enabled = isCurrentlyMuted;
+        });
+        return !isCurrentlyMuted;
+      }
+      return false;
+    }
+
+    getConnectionState() {
+      return this.connectionState;
+    }
+
+    playRemoteAudio(stream) {
+      // Remove any existing remote audio elements
+      document.querySelectorAll('audio[data-callsafe-remote]').forEach(el => el.remove());
+      
+      const audio = document.createElement('audio');
+      audio.srcObject = stream;
+      audio.autoplay = true;
+      audio.hidden = true;
+      audio.setAttribute('data-callsafe-remote', 'true');
+      document.body.appendChild(audio);
+      
+      // Ensure audio plays
+      audio.play().catch(error => {
+        console.warn('CallSafe: Failed to autoplay remote audio', error);
+      });
+    }
+
+    cleanup() {
+      this.stopConnectionMonitoring();
+      
+      // Stop media streams
+      if (this.localStream) {
+        this.localStream.getTracks().forEach(track => track.stop());
+        this.localStream = null;
+      }
+      
+      // Close peer connection
+      if (this.peerConnection) {
+        this.peerConnection.close();
+        this.peerConnection = null;
+      }
+      
+      // Remove remote audio elements
+      document.querySelectorAll('audio[data-callsafe-remote]').forEach(el => el.remove());
+      
+      this.remoteStream = null;
+      this.connectionState = 'idle';
+    }
+  }
+
   // Main CallSafe Widget Class
   class CallSafeWidget {
     constructor(config, scriptElement) {
-      this.version = '4.0.0';
+      this.version = '5.0.0';
       this.config = config;
       this.scriptElement = scriptElement;
       this.widgetElement = null;
       this.socket = null;
-      this.peerConnection = null;
-      this.localStream = null;
-      this.remoteStream = null;
+      this.webrtcManager = null;
       this.currentCall = null;
       this.eventListeners = new Map();
       this.connectionTimeout = null;
+      this.cleanupTimeout = null;
       this.callTimerInterval = null;
       this.isReady = false;
       this.isVisible = true;
       this.isEnabled = true;
+      this.isMuted = false;
       
       this.init();
     }
@@ -59,7 +239,7 @@
         // Create widget UI
         this.createWidget();
         
-        // Mark as ready (no socket connection until call initiation)
+        // Mark as ready
         this.isReady = true;
         this.emit('ready');
         
@@ -97,19 +277,15 @@
       
       // Insert widget into DOM based on position with safety checks
       if (this.config.position === 'inline') {
-        // Check if script element has a parent node
         if (this.scriptElement && this.scriptElement.parentNode) {
           this.scriptElement.parentNode.insertBefore(this.widgetElement, this.scriptElement.nextSibling);
         } else {
-          // Fallback to body if no parent node
           document.body.appendChild(this.widgetElement);
         }
       } else {
-        // For fixed positions, always append to body
         if (document.body) {
           document.body.appendChild(this.widgetElement);
         } else {
-          // Wait for body if not ready
           setTimeout(() => {
             if (document.body) {
               document.body.appendChild(this.widgetElement);
@@ -143,7 +319,7 @@
               <button class="callsafe-modal-close" aria-label="Close">&times;</button>
             </div>
             <div class="callsafe-modal-body">
-              <div class="callsafe-status-message" id="callsafe-status">Connecting...</div>
+              <div class="callsafe-status-message" id="callsafe-status">Ready to call</div>
               <div class="callsafe-call-timer" id="callsafe-timer" style="display: none;">00:00</div>
             </div>
             <div class="callsafe-modal-footer">
@@ -418,7 +594,6 @@
         }
         
         /* Dark Theme */
-        
         .theme-dark .callsafe-modal-content {
           background: #2d3748;
           color: white;
@@ -518,98 +693,130 @@
     loadSocketIO() {
       return new Promise((resolve, reject) => {
         const script = document.createElement('script');
-        script.src = 'https://cdn.socket.io/4.7.4/socket.io.min.js';
+        script.src = CONFIG.SOCKET_IO_CDN;
         script.onload = resolve;
         script.onerror = () => reject(new Error('Failed to load Socket.IO'));
         document.head.appendChild(script);
       });
     }
     
-    connectSocket() {
-      try {
-        this.socket = window.io('wss://tunnel.callsafe.tech', {
-          transports: ['websocket', 'polling'],
-          timeout: 30000,
-          forceNew: true
-        });
-        
-        this.setupSocketEventHandlers();
-        
-      } catch (error) {
-        console.error('CallSafe: Socket connection failed', error);
-        this.emit('error', { message: 'Connection failed', error });
+    async connectSocket() {
+      return new Promise((resolve, reject) => {
+        try {
+          // Get signaling server URL with environment variable support
+          const signalingServerUrl = this.getSignalingServerUrl();
+          
+          this.socket = window.io(signalingServerUrl, {
+            transports: ['websocket', 'polling'],
+            timeout: CONFIG.CONNECTION_TIMEOUT,
+            forceNew: true
+          });
+          
+          this.socket.on('connect', () => {
+            if (this.config.debug) {
+              console.log('CallSafe: Connected to server');
+            }
+            this.setupSocketEventHandlers();
+            resolve();
+          });
+          
+          this.socket.on('connect_error', (error) => {
+            console.error('CallSafe: Connection error', error);
+            reject(error);
+          });
+          
+        } catch (error) {
+          console.error('CallSafe: Socket connection failed', error);
+          reject(error);
+        }
+      });
+    }
+    
+    getSignalingServerUrl() {
+      // Check for environment variables (for development/testing)
+      if (typeof window !== 'undefined' && window.VITE_SIGNALING_SERVER_URL) {
+        return window.VITE_SIGNALING_SERVER_URL;
       }
+      
+      // Check for data attribute on script
+      const serverUrl = this.scriptElement?.getAttribute('data-server-url');
+      if (serverUrl) {
+        return serverUrl;
+      }
+      
+      // Default fallback
+      return CONFIG.DEFAULT_SIGNALING_SERVER;
     }
     
     setupSocketEventHandlers() {
-      this.socket.on('connect', () => {
-        if (this.config.debug) {
-          console.log('CallSafe: Connected to server');
-        }
-      });
+      if (!this.socket) {
+        console.error('CallSafe: Socket is null, cannot setup handlers');
+        return;
+      }
       
-      this.socket.on('disconnect', (reason) => {
-        if (this.config.debug) {
-          console.log('CallSafe: Disconnected from server', reason);
-        }
-      });
-      
-      this.socket.on('connect_error', (error) => {
-        console.error('CallSafe: Connection error', error);
-        this.emit('error', { message: 'Connection error', error });
-      });
-      
-      // Call event handlers
-      this.socket.on('call:accepted', (data) => {
+      // Call accepted
+      this.socket.on('call:accepted', async (data) => {
         if (data.callAttemptId === this.currentCall?.id) {
-          this.handleCallAccepted(data);
+          await this.handleCallAccepted(data);
         }
       });
       
+      // WebRTC answer
+      this.socket.on('webrtc:answer', async (data) => {
+        if (data.callAttemptId === this.currentCall?.id) {
+          await this.handleWebRTCAnswer(data.answer);
+        }
+      });
+      
+      // ICE candidate
+      this.socket.on('webrtc:ice-candidate', async (data) => {
+        if (data.callAttemptId === this.currentCall?.id) {
+          await this.handleICECandidate(data.candidate);
+        }
+      });
+      
+      // Call failures
       this.socket.on('call:busy', (data) => {
         if (data.callAttemptId === this.currentCall?.id) {
-          this.handleCallBusy();
+          this.handleCallFailure('All agents are busy. Please try again later.');
         }
       });
       
       this.socket.on('call:unavailable', (data) => {
         if (data.callAttemptId === this.currentCall?.id) {
-          this.handleCallUnavailable();
+          this.handleCallFailure(this.config.offlineMessage);
         }
       });
       
       this.socket.on('call:timeout', (data) => {
         if (data.callAttemptId === this.currentCall?.id) {
-          this.handleCallTimeout();
+          this.handleCallFailure('No response from agents. Please try again.');
         }
       });
       
       this.socket.on('call:failed', (data) => {
         if (data.callAttemptId === this.currentCall?.id) {
-          this.handleCallFailed(data);
+          const message = data?.reason === 'connection_timeout'
+            ? 'Connection timeout. Please try again.'
+            : 'Connection failed. Please try again.';
+          this.handleCallFailure(message);
         }
       });
       
+      // Call ended
       this.socket.on('call:ended', (data) => {
         if (data.callAttemptId === this.currentCall?.id) {
           this.handleCallEnded();
         }
       });
       
-      // WebRTC event handlers
-      this.socket.on('webrtc:answer', (data) => {
-        if (data.callAttemptId === this.currentCall?.id) {
-          this.handleWebRTCAnswer(data.answer);
-        }
-      });
-      
-      this.socket.on('webrtc:ice-candidate', (data) => {
-        if (data.callAttemptId === this.currentCall?.id) {
-          this.handleICECandidate(data.candidate);
+      // Disconnect handler
+      this.socket.on('disconnect', (reason) => {
+        if (this.config.debug) {
+          console.log('CallSafe: Disconnected from server', reason);
         }
       });
     }
-    
     
     async handleButtonClick() {
       if (this.currentCall) {
@@ -626,13 +833,15 @@
       }
       
       try {
-        // Initialize socket connection when call starts
-        if (!this.socket) {
-          await this.initializeSocket();
+        // Generate call attempt ID
+        const callAttemptId = this.generateCallId();
+        
+        if (!validateCallAttemptId(callAttemptId)) {
+          throw new Error('Invalid call attempt ID generated');
         }
         
         // Request microphone permission
-        this.localStream = await navigator.mediaDevices.getUserMedia({
+        const localStream = await navigator.mediaDevices.getUserMedia({
           audio: {
             echoCancellation: true,
             noiseSuppression: true,
@@ -640,14 +849,6 @@
           },
           video: false
         });
-        
-        // Generate call attempt ID
-        const callAttemptId = this.generateCallId();
-        
-        // Validate generated ID
-        if (!validateCallAttemptId(callAttemptId)) {
-          throw new Error('Invalid call attempt ID generated');
-        }
         
         // Create call object
         this.currentCall = {
@@ -662,18 +863,17 @@
         this.showModal();
         this.updateStatusMessage('Finding agent...');
         
-        // Wait for socket connection if needed
-        if (!this.socket.connected) {
-          await new Promise((resolve, reject) => {
-            const timeout = setTimeout(() => reject(new Error('Connection timeout')), 5000);
-            this.socket.once('connect', () => {
-              clearTimeout(timeout);
-              resolve();
-            });
-          });
-        }
+        // Connect to signaling server
+        await this.connectSocket();
         
-        // Emit call initiate event
+        // Initialize WebRTC
+        this.webrtcManager = new WebRTCManager(this.socket);
+        await this.webrtcManager.initialize(callAttemptId, localStream);
+        
+        // Start connection monitoring
+        this.startConnectionStateMonitoring();
+        
+        // Send call initiate
         this.socket.emit('call:initiate', {
           callAttemptId: sanitizeInput(callAttemptId),
           handle: sanitizeInput(this.config.handle),
@@ -700,10 +900,33 @@
         } else {
           errorMessage = 'Failed to start call. Please try again.';
         }
-          
+        
         this.handleCallError(errorMessage);
         return { success: false, error: { code: 'CALL_INITIATION_FAILED', message: error.message } };
       }
+    }
+    
+    startConnectionStateMonitoring() {
+      // Monitor WebRTC connection state
+      const checkConnection = () => {
+        if (!this.webrtcManager || !this.currentCall) return;
+        
+        const connectionState = this.webrtcManager.getConnectionState();
+        
+        if (connectionState === 'connected' && this.currentCall.state !== 'connected') {
+          this.handleCallConnected();
+        } else if (connectionState === 'failed' && this.currentCall.state !== 'failed') {
+          this.handleConnectionFailure();
+        }
+      };
+      
+      // Check connection state periodically
+      const connectionCheckInterval = setInterval(() => {
+        checkConnection();
+        if (!this.currentCall || ['connected', 'ended', 'failed'].includes(this.currentCall.state)) {
+          clearInterval(connectionCheckInterval);
+        }
+      }, CONFIG.CONNECTION_CHECK_INTERVAL);
     }
     
     async handleCallAccepted(data) {
@@ -711,8 +934,10 @@
         this.updateStatusMessage('Agent accepted, connecting...');
         this.currentCall.state = 'ringing';
         
-        // Set up WebRTC
-        await this.setupWebRTC();
+        // Create WebRTC offer
+        if (this.webrtcManager) {
+          await this.webrtcManager.createOffer(data.callAttemptId);
+        }
         
         this.emit('call:connecting');
         
@@ -722,80 +947,15 @@
         
       } catch (error) {
         console.error('CallSafe: Failed to set up WebRTC', error);
-        this.handleCallError('Failed to establish connection. Please try again.');
+        this.handleConnectionFailure();
       }
-    }
-    
-    async setupWebRTC() {
-      // Create peer connection
-      this.peerConnection = new RTCPeerConnection({
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' }
-        ]
-      });
-      
-      // Add local stream
-      if (this.localStream) {
-        this.localStream.getTracks().forEach(track => {
-          this.peerConnection.addTrack(track, this.localStream);
-        });
-      }
-      
-      // Handle remote stream
-      this.peerConnection.ontrack = (event) => {
-        this.remoteStream = event.streams[0];
-        this.playRemoteAudio(this.remoteStream);
-        
-        // Call connected successfully
-        this.handleCallConnected();
-        
-        // Clear connection timeout
-        this.clearConnectionTimeout();
-      };
-      
-      // Handle ICE candidates
-      this.peerConnection.onicecandidate = (event) => {
-        if (event.candidate && this.socket && this.currentCall) {
-          this.socket.emit('webrtc:ice-candidate', {
-            callAttemptId: this.currentCall.id,
-            candidate: event.candidate,
-            timestamp: Date.now()
-          });
-        }
-      };
-      
-      // Handle connection state changes
-      this.peerConnection.oniceconnectionstatechange = () => {
-        if (this.config.debug) {
-          console.log('CallSafe: ICE connection state:', this.peerConnection.iceConnectionState);
-        }
-        
-        if (this.peerConnection.iceConnectionState === 'failed') {
-          this.handleConnectionFailure();
-        } else if (this.peerConnection.iceConnectionState === 'connected') {
-          this.clearConnectionTimeout();
-        }
-      };
-      
-      // Create and send offer
-      const offer = await this.peerConnection.createOffer();
-      await this.peerConnection.setLocalDescription(offer);
-      
-      this.socket.emit('webrtc:offer', {
-        callAttemptId: this.currentCall.id,
-        offer: offer,
-        timestamp: Date.now()
-      });
-      
-      // Set connection timeout
-      this.setConnectionTimeout();
     }
     
     async handleWebRTCAnswer(answer) {
       try {
-        await this.peerConnection.setRemoteDescription(answer);
-        this.clearConnectionTimeout();
+        if (this.webrtcManager) {
+          await this.webrtcManager.setRemoteDescription(answer);
+        }
         
         if (this.config.debug) {
           console.log('CallSafe: WebRTC answer processed');
@@ -803,14 +963,14 @@
         
       } catch (error) {
         console.error('CallSafe: Failed to process WebRTC answer', error);
-        this.handleCallError('Connection failed. Please try again.');
+        this.handleConnectionFailure();
       }
     }
     
     async handleICECandidate(candidate) {
       try {
-        if (this.peerConnection) {
-          await this.peerConnection.addIceCandidate(candidate);
+        if (this.webrtcManager) {
+          await this.webrtcManager.addIceCandidate(candidate);
         }
       } catch (error) {
         console.error('CallSafe: Failed to add ICE candidate', error);
@@ -828,6 +988,9 @@
       // Start call timer
       this.startCallTimer();
       
+      // Clear connection timeout
+      this.clearConnectionTimeout();
+      
       this.emit('call:connected');
       
       if (this.config.debug) {
@@ -835,21 +998,77 @@
       }
     }
     
-    playRemoteAudio(stream) {
-      // Remove any existing remote audio elements
-      document.querySelectorAll('audio[data-callsafe-remote]').forEach(el => el.remove());
+    handleConnectionFailure() {
+      console.error('CallSafe: Connection failed');
       
-      const audio = document.createElement('audio');
-      audio.srcObject = stream;
-      audio.autoplay = true;
-      audio.hidden = true;
-      audio.setAttribute('data-callsafe-remote', 'true');
-      document.body.appendChild(audio);
+      if (this.socket && this.currentCall) {
+        this.socket.emit('call:failed', {
+          callAttemptId: this.currentCall.id,
+          reason: 'connection_failed',
+          timestamp: Date.now()
+        });
+      }
       
-      // Ensure audio plays
-      audio.play().catch(error => {
-        console.warn('CallSafe: Failed to autoplay remote audio', error);
-      });
+      // Don't cleanup here - wait for server response with failsafe
+      this.setFailsafeCleanup();
+    }
+    
+    handleCallFailure(message) {
+      this.currentCall.state = 'failed';
+      this.updateStatusMessage(message);
+      this.emit('call:failed', { reason: 'general' });
+      
+      // Auto-reset after delay
+      setTimeout(() => this.cleanup(), CONFIG.AUTO_RESET_DELAY);
+    }
+    
+    handleCallEnded() {
+      // Clear any pending cleanup timeout since server responded
+      if (this.cleanupTimeout) {
+        clearTimeout(this.cleanupTimeout);
+        this.cleanupTimeout = null;
+      }
+      
+      this.updateStatusMessage('Call ended');
+      this.emit('call:ended');
+      
+      // Cleanup directly since server confirmed
+      setTimeout(() => this.cleanup(), 2000);
+    }
+    
+    handleCallError(message) {
+      this.updateStatusMessage(message);
+      this.updateButtonState('idle', this.config.buttonText);
+      
+      setTimeout(() => this.cleanup(), CONFIG.AUTO_RESET_DELAY);
+    }
+    
+    setFailsafeCleanup() {
+      // Failsafe: cleanup after delay if server doesn't respond
+      this.cleanupTimeout = setTimeout(() => {
+        if (this.config.debug) {
+          console.log('CallSafe: Server didn\'t respond, forcing cleanup');
+        }
+        this.cleanup();
+      }, CONFIG.CLEANUP_DELAY);
+    }
+    
+    setConnectionTimeout() {
+      this.clearConnectionTimeout();
+      
+      this.connectionTimeout = setTimeout(() => {
+        if (this.currentCall && this.currentCall.state !== 'connected') {
+          console.error('CallSafe: Connection timeout after 30 seconds');
+          this.handleConnectionFailure();
+        }
+      }, CONFIG.CONNECTION_TIMEOUT);
+    }
+    
+    clearConnectionTimeout() {
+      if (this.connectionTimeout) {
+        clearTimeout(this.connectionTimeout);
+        this.connectionTimeout = null;
+      }
     }
     
     showCallControls() {
@@ -858,6 +1077,20 @@
       
       if (muteBtn) muteBtn.style.display = 'flex';
       if (timer) timer.style.display = 'block';
+    }
+    
+    hideCallControls() {
+      const muteBtn = this.widgetElement.querySelector('#callsafe-mute');
+      const timer = this.widgetElement.querySelector('#callsafe-timer');
+      
+      if (muteBtn) {
+        muteBtn.style.display = 'none';
+        muteBtn.classList.remove('muted');
+      }
+      if (timer) {
+        timer.style.display = 'none';
+        timer.textContent = '00:00';
+      }
     }
     
     startCallTimer() {
@@ -884,29 +1117,20 @@
     }
     
     toggleMute() {
-      if (!this.localStream) return;
+      if (!this.webrtcManager) return;
       
-      const audioTracks = this.localStream.getAudioTracks();
+      this.isMuted = this.webrtcManager.toggleMute();
       const muteBtn = this.widgetElement.querySelector('#callsafe-mute');
       
-      if (audioTracks.length > 0) {
-        const isCurrentlyMuted = !audioTracks[0].enabled;
-        
-        audioTracks.forEach(track => {
-          track.enabled = isCurrentlyMuted;
-        });
-        
-        // Update button state
-        if (muteBtn) {
-          muteBtn.classList.toggle('muted', !isCurrentlyMuted);
-          muteBtn.innerHTML = isCurrentlyMuted 
-            ? `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/><path fill="currentColor" d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>Mute`
-            : `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/><path fill="currentColor" d="M3 9v6h4l5 5V4L7 9H3z"/><path fill="currentColor" d="M18.5 12c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/></svg>Unmute`;
-        }
-        
-        if (this.config.debug) {
-          console.log('CallSafe: Mute toggled', !isCurrentlyMuted);
-        }
+      if (muteBtn) {
+        muteBtn.classList.toggle('muted', this.isMuted);
+        muteBtn.innerHTML = this.isMuted 
+          ? `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/></svg>Unmute`
+          : `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/><path fill="currentColor" d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>Mute`;
+      }
+      
+      if (this.config.debug) {
+        console.log('CallSafe: Mute toggled', this.isMuted);
       }
     }
     
@@ -921,135 +1145,44 @@
           reason: 'user_action',
           timestamp: Date.now()
         });
+        
+        // Don't cleanup here - wait for server's call:ended response
+        this.setFailsafeCleanup();
+      } else {
+        // If no socket, cleanup immediately
+        this.cleanup();
       }
-      
-      this.cleanup();
       
       if (this.config.debug) {
         console.log('CallSafe: Call ended by user');
       }
     }
     
-    handleCallBusy() {
-      this.updateStatusMessage('All agents are busy. Please try again later.');
-      this.emit('call:failed', { reason: 'busy' });
-      
-      setTimeout(() => {
-        this.cleanup();
-      }, 3000);
-    }
-    
-    handleCallUnavailable() {
-      this.updateStatusMessage(this.config.offlineMessage);
-      this.emit('call:failed', { reason: 'unavailable' });
-      
-      setTimeout(() => {
-        this.cleanup();
-      }, 3000);
-    }
-    
-    handleCallTimeout() {
-      this.updateStatusMessage('No response from agents. Please try again.');
-      this.emit('call:failed', { reason: 'timeout' });
-      
-      setTimeout(() => {
-        this.cleanup();
-      }, 3000);
-    }
-    
-    handleCallFailed(data) {
-      const message = data?.reason === 'connection_timeout' 
-        ? 'Connection timeout. Please try again.'
-        : 'Connection failed. Please try again.';
-        
-      this.handleCallError(message);
-      this.emit('call:failed', { reason: data?.reason || 'unknown' });
-    }
-    
-    handleCallEnded() {
-      this.updateStatusMessage('Call ended');
-      this.emit('call:ended');
-      
-      setTimeout(() => {
-        this.cleanup();
-      }, 2000);
-    }
-    
-    handleCallError(message) {
-      this.updateStatusMessage(message);
-      this.updateButtonState('idle', this.config.buttonText);
-      
-      setTimeout(() => {
-        this.cleanup();
-      }, 3000);
-    }
-    
-    setConnectionTimeout() {
-      this.clearConnectionTimeout();
-      
-      this.connectionTimeout = setTimeout(() => {
-        if (this.currentCall && this.currentCall.state !== 'connected') {
-          console.error('CallSafe: WebRTC connection timeout after 30 seconds');
-          
-          if (this.socket) {
-            this.socket.emit('call:failed', {
-              callAttemptId: this.currentCall.id,
-              reason: 'connection_timeout',
-              timestamp: Date.now()
-            });
-          }
-          
-          this.handleCallError('Connection timeout. Please try again.');
-        }
-      }, 30000);
-    }
-    
-    clearConnectionTimeout() {
-      if (this.connectionTimeout) {
-        clearTimeout(this.connectionTimeout);
-        this.connectionTimeout = null;
-      }
-    }
-    
-    handleConnectionFailure() {
-      console.error('CallSafe: WebRTC connection failed');
-      
-      this.clearConnectionTimeout();
-      
-      if (this.socket && this.currentCall) {
-        this.socket.emit('call:failed', {
-          callAttemptId: this.currentCall.id,
-          reason: 'connection_failed',
-          timestamp: Date.now()
-        });
-      }
-      
-      this.handleCallError('Connection failed. Please try again.');
-    }
-    
     cleanup() {
-      // Clear timeouts
+      // Clear any pending timeouts
       this.clearConnectionTimeout();
       this.stopCallTimer();
       
-      // Stop media streams
-      if (this.localStream) {
-        this.localStream.getTracks().forEach(track => track.stop());
-        this.localStream = null;
+      if (this.cleanupTimeout) {
+        clearTimeout(this.cleanupTimeout);
+        this.cleanupTimeout = null;
       }
       
-      // Close peer connection
-      if (this.peerConnection) {
-        this.peerConnection.close();
-        this.peerConnection = null;
+      // Stop WebRTC and media streams
+      if (this.webrtcManager) {
+        this.webrtcManager.cleanup();
+        this.webrtcManager = null;
       }
       
-      // Remove remote audio elements
-      document.querySelectorAll('audio[data-callsafe-remote]').forEach(el => el.remove());
+      // Disconnect socket
+      if (this.socket) {
+        this.socket.disconnect();
+        this.socket = null;
+      }
       
       // Reset state
       this.currentCall = null;
-      this.remoteStream = null;
+      this.isMuted = false;
       
       // Reset UI
       this.updateButtonState('idle', this.config.buttonText);
@@ -1058,20 +1191,6 @@
       
       if (this.config.debug) {
         console.log('CallSafe: Cleanup completed');
-      }
-    }
-    
-    hideCallControls() {
-      const muteBtn = this.widgetElement.querySelector('#callsafe-mute');
-      const timer = this.widgetElement.querySelector('#callsafe-timer');
-      
-      if (muteBtn) {
-        muteBtn.style.display = 'none';
-        muteBtn.classList.remove('muted');
-      }
-      if (timer) {
-        timer.style.display = 'none';
-        timer.textContent = '00:00';
       }
     }
     
@@ -1332,7 +1451,12 @@
     }
 
     // Create widget instance
-    new CallSafeWidget(config, script);
+    const widget = new CallSafeWidget(config, script);
+    
+    // Make widget globally accessible for debugging
+    if (config.debug) {
+      window.CallSafeWidget = widget;
+    }
   }
   
   // Wait for DOM to be ready before initializing widget
