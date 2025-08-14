@@ -26,47 +26,6 @@
     return div.innerHTML;
   }
   
-  // Initialize widget when DOM is ready
-  function initializeWidget() {
-    // Get script configuration
-    const script = document.currentScript || document.querySelector('script[src*="embed"]');
-    if (!script) {
-      console.error('CallSafe: Unable to locate script element');
-      return;
-    }
-    
-    const config = {
-      handle: script.getAttribute('data-handle'),
-      sourceId: script.getAttribute('data-source-id') || 'website',
-      buttonText: script.getAttribute('data-button-text') || 'Talk to us instantly',
-      position: script.getAttribute('data-position') || 'bottom-right',
-      theme: script.getAttribute('data-theme') || 'light',
-      language: script.getAttribute('data-language') || 'en',
-      size: script.getAttribute('data-size') || 'medium',
-      offlineMessage: script.getAttribute('data-offline-message') || 'No agents available right now.',
-      debug: script.getAttribute('data-debug') === 'true'
-    };
-    
-    // Validate required configuration
-    if (!config.handle) {
-      console.error('CallSafe: data-handle attribute is required');
-      return;
-    }
-    
-    if (!validateHandle(config.handle)) {
-      console.error('CallSafe: Invalid handle format');
-      return;
-    }
-    
-    if (!validateSourceId(config.sourceId)) {
-      console.error('CallSafe: Invalid source ID format');
-      return;
-    }
-
-    // Create widget instance
-    new CallSafeWidget(config, script);
-  }
-  
   // Main CallSafe Widget Class
   class CallSafeWidget {
     constructor(config, scriptElement) {
@@ -1333,8 +1292,47 @@
         console.error('CallSafe: Failed to dispatch DOM event', error);
       }
     }
+  }
+  
+  // Initialize widget when DOM is ready
+  function initializeWidget() {
+    // Get script configuration
+    const script = document.currentScript || document.querySelector('script[src*="embed"]');
+    if (!script) {
+      console.error('CallSafe: Unable to locate script element');
+      return;
     }
     
+    const config = {
+      handle: script.getAttribute('data-handle'),
+      sourceId: script.getAttribute('data-source-id') || 'website',
+      buttonText: script.getAttribute('data-button-text') || 'Talk to us instantly',
+      position: script.getAttribute('data-position') || 'bottom-right',
+      theme: script.getAttribute('data-theme') || 'light',
+      language: script.getAttribute('data-language') || 'en',
+      size: script.getAttribute('data-size') || 'medium',
+      offlineMessage: script.getAttribute('data-offline-message') || 'No agents available right now.',
+      debug: script.getAttribute('data-debug') === 'true'
+    };
+    
+    // Validate required configuration
+    if (!config.handle) {
+      console.error('CallSafe: data-handle attribute is required');
+      return;
+    }
+    
+    if (!validateHandle(config.handle)) {
+      console.error('CallSafe: Invalid handle format');
+      return;
+    }
+    
+    if (!validateSourceId(config.sourceId)) {
+      console.error('CallSafe: Invalid source ID format');
+      return;
+    }
+
+    // Create widget instance
+    new CallSafeWidget(config, script);
   }
   
   // Wait for DOM to be ready before initializing widget
