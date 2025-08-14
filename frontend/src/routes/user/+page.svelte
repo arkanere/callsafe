@@ -188,7 +188,7 @@
     <!-- Setup Progress -->
 
     <!-- CallSafe Handle Display -->
-    {#if false}
+    
       <div class="bg-white rounded-2xl shadow-xl p-6 mb-8">
         <h2 class="text-xl font-bold text-gray-900 mb-4">Your CallSafe Handle</h2>
         
@@ -261,7 +261,7 @@
         {/if}
         
       </div>
-      {/if}
+      
 
 
       
