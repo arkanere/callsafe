@@ -1335,34 +1335,6 @@
     }
     }
     
-    // Create widget instance
-    const widget = new CallSafeWidget(config, script);
-    
-    // Make widget globally accessible
-    window.CallSafeWidget = widget;
-    
-    // Expose global API for programmatic access
-    if (!window.CallSafe) {
-      window.CallSafe = {
-        version: widget.version,
-        widgets: new Map(),
-        create: function(element, config) {
-          const newWidget = new CallSafeWidget(config, element);
-          this.widgets.set(element, newWidget);
-          return newWidget;
-        },
-        get: function(element) {
-          return this.widgets.get(element);
-        },
-        destroy: function(element) {
-          const widget = this.widgets.get(element);
-          if (widget) {
-            widget.destroy();
-            this.widgets.delete(element);
-          }
-        }
-      };
-    }
   }
   
   // Wait for DOM to be ready before initializing widget
