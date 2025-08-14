@@ -26,39 +26,45 @@
     return div.innerHTML;
   }
   
-  // Get script configuration
-  const script = document.currentScript;
-  if (!script) {
-    console.error('CallSafe: Unable to locate script element');
-    return;
-  }
-  
-  const config = {
-    handle: script.getAttribute('data-handle'),
-    sourceId: script.getAttribute('data-source-id') || 'website',
-    buttonText: script.getAttribute('data-button-text') || 'Talk to us instantly',
-    position: script.getAttribute('data-position') || 'bottom-right',
-    theme: script.getAttribute('data-theme') || 'light',
-    language: script.getAttribute('data-language') || 'en',
-    size: script.getAttribute('data-size') || 'medium',
-    offlineMessage: script.getAttribute('data-offline-message') || 'No agents available right now.',
-    debug: script.getAttribute('data-debug') === 'true'
-  };
-  
-  // Validate required configuration
-  if (!config.handle) {
-    console.error('CallSafe: data-handle attribute is required');
-    return;
-  }
-  
-  if (!validateHandle(config.handle)) {
-    console.error('CallSafe: Invalid handle format');
-    return;
-  }
-  
-  if (!validateSourceId(config.sourceId)) {
-    console.error('CallSafe: Invalid source ID format');
-    return;
+  // Initialize widget when DOM is ready
+  function initializeWidget() {
+    // Get script configuration
+    const script = document.currentScript || document.querySelector('script[src*="embed"]');
+    if (!script) {
+      console.error('CallSafe: Unable to locate script element');
+      return;
+    }
+    
+    const config = {
+      handle: script.getAttribute('data-handle'),
+      sourceId: script.getAttribute('data-source-id') || 'website',
+      buttonText: script.getAttribute('data-button-text') || 'Talk to us instantly',
+      position: script.getAttribute('data-position') || 'bottom-right',
+      theme: script.getAttribute('data-theme') || 'light',
+      language: script.getAttribute('data-language') || 'en',
+      size: script.getAttribute('data-size') || 'medium',
+      offlineMessage: script.getAttribute('data-offline-message') || 'No agents available right now.',
+      debug: script.getAttribute('data-debug') === 'true'
+    };
+    
+    // Validate required configuration
+    if (!config.handle) {
+      console.error('CallSafe: data-handle attribute is required');
+      return;
+    }
+    
+    if (!validateHandle(config.handle)) {
+      console.error('CallSafe: Invalid handle format');
+      return;
+    }
+    
+    if (!validateSourceId(config.sourceId)) {
+      console.error('CallSafe: Invalid source ID format');
+      return;
+    }
+
+    // Create widget instance
+    const widget = new CallSafeWidget(config, script);
   }
   
   // Main CallSafe Widget Class
@@ -75,6 +81,7 @@
       this.currentCall = null;
       this.eventListeners = new Map();
       this.connectionTimeout = null;
+      this.callTimerInterval = null;
       this.isReady = false;
       this.isVisible = true;
       this.isEnabled = true;
@@ -129,11 +136,27 @@
       modal.innerHTML = this.getModalHTML();
       this.widgetElement.appendChild(modal);
       
-      // Insert widget into DOM based on position
+      // Insert widget into DOM based on position with safety checks
       if (this.config.position === 'inline') {
-        this.scriptElement.parentNode.insertBefore(this.widgetElement, this.scriptElement.nextSibling);
+        // Check if script element has a parent node
+        if (this.scriptElement && this.scriptElement.parentNode) {
+          this.scriptElement.parentNode.insertBefore(this.widgetElement, this.scriptElement.nextSibling);
+        } else {
+          // Fallback to body if no parent node
+          document.body.appendChild(this.widgetElement);
+        }
       } else {
-        document.body.appendChild(this.widgetElement);
+        // For fixed positions, always append to body
+        if (document.body) {
+          document.body.appendChild(this.widgetElement);
+        } else {
+          // Wait for body if not ready
+          setTimeout(() => {
+            if (document.body) {
+              document.body.appendChild(this.widgetElement);
+            }
+          }, 100);
+        }
       }
       
       // Apply styles
@@ -1160,7 +1183,11 @@
       message.textContent = 'Your browser does not support calling features. Please use a modern browser.';
       
       if (this.config.position === 'inline') {
-        this.scriptElement.parentNode.insertBefore(message, this.scriptElement.nextSibling);
+        if (this.scriptElement && this.scriptElement.parentNode) {
+          this.scriptElement.parentNode.insertBefore(message, this.scriptElement.nextSibling);
+        } else {
+          document.body.appendChild(message);
+        }
       } else {
         document.body.appendChild(message);
       }
@@ -1306,40 +1333,49 @@
         console.error('CallSafe: Failed to dispatch DOM event', error);
       }
     }
-  }
-  
-  // Initialize widget
-  try {
-    const widget = new CallSafeWidget(config, script);
-    
-    // Make widget globally accessible
-    window.CallSafeWidget = widget;
-    
-    // Expose global API for programmatic access
-    if (!window.CallSafe) {
-      window.CallSafe = {
-        version: widget.version,
-        widgets: new Map(),
-        create: function(element, config) {
-          const newWidget = new CallSafeWidget(config, element);
-          this.widgets.set(element, newWidget);
-          return newWidget;
-        },
-        get: function(element) {
-          return this.widgets.get(element);
-        },
-        destroy: function(element) {
-          const widget = this.widgets.get(element);
-          if (widget) {
-            widget.destroy();
-            this.widgets.delete(element);
-          }
-        }
-      };
     }
     
-  } catch (error) {
-    console.error('CallSafe: Widget initialization failed', error);
+    // Initialize widget
+    try {
+      const widget = new CallSafeWidget(config, script);
+      
+      // Make widget globally accessible
+      window.CallSafeWidget = widget;
+      
+      // Expose global API for programmatic access
+      if (!window.CallSafe) {
+        window.CallSafe = {
+          version: widget.version,
+          widgets: new Map(),
+          create: function(element, config) {
+            const newWidget = new CallSafeWidget(config, element);
+            this.widgets.set(element, newWidget);
+            return newWidget;
+          },
+          get: function(element) {
+            return this.widgets.get(element);
+          },
+          destroy: function(element) {
+            const widget = this.widgets.get(element);
+            if (widget) {
+              widget.destroy();
+              this.widgets.delete(element);
+            }
+          }
+        };
+      }
+      
+    } catch (error) {
+      console.error('CallSafe: Widget initialization failed', error);
+    }
+  }
+  
+  // Wait for DOM to be ready before initializing widget
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initializeWidget);
+  } else {
+    // DOM is already ready
+    initializeWidget();
   }
   
 })();
