@@ -687,7 +687,7 @@
         await this.loadSocketIO();
       }
       
-      this.connectSocket();
+      await this.connectSocket();
     }
     
     loadSocketIO() {
@@ -703,6 +703,12 @@
     async connectSocket() {
       return new Promise((resolve, reject) => {
         try {
+          // Ensure Socket.IO is loaded
+          if (!window.io) {
+            reject(new Error('Socket.IO library not loaded'));
+            return;
+          }
+
           // Get signaling server URL with environment variable support
           const signalingServerUrl = this.getSignalingServerUrl();
           
@@ -863,8 +869,8 @@
         this.showModal();
         this.updateStatusMessage('Finding agent...');
         
-        // Connect to signaling server
-        await this.connectSocket();
+        // Load Socket.IO and connect to signaling server
+        await this.initializeSocket();
         
         // Initialize WebRTC
         this.webrtcManager = new WebRTCManager(this.socket);
