@@ -214,27 +214,25 @@
     }
   </script>
   
-  <div class="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
-    <!-- Navigation Bar -->
-    <nav class="bg-white shadow-sm border-b border-gray-200">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="flex justify-between items-center py-4">
+  <div class="min-h-screen bg-white">
+    <!-- Navigation -->
+    <nav class="border-b border-gray-100">
+      <div class="max-w-6xl mx-auto px-6 py-6">
+        <div class="flex justify-between items-center">
           <!-- Left side - Logo/Brand -->
+          <h1 class="text-2xl font-light text-gray-900 tracking-wide">CallSafe</h1>
+          
+          <!-- Right side - Navigation Links -->
           <div class="flex items-center space-x-6">
-            <h1 class="text-2xl font-bold text-gray-900">CallSafe</h1>
             <a 
               href="/pricing" 
-              class="text-gray-700 hover:text-blue-600 font-medium transition-colors duration-200"
+              class="text-gray-700 hover:text-gray-900 font-medium tracking-wide transition-colors duration-300"
             >
               Pricing
             </a>
-          </div>
-          
-          <!-- Right side - Login Button -->
-          <div class="flex items-center">
             <button
               on:click={openLoginModal}
-              class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded-lg transition-colors duration-200"
+              class="text-gray-900 hover:text-gray-600 font-medium tracking-wide transition-colors duration-300"
             >
               Login
             </button>
@@ -244,206 +242,158 @@
     </nav>
   
     <!-- Hero Section -->
-    <section class="py-20 px-4">
-      <div class="max-w-6xl mx-auto text-center">
-        <h1 class="text-5xl md:text-6xl font-bold text-gray-900 mb-6">
-          Customer to Business Anonymous Call Solution
-        </h1>
-        <p class="text-xl md:text-2xl text-gray-600 mb-8 max-w-3xl mx-auto">
-          CallSafe eliminates phone number barriers that cost you customers. Let prospects call you anonymously through their browser.
-        </p>
-        <div class="flex flex-col sm:flex-row gap-4 justify-center items-center">
-          <button 
-            on:click={openLoginModal}
-            class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-4 px-8 rounded-xl text-lg transition-colors duration-200"
-          >
-            Start Free Trial
-          </button>
-        </div>
-      </div>
-    </section>
-  
-    <!-- Problem Section -->
-    <section class="py-16 px-4 bg-white">
-      <div class="max-w-6xl mx-auto">
-        <div class="text-center mb-12">
-          <h2 class="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
-            Are You Losing Customers to Phone Number Requirements?
-          </h2>
-          <p class="text-lg text-gray-600 max-w-3xl mx-auto">
-            Research shows that requiring phone numbers causes massive lead drop-off and privacy concerns
-          </p>
-        </div>
-        
-      
-      </div>
-    </section>
-  
-    <!-- Solution Section -->
-    <section class="py-16 px-4 bg-gradient-to-r from-blue-50 to-indigo-50">
-      <div class="max-w-6xl mx-auto">
-        <div class="text-center mb-12">
-          <h2 class="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
-            The CallSafe Solution
-          </h2>
-          <p class="text-lg text-gray-600 max-w-3xl mx-auto">
-            Enable anonymous browser-to-business calling that protects customer privacy while increasing your conversions
-          </p>
-        </div>
-  
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
-          <div>
-            <h3 class="text-2xl font-bold text-gray-900 mb-6">How It Works</h3>
-            <div class="space-y-4">
-              <div class="flex items-start gap-4">
-                <div class="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold">1</div>
-                <div>
-                  <h4 class="font-semibold text-gray-900">Customer clicks your CallSafe link</h4>
-                  <p class="text-gray-600">No phone number required, works on any device</p>
-                </div>
-              </div>
-              <div class="flex items-start gap-4">
-                <div class="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold">2</div>
-                <div>
-                  <h4 class="font-semibold text-gray-900">Instant browser-based connection</h4>
-                  <p class="text-gray-600">Real-time call routing to your sales team</p>
-                </div>
-              </div>
-              <div class="flex items-start gap-4">
-                <div class="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold">3</div>
-                <div>
-                  <h4 class="font-semibold text-gray-900">Convert more leads</h4>
-                  <p class="text-gray-600">Complete anonymity increases customer confidence</p>
-                </div>
-              </div>
-            </div>
-          </div>
-          
-          <div class="bg-white rounded-2xl p-8 shadow-lg">
-            <h3 class="text-xl font-bold text-gray-900 mb-4">Perfect For:</h3>
-            <ul class="space-y-3">
-              <li class="flex items-center gap-3">
-                <svg class="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-                  <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
-                </svg>
-                <span class="text-gray-700">Insurance companies</span>
-              </li>
-              <li class="flex items-center gap-3">
-                <svg class="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-                  <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
-                </svg>
-                <span class="text-gray-700">Financial advisors</span>
-              </li>
-              <li class="flex items-center gap-3">
-                <svg class="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-                  <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
-                </svg>
-                <span class="text-gray-700">Mental health services</span>
-              </li>
-              <li class="flex items-center gap-3">
-                <svg class="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-                  <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
-                </svg>
-                <span class="text-gray-700">Real estate agents</span>
-              </li>
-              <li class="flex items-center gap-3">
-                <svg class="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-                  <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
-                </svg>
-                <span class="text-gray-700">Any privacy-sensitive business</span>
-              </li>
-            </ul>
-          </div>
-        </div>
-      </div>
-    </section>
-  
-    <!-- Benefits Section -->
-    <section class="py-16 px-4 bg-white">
-      <div class="max-w-6xl mx-auto">
-        <div class="text-center mb-12">
-          <h2 class="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
-            Why Businesses Should Choose CallSafe
-          </h2>
-        </div>
-        
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-          <div class="text-center p-6">
-            <div class="w-16 h-16 bg-green-100 rounded-full mx-auto mb-4 flex items-center justify-center">
-              <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/>
-              </svg>
-            </div>
-            <h3 class="text-lg font-semibold text-gray-900 mb-2">Increased Conversions</h3>
-            <p class="text-gray-600">More customers call when they don't need to share personal numbers</p>
-          </div>
-          
-          <div class="text-center p-6">
-            <div class="w-16 h-16 bg-blue-100 rounded-full mx-auto mb-4 flex items-center justify-center">
-              <svg class="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
-              </svg>
-            </div>
-            <h3 class="text-lg font-semibold text-gray-900 mb-2">Enhanced Privacy</h3>
-            <p class="text-gray-600">Complete anonymity builds trust with privacy-conscious customers</p>
-          </div>
-          
-          <div class="text-center p-6">
-            <div class="w-16 h-16 bg-purple-100 rounded-full mx-auto mb-4 flex items-center justify-center">
-              <svg class="w-8 h-8 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
-              </svg>
-            </div>
-            <h3 class="text-lg font-semibold text-gray-900 mb-2">Instant Setup</h3>
-            <p class="text-gray-600">No apps or downloads required for customers - works in any browser</p>
-          </div>
-          
-          <div class="text-center p-6">
-            <div class="w-16 h-16 bg-orange-100 rounded-full mx-auto mb-4 flex items-center justify-center">
-              <svg class="w-8 h-8 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
-              </svg>
-            </div>
-            <h3 class="text-lg font-semibold text-gray-900 mb-2">Compliance Ready</h3>
-            <p class="text-gray-600">Meets new TCPA regulations and privacy laws automatically</p>
-          </div>
-        </div>
-      </div>
-    </section>
-  
-    <!-- CTA Section -->
-    <section class="py-16 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white">
+    <section class="pt-24 pb-32 px-6">
       <div class="max-w-4xl mx-auto text-center">
-        <h2 class="text-3xl md:text-4xl font-bold mb-4">
-          Ready to Stop Losing Customers to Phone Number Barriers?
-        </h2>
-        <p class="text-xl mb-8 opacity-90">
-          Start your free trial today and see the difference anonymous calling makes
+        <h1 class="text-6xl md:text-7xl font-light text-gray-900 mb-8 leading-tight tracking-tight">
+          Your Wealthiest Prospects<br/>
+          <span class="font-medium">Won't Share Their Number</span>
+        </h1>
+        <p class="text-xl text-gray-600 mb-12 font-light leading-relaxed max-w-2xl mx-auto">
+          CallSafe enables ultra-high-net-worth clients to contact your business completely anonymously. No phone numbers exchanged. No privacy compromised.
         </p>
-        <div class="flex flex-col sm:flex-row gap-4 justify-center items-center">
-          <button 
-            on:click={openLoginModal}
-            class="bg-white text-blue-600 hover:bg-gray-100 font-semibold py-4 px-8 rounded-xl text-lg transition-colors duration-200"
-          >
-            Start Free Trial
-          </button>
+        <button 
+          on:click={openLoginModal}
+          class="bg-gray-900 text-white px-12 py-4 text-lg font-medium tracking-wide hover:bg-gray-800 transition-colors duration-300"
+        >
+          Get Started
+        </button>
+      </div>
+    </section>
+  
+    <!-- Value Proposition -->
+    <section class="py-24 px-6 bg-gray-50">
+      <div class="max-w-5xl mx-auto">
+        <div class="text-center mb-20">
+          <h2 class="text-4xl font-light text-gray-900 mb-6">
+            The Privacy Premium
+          </h2>
+          <p class="text-lg text-gray-600 font-light max-w-3xl mx-auto leading-relaxed">
+            Wealthy individuals guard their contact information more carefully than their assets. Traditional phone requirements create an immediate barrier to your highest-value prospects.
+          </p>
         </div>
+        
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-16">
+          <div class="text-center">
+            <div class="text-3xl font-light text-gray-900 mb-4">Anonymous Contact</div>
+            <p class="text-gray-600 font-light leading-relaxed">
+              Clients call directly from your website without revealing any personal information
+            </p>
+          </div>
+          
+          <div class="text-center">
+            <div class="text-3xl font-light text-gray-900 mb-4">Instant Connection</div>
+            <p class="text-gray-600 font-light leading-relaxed">
+              High-quality browser calls connect in seconds with no apps or downloads required
+            </p>
+          </div>
+          
+          <div class="text-center">
+            <div class="text-3xl font-light text-gray-900 mb-4">Complete Discretion</div>
+            <p class="text-gray-600 font-light leading-relaxed">
+              No call logs, no follow-up capability unless the client chooses to share contact details
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+  
+    <!-- Target Industries -->
+    <section class="py-24 px-6">
+      <div class="max-w-4xl mx-auto text-center">
+        <h2 class="text-4xl font-light text-gray-900 mb-16">
+          Trusted by Premium Service Providers
+        </h2>
+        
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-12">
+          <div class="text-center">
+            <div class="text-lg font-medium text-gray-900 mb-2">Luxury Real Estate</div>
+            <p class="text-sm text-gray-600 font-light">$10M+ Properties</p>
+          </div>
+          
+          <div class="text-center">
+            <div class="text-lg font-medium text-gray-900 mb-2">Wealth Management</div>
+            <p class="text-sm text-gray-600 font-light">Private Banking</p>
+          </div>
+          
+          <div class="text-center">
+            <div class="text-lg font-medium text-gray-900 mb-2">Legal Services</div>
+            <p class="text-sm text-gray-600 font-light">High-Profile Cases</p>
+          </div>
+          
+          <div class="text-center">
+            <div class="text-lg font-medium text-gray-900 mb-2">Luxury Services</div>
+            <p class="text-sm text-gray-600 font-light">Concierge & Private</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  
+    <!-- Simple Setup -->
+    <section class="py-24 px-6 bg-gray-50">
+      <div class="max-w-3xl mx-auto text-center">
+        <h2 class="text-4xl font-light text-gray-900 mb-12">
+          Implementation in Minutes
+        </h2>
+        
+        <div class="space-y-8 max-w-2xl mx-auto pl-16">
+          <div class="flex items-center space-x-8">
+            <div class="w-8 h-8 bg-gray-900 text-white rounded-full flex items-center justify-center text-sm font-medium ml-24">1</div>
+            <div class="text-left">
+              <div class="text-lg font-medium text-gray-900">Add one line of code to your website</div>
+              <div class="text-gray-600 font-light">Customizable call button appears instantly</div>
+            </div>
+          </div>
+          
+          <div class="flex items-center space-x-8">
+            <div class="w-8 h-8 bg-gray-900 text-white rounded-full flex items-center justify-center text-sm font-medium ml-24">2</div>
+            <div class="text-left">
+              <div class="text-lg font-medium text-gray-900">Receive calls on any device</div>
+              <div class="text-gray-600 font-light">Web dashboard or mobile app notifications</div>
+            </div>
+          </div>
+          
+          <div class="flex items-center space-x-8">
+            <div class="w-8 h-8 bg-gray-900 text-white rounded-full flex items-center justify-center text-sm font-medium ml-24">3</div>
+            <div class="text-left">
+              <div class="text-lg font-medium text-gray-900">Connect with premium prospects</div>
+              <div class="text-gray-600 font-light">Anonymous calls, verified interest</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  
+    <!-- CTA -->
+    <section class="py-24 px-6">
+      <div class="max-w-3xl mx-auto text-center">
+        <h2 class="text-4xl font-light text-gray-900 mb-8">
+          Stop Missing High-Value Opportunities
+        </h2>
+        <p class="text-lg text-gray-600 font-light mb-12 leading-relaxed">
+          Your next million-dollar client is waiting to call you. They just won't share their phone number to do it.
+        </p>
+        <button 
+          on:click={openLoginModal}
+          class="bg-gray-900 text-white px-12 py-4 text-lg font-medium tracking-wide hover:bg-gray-800 transition-colors duration-300"
+        >
+          Start Your Free Trial
+        </button>
       </div>
     </section>
 
     <!-- Footer -->
-    <footer class="bg-gray-50 border-t border-gray-200 py-8">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="text-center space-x-6">
+    <footer class="border-t border-gray-100 py-12">
+      <div class="max-w-6xl mx-auto px-6">
+        <div class="text-center space-x-8">
           <a 
             href="/privacy-policy" 
-            class="text-gray-600 hover:text-blue-600 font-medium transition-colors duration-200"
+            class="text-gray-600 hover:text-gray-900 font-light transition-colors duration-300"
           >
             Privacy Policy
           </a>
           <a 
             href="/terms-of-service" 
-            class="text-gray-600 hover:text-blue-600 font-medium transition-colors duration-200"
+            class="text-gray-600 hover:text-gray-900 font-light transition-colors duration-300"
           >
             Terms of Service
           </a>
@@ -452,56 +402,56 @@
     </footer>
   </div>
   
-  <!-- Enhanced Login/Signup Modal -->
+  <!-- Login/Signup Modal -->
   {#if showLoginModal}
     <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50" on:click={closeLoginModal}>
-      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8" on:click|stopPropagation>
-        <div class="text-center mb-6">
-          <h2 class="text-2xl font-bold text-gray-900 mb-2">
-            {isSignUpMode ? 'Create Your Account' : 'Login to CallSafe'}
+      <div class="bg-white rounded-lg shadow-2xl w-full max-w-md p-8" on:click|stopPropagation>
+        <div class="text-center mb-8">
+          <h2 class="text-2xl font-light text-gray-900 mb-2">
+            {isSignUpMode ? 'Create Account' : 'Login'}
           </h2>
-          <p class="text-gray-600">
-            {isSignUpMode ? 'Join thousands of businesses increasing their conversions' : 'Enter your credentials to access your account'}
+          <p class="text-gray-600 font-light">
+            {isSignUpMode ? 'Join premium service providers using CallSafe' : 'Access your CallSafe account'}
           </p>
         </div>
         
         <form on:submit|preventDefault={handleSubmit}>
           {#if isSignUpMode}
-            <div class="mb-4">
+            <div class="mb-6">
               <label for="fullName" class="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
               <input
                 type="text"
                 id="fullName"
                 bind:value={fullName}
                 on:keydown={handleKeydown}
-                class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                class="w-full px-4 py-3 border border-gray-200 rounded focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent"
                 placeholder="Enter your full name"
                 required
               />
             </div>
           {/if}
           
-          <div class="mb-4">
+          <div class="mb-6">
             <label for="email" class="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
             <input
               type="email"
               id="email"
               bind:value={email}
               on:keydown={handleKeydown}
-              class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              class="w-full px-4 py-3 border border-gray-200 rounded focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent"
               placeholder="Enter your email"
               required
             />
           </div>
           
-          <div class="mb-4">
+          <div class="mb-6">
             <label for="password" class="block text-sm font-medium text-gray-700 mb-2">Password</label>
             <input
               type="password"
               id="password"
               bind:value={password}
               on:keydown={handleKeydown}
-              class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              class="w-full px-4 py-3 border border-gray-200 rounded focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent"
               placeholder={isSignUpMode ? 'Create a password (min 6 characters)' : 'Enter your password'}
               required
             />
@@ -515,33 +465,31 @@
                 id="confirmPassword"
                 bind:value={confirmPassword}
                 on:keydown={handleKeydown}
-                class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                class="w-full px-4 py-3 border border-gray-200 rounded focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent"
                 placeholder="Confirm your password"
                 required
               />
             </div>
-          {:else}
-            <div class="mb-6"></div>
           {/if}
           
           {#if loginError}
-            <div class="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+            <div class="mb-6 p-3 bg-red-50 border border-red-200 rounded">
               <p class="text-sm text-red-700">{loginError}</p>
             </div>
           {/if}
           
-          <div class="flex gap-3 mb-4">
+          <div class="flex gap-3 mb-6">
             <button
               type="button"
               on:click={closeLoginModal}
-              class="flex-1 px-6 py-3 border border-gray-300 text-gray-700 rounded-xl font-semibold hover:bg-gray-50 transition-colors duration-200"
+              class="flex-1 px-6 py-3 border border-gray-200 text-gray-700 rounded font-medium hover:bg-gray-50 transition-colors duration-300"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={isLoading}
-              class="flex-1 px-6 py-3 bg-blue-600 text-white rounded-xl font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
+              class="flex-1 px-6 py-3 bg-gray-900 text-white rounded font-medium hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-300"
             >
               {#if isLoading}
                 <div class="flex items-center justify-center">
@@ -558,12 +506,12 @@
           </div>
           
           <div class="text-center">
-            <p class="text-sm text-gray-600">
+            <p class="text-sm text-gray-600 font-light">
               {isSignUpMode ? 'Already have an account?' : "Don't have an account?"}
               <button
                 type="button"
                 on:click={toggleMode}
-                class="text-blue-600 hover:text-blue-700 font-semibold ml-1"
+                class="text-gray-900 hover:text-gray-700 font-medium ml-1"
               >
                 {isSignUpMode ? 'Sign In' : 'Sign Up'}
               </button>
