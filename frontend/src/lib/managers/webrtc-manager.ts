@@ -11,6 +11,35 @@ export class WebRTCManager {
     console.log('[WEBRTC MANAGER] constructor(): Socket assigned');
   }
 
+  private getIceServers(): RTCIceServer[] {
+    const iceServers: RTCIceServer[] = [];
+
+    // Add STUN servers from environment variables or use defaults
+    const stunServer1 = import.meta.env.VITE_STUN_SERVER_1 || 'stun:stun.l.google.com:19302';
+    const stunServer2 = import.meta.env.VITE_STUN_SERVER_2 || 'stun:stun1.l.google.com:19302';
+    
+    iceServers.push({ urls: stunServer1 });
+    iceServers.push({ urls: stunServer2 });
+
+    // Add TURN server from environment variables if available
+    const turnServerUrl = import.meta.env.VITE_TURN_SERVER_URL;
+    const turnUsername = import.meta.env.VITE_TURN_USERNAME;
+    const turnCredential = import.meta.env.VITE_TURN_CREDENTIAL;
+
+    if (turnServerUrl && turnUsername && turnCredential) {
+      iceServers.push({
+        urls: turnServerUrl,
+        username: turnUsername,
+        credential: turnCredential
+      });
+      console.log('[WEBRTC MANAGER] getIceServers(): TURN server configured');
+    } else {
+      console.log('[WEBRTC MANAGER] getIceServers(): TURN server not configured - using STUN only');
+    }
+
+    return iceServers;
+  }
+
   async initialize(callAttemptId: string) {
     console.log('[WEBRTC MANAGER] initialize(): Initializing WebRTC for call:', callAttemptId);
     
@@ -27,12 +56,14 @@ export class WebRTCManager {
     console.log('[WEBRTC MANAGER] initialize(): User media obtained successfully');
 
     console.log('[WEBRTC MANAGER] initialize(): Creating peer connection');
-    // Create peer connection
+    // Create peer connection with dynamic ICE servers
+    const iceServers = this.getIceServers();
+    console.log('[WEBRTC MANAGER] initialize(): Using ICE servers:', iceServers);
+    
     this.peerConnection = new RTCPeerConnection({
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' }
-      ]
+      iceServers: iceServers,
+      iceTransportPolicy: 'all', // Allow both STUN and TURN, with STUN preferred
+      iceCandidatePoolSize: 10   // Pre-gather ICE candidates for faster connection
     });
     console.log('[WEBRTC MANAGER] initialize(): Peer connection created');
 

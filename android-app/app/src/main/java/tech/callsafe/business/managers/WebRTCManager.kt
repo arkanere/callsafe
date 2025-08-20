@@ -6,6 +6,7 @@ import android.media.AudioManager
 import androidx.core.content.ContextCompat
 import org.json.JSONObject
 import org.webrtc.*
+import tech.callsafe.business.BuildConfig
 
 class WebRTCManager(private val context: Context) {
     private var peerConnection: PeerConnection? = null
@@ -23,6 +24,40 @@ class WebRTCManager(private val context: Context) {
         fun onRemoteStreamReceived(stream: MediaStream)
     }
     
+    private fun getIceServers(): List<PeerConnection.IceServer> {
+        val iceServers = mutableListOf<PeerConnection.IceServer>()
+        
+        // Add STUN servers from BuildConfig
+        iceServers.add(
+            PeerConnection.IceServer.builder(BuildConfig.STUN_SERVER_1).createIceServer()
+        )
+        iceServers.add(
+            PeerConnection.IceServer.builder(BuildConfig.STUN_SERVER_2).createIceServer()
+        )
+        
+        // Add TURN server from BuildConfig if available (used as fallback)
+        try {
+            if (BuildConfig.TURN_SERVER_URL.isNotEmpty() && 
+                BuildConfig.TURN_USERNAME.isNotEmpty() && 
+                BuildConfig.TURN_CREDENTIAL.isNotEmpty()) {
+                
+                iceServers.add(
+                    PeerConnection.IceServer.builder(BuildConfig.TURN_SERVER_URL)
+                        .setUsername(BuildConfig.TURN_USERNAME)
+                        .setPassword(BuildConfig.TURN_CREDENTIAL)
+                        .createIceServer()
+                )
+                android.util.Log.d("WebRTCManager", "[ICE] TURN server configured as fallback")
+            } else {
+                android.util.Log.d("WebRTCManager", "[ICE] TURN server not configured - using STUN only")
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("WebRTCManager", "[ICE] Failed to configure TURN server: ${e.message}")
+        }
+        
+        return iceServers
+    }
+
     fun initialize(listener: WebRTCListener) {
         this.listener = listener
         
@@ -43,15 +78,17 @@ class WebRTCManager(private val context: Context) {
             .setOptions(options)
             .createPeerConnectionFactory()
         
-        // Create peer connection with Unified Plan
-        val rtcConfig = PeerConnection.RTCConfiguration(
-            listOf(
-                PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
-                PeerConnection.IceServer.builder("stun:stun1.l.google.com:19302").createIceServer()
-            )
-        ).apply {
+        // Create peer connection with dynamic ICE servers and proper fallback configuration
+        val iceServers = getIceServers()
+        android.util.Log.d("WebRTCManager", "[ICE] Using ${iceServers.size} ICE servers")
+        
+        val rtcConfig = PeerConnection.RTCConfiguration(iceServers).apply {
             // Explicitly enable Unified Plan for modern WebRTC compatibility
             sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
+            // Allow both STUN and TURN, with STUN preferred (TURN as fallback)
+            iceTransportsType = PeerConnection.IceTransportsType.ALL
+            // Pre-gather ICE candidates for faster connection
+            iceCandidatePoolSize = 10
         }
         
         peerConnection = factory?.createPeerConnection(rtcConfig, object : PeerConnection.Observer {

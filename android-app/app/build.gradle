@@ -27,6 +27,13 @@ android {
             
             buildConfigField "String", "SIGNALING_SERVER_URL", "\"wss://tunnel.callsafe.tech\""
             buildConfigField "String", "API_BASE_URL", "\"https://callsafe.tech\""
+            
+            // WebRTC ICE Servers
+            buildConfigField "String", "STUN_SERVER_1", "\"stun:stun.l.google.com:19302\""
+            buildConfigField "String", "STUN_SERVER_2", "\"stun:stun1.l.google.com:19302\""
+            buildConfigField "String", "TURN_SERVER_URL", "\"turn:a.relay.metered.ca:80\""
+            buildConfigField "String", "TURN_USERNAME", "\"***REDACTED***\""
+            buildConfigField "String", "TURN_CREDENTIAL", "\"***REDACTED***\""
         }
         
         debug {
@@ -34,6 +41,13 @@ android {
             
             buildConfigField "String", "SIGNALING_SERVER_URL", "\"wss://tunnel.callsafe.tech\""
             buildConfigField "String", "API_BASE_URL", "\"https://callsafe.tech\""
+            
+            // WebRTC ICE Servers
+            buildConfigField "String", "STUN_SERVER_1", "\"stun:stun.l.google.com:19302\""
+            buildConfigField "String", "STUN_SERVER_2", "\"stun:stun1.l.google.com:19302\""
+            buildConfigField "String", "TURN_SERVER_URL", "\"turn:a.relay.metered.ca:80\""
+            buildConfigField "String", "TURN_USERNAME", "\"***REDACTED***\""
+            buildConfigField "String", "TURN_CREDENTIAL", "\"***REDACTED***\""
         }
     }
     

@@ -8,7 +8,14 @@
     CLEANUP_DELAY: 5000,
     AUTO_RESET_DELAY: 3000,
     CONNECTION_CHECK_INTERVAL: 1000,
-    SOCKET_IO_CDN: 'https://cdn.socket.io/4.7.4/socket.io.min.js'
+    SOCKET_IO_CDN: 'https://cdn.socket.io/4.7.4/socket.io.min.js',
+    
+    // WebRTC ICE Servers
+    STUN_SERVER_1: 'stun:stun.l.google.com:19302',
+    STUN_SERVER_2: 'stun:stun1.l.google.com:19302',
+    TURN_SERVER_URL: 'turn:a.relay.metered.ca:80',
+    TURN_USERNAME: '***REDACTED***',
+    TURN_CREDENTIAL: '***REDACTED***'
   };
 
   // Security and validation utilities
@@ -48,16 +55,40 @@
       this.connectionCheckInterval = null;
     }
 
+    getIceServers() {
+      const iceServers = [];
+
+      // Add STUN servers
+      iceServers.push({ urls: CONFIG.STUN_SERVER_1 });
+      iceServers.push({ urls: CONFIG.STUN_SERVER_2 });
+
+      // Add TURN server as fallback if configured
+      if (CONFIG.TURN_SERVER_URL && CONFIG.TURN_USERNAME && CONFIG.TURN_CREDENTIAL) {
+        iceServers.push({
+          urls: CONFIG.TURN_SERVER_URL,
+          username: CONFIG.TURN_USERNAME,
+          credential: CONFIG.TURN_CREDENTIAL
+        });
+        console.log('CallSafe: TURN server configured as fallback');
+      } else {
+        console.log('CallSafe: TURN server not configured - using STUN only');
+      }
+
+      return iceServers;
+    }
+
     async initialize(callId, localStream) {
       this.callId = callId;
       this.localStream = localStream;
       
-      // Create peer connection
+      // Create peer connection with dynamic ICE servers
+      const iceServers = this.getIceServers();
+      console.log('CallSafe: Using ICE servers:', iceServers.length);
+      
       this.peerConnection = new RTCPeerConnection({
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' }
-        ]
+        iceServers: iceServers,
+        iceTransportPolicy: 'all', // Allow both STUN and TURN, with STUN preferred
+        iceCandidatePoolSize: 10   // Pre-gather ICE candidates for faster connection
       });
 
       // Add local stream
