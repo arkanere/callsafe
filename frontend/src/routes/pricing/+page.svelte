@@ -7,15 +7,17 @@
     {
       id: 'professional',
       name: 'Professional',
-      price: '$499',
-      period: 'per month',
+      price: '$0',
+      originalPrice: '$499',
+      period: 'first 2 months',
       calls: 'Up to 100 calls',
       features: [
         'Up to 100 anonymous calls per month',
         'Web dashboard access',
         'Call analytics included',
         'Standard support',
-        'Perfect for boutique luxury services'
+        'Perfect for professional service businesses',
+        'Introductory price - $499/month after 2 months'
       ],
       buttonText: 'Start Professional',
       popular: false
@@ -31,7 +33,7 @@
         'Web dashboard access',
         'Call analytics included',
         'Priority support',
-        'Perfect for luxury real estate & wealth management'
+        'Perfect for businesses with privacy-conscious users'
       ],
       buttonText: 'Start Premium',
       popular: true
@@ -47,7 +49,7 @@
         'Custom integrations available',
         'Dedicated account management',
         'SLA guarantees',
-        'Perfect for private banks & luxury brands'
+        'Perfect for large organizations and enterprises'
       ],
       buttonText: 'Contact Sales',
       popular: false
@@ -57,7 +59,7 @@
 
 <svelte:head>
   <title>Pricing - CallSafe</title>
-  <meta name="description" content="Premium anonymous calling solutions for luxury businesses. Professional plans starting at $499/month.">
+  <meta name="description" content="Privacy-focused browser-based calling solutions for businesses. Professional plans starting at $499/month.">
 </svelte:head>
 
 <!-- Navigation Bar -->
@@ -78,8 +80,8 @@
 <div class="min-h-screen bg-white">
   <div class="pricing-container">
     <div class="pricing-header">
-      <h1>Premium Anonymous Calling Solutions</h1>
-      <p>Designed for luxury businesses serving high-net-worth clients who demand complete discretion.</p>
+      <h1>Privacy-Focused Calling Solutions</h1>
+      <p>Browser-based anonymous calling that removes phone number barriers and boosts user engagement.</p>
     </div>
 
     <div class="pricing-grid">
@@ -92,6 +94,11 @@
           <div class="plan-header">
             <h3>{plan.name}</h3>
             <div class="price">
+              {#if plan.originalPrice}
+                <div class="original-price">
+                  <span class="struck-through">{plan.originalPrice}</span>
+                </div>
+              {/if}
               <span class="amount">{plan.price}</span>
               <span class="period">{plan.period}</span>
             </div>
@@ -270,6 +277,18 @@
   .period {
     font-size: 1rem;
     color: #6b7280;
+    font-weight: 300;
+  }
+
+  .original-price {
+    text-align: center;
+    margin-bottom: 0.5rem;
+  }
+
+  .struck-through {
+    font-size: 1.5rem;
+    color: #9ca3af;
+    text-decoration: line-through;
     font-weight: 300;
   }
 

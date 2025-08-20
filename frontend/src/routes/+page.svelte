@@ -245,11 +245,11 @@
     <section class="pt-24 pb-32 px-6">
       <div class="max-w-4xl mx-auto text-center">
         <h1 class="text-6xl md:text-7xl font-light text-gray-900 mb-8 leading-tight tracking-tight">
-          Your Wealthiest Prospects<br/>
-          <span class="font-medium">Won't Share Their Number</span>
+          Let privacy conscious users visiting your website<br/>
+          <span class="font-medium">reach you instantly. No phone number needed.</span>
         </h1>
         <p class="text-xl text-gray-600 mb-12 font-light leading-relaxed max-w-2xl mx-auto">
-          CallSafe enables ultra-high-net-worth clients to contact your business completely anonymously. No phone numbers exchanged. No privacy compromised.
+          Privacy-focused browser-based calling solution that removes phone number barriers and boosts user engagement.
         </p>
         <button 
           on:click={openLoginModal}
@@ -265,64 +265,64 @@
       <div class="max-w-5xl mx-auto">
         <div class="text-center mb-20">
           <h2 class="text-4xl font-light text-gray-900 mb-6">
-            The Privacy Premium
+            What CallSafe Does
           </h2>
           <p class="text-lg text-gray-600 font-light max-w-3xl mx-auto leading-relaxed">
-            Wealthy individuals guard their contact information more carefully than their assets. Traditional phone requirements create an immediate barrier to your highest-value prospects.
+            CallSafe lets website visitors call you directly from their browser without sharing their phone number. Users click a button on your website and connect instantly via secure browser calling.
           </p>
         </div>
         
         <div class="grid grid-cols-1 md:grid-cols-3 gap-16">
           <div class="text-center">
-            <div class="text-3xl font-light text-gray-900 mb-4">Anonymous Contact</div>
+            <div class="text-3xl font-light text-gray-900 mb-4">Anonymous Calling</div>
             <p class="text-gray-600 font-light leading-relaxed">
-              Clients call directly from your website without revealing any personal information
+              Users connect without revealing phone numbers or personal information
             </p>
           </div>
           
           <div class="text-center">
-            <div class="text-3xl font-light text-gray-900 mb-4">Instant Connection</div>
+            <div class="text-3xl font-light text-gray-900 mb-4">Browser-Based Technology</div>
             <p class="text-gray-600 font-light leading-relaxed">
-              High-quality browser calls connect in seconds with no apps or downloads required
+              Works directly in web browsers using secure WebRTC connections
             </p>
           </div>
           
           <div class="text-center">
-            <div class="text-3xl font-light text-gray-900 mb-4">Complete Discretion</div>
+            <div class="text-3xl font-light text-gray-900 mb-4">Designed with Privacy in Mind</div>
             <p class="text-gray-600 font-light leading-relaxed">
-              No call logs, no follow-up capability unless the client chooses to share contact details
+              No data collection, no call recordings, complete anonymity for users
             </p>
           </div>
         </div>
       </div>
     </section>
   
-    <!-- Target Industries -->
+    <!-- How It Works -->
     <section class="py-24 px-6">
       <div class="max-w-4xl mx-auto text-center">
         <h2 class="text-4xl font-light text-gray-900 mb-16">
-          Trusted by Premium Service Providers
+          How It Works
         </h2>
         
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-12">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-16">
           <div class="text-center">
-            <div class="text-lg font-medium text-gray-900 mb-2">Luxury Real Estate</div>
-            <p class="text-sm text-gray-600 font-light">$10M+ Properties</p>
+            <div class="text-lg font-medium text-gray-900 mb-4">For Users</div>
+            <div class="text-left space-y-3 max-w-xs mx-auto">
+              <p class="text-gray-600 font-light">• Click "Talk to us instantly" on your website</p>
+              <p class="text-gray-600 font-light">• Browser connects them directly to you</p>
+              <p class="text-gray-600 font-light">• No phone number sharing required</p>
+              <p class="text-gray-600 font-light">• No apps or downloads needed</p>
+            </div>
           </div>
           
           <div class="text-center">
-            <div class="text-lg font-medium text-gray-900 mb-2">Wealth Management</div>
-            <p class="text-sm text-gray-600 font-light">Private Banking</p>
-          </div>
-          
-          <div class="text-center">
-            <div class="text-lg font-medium text-gray-900 mb-2">Legal Services</div>
-            <p class="text-sm text-gray-600 font-light">High-Profile Cases</p>
-          </div>
-          
-          <div class="text-center">
-            <div class="text-lg font-medium text-gray-900 mb-2">Luxury Services</div>
-            <p class="text-sm text-gray-600 font-light">Concierge & Private</p>
+            <div class="text-lg font-medium text-gray-900 mb-4">For Businesses</div>
+            <div class="text-left space-y-3 max-w-xs mx-auto">
+              <p class="text-gray-600 font-light">• Add one line of code to your website</p>
+              <p class="text-gray-600 font-light">• Receive calls on web dashboard or mobile app</p>
+              <p class="text-gray-600 font-light">• Users can contact you without privacy concerns</p>
+              <p class="text-gray-600 font-light">• Higher engagement from privacy-conscious visitors</p>
+            </div>
           </div>
         </div>
       </div>
@@ -332,31 +332,31 @@
     <section class="py-24 px-6 bg-gray-50">
       <div class="max-w-3xl mx-auto text-center">
         <h2 class="text-4xl font-light text-gray-900 mb-12">
-          Implementation in Minutes
+          Simple Integration
         </h2>
         
         <div class="space-y-8 max-w-2xl mx-auto pl-16">
           <div class="flex items-center space-x-8">
             <div class="w-8 h-8 bg-gray-900 text-white rounded-full flex items-center justify-center text-sm font-medium ml-24">1</div>
             <div class="text-left">
-              <div class="text-lg font-medium text-gray-900">Add one line of code to your website</div>
-              <div class="text-gray-600 font-light">Customizable call button appears instantly</div>
+              <div class="text-lg font-medium text-gray-900">Sign up and get your embed code</div>
+              <div class="text-gray-600 font-light">Instant setup with customizable options</div>
             </div>
           </div>
           
           <div class="flex items-center space-x-8">
             <div class="w-8 h-8 bg-gray-900 text-white rounded-full flex items-center justify-center text-sm font-medium ml-24">2</div>
             <div class="text-left">
-              <div class="text-lg font-medium text-gray-900">Receive calls on any device</div>
-              <div class="text-gray-600 font-light">Web dashboard or mobile app notifications</div>
+              <div class="text-lg font-medium text-gray-900">Add code to your website</div>
+              <div class="text-gray-600 font-light">One line of code, works immediately</div>
             </div>
           </div>
           
           <div class="flex items-center space-x-8">
             <div class="w-8 h-8 bg-gray-900 text-white rounded-full flex items-center justify-center text-sm font-medium ml-24">3</div>
             <div class="text-left">
-              <div class="text-lg font-medium text-gray-900">Connect with premium prospects</div>
-              <div class="text-gray-600 font-light">Anonymous calls, verified interest</div>
+              <div class="text-lg font-medium text-gray-900">Receive calls on any device</div>
+              <div class="text-gray-600 font-light">Setup takes 3 minutes, no technical expertise required</div>
             </div>
           </div>
         </div>
@@ -367,10 +367,10 @@
     <section class="py-24 px-6">
       <div class="max-w-3xl mx-auto text-center">
         <h2 class="text-4xl font-light text-gray-900 mb-8">
-          Stop Missing High-Value Opportunities
+          Start Converting More Visitors
         </h2>
         <p class="text-lg text-gray-600 font-light mb-12 leading-relaxed">
-          Your next million-dollar client is waiting to call you. They just won't share their phone number to do it.
+          Let privacy-conscious users reach you instantly without phone number barriers.
         </p>
         <button 
           on:click={openLoginModal}
