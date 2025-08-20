@@ -32,8 +32,8 @@ class AuthenticationManager(context: Context) {
         
         if (response.success && response.token != null && response.user != null) {
             Log.d(TAG, "[AUTH] Login successful, storing token and user data")
-            // Calculate expiration time (24 hours from now, as per frontend JWT)
-            val expiresAt = System.currentTimeMillis() + (24 * 60 * 60 * 1000)
+            // Calculate expiration time (6 months from now)
+            val expiresAt = System.currentTimeMillis() + (6L * 30L * 24L * 60L * 60L * 1000L)
             
             Log.d(TAG, "[AUTH] Storing token with expiration: $expiresAt")
             sharedPreferences.edit()
