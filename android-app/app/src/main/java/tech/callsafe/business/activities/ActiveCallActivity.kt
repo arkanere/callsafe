@@ -32,6 +32,7 @@ class ActiveCallActivity : AppCompatActivity(), SocketManager.CallEventListener 
     private var callTimer: Timer? = null
     private var isMuted = false
     private var isSpeakerOn = false
+    private var isTerminating = false
     
     override fun onCreate(savedInstanceState: Bundle?) {
         android.util.Log.d("ActiveCallActivity", "[ACTIVITY] ==================== ACTIVITY STARTING ====================")
@@ -113,8 +114,8 @@ class ActiveCallActivity : AppCompatActivity(), SocketManager.CallEventListener 
             
             // Don't finish immediately, let user see the error and manually end call
             Handler(Looper.getMainLooper()).postDelayed({
-                if (!isFinishing) {
-                    finish()
+                if (!isTerminating) {
+                    terminateCall("initialization_failed")
                 }
             }, 3000)
         }
@@ -155,7 +156,7 @@ class ActiveCallActivity : AppCompatActivity(), SocketManager.CallEventListener 
                     binding.callStatus.text = "Connection failed"
                     // Auto-end call after failure
                     Handler(Looper.getMainLooper()).postDelayed({
-                        endCall()
+                        terminateCall("webrtc_failed")
                     }, 2000)
                 }
             }
@@ -280,20 +281,37 @@ class ActiveCallActivity : AppCompatActivity(), SocketManager.CallEventListener 
             .start()
     }
     
-    private fun endCall() {
-        android.util.Log.d("ActiveCallActivity", "[FLOW] endCall() - User initiated call termination")
-        callAttemptId?.let { id ->
-            android.util.Log.d("ActiveCallActivity", "[FLOW] endCall() - Calling CallManager.endCall()")
-            callManager.endCall(
-                callAttemptId = id,
-                initiator = "business",
-                reason = "user_action"
-            )
+    private fun terminateCall(reason: String = "user_action") {
+        android.util.Log.d("ActiveCallActivity", "[FLOW] terminateCall() - Call termination initiated with reason: $reason")
+        
+        if (isTerminating) {
+            android.util.Log.d("ActiveCallActivity", "[FLOW] terminateCall() - Already terminating, ignoring duplicate call")
+            return
+        }
+        isTerminating = true
+        
+        // Only send server signal for user-initiated termination
+        if (reason == "user_action") {
+            callAttemptId?.let { id ->
+                android.util.Log.d("ActiveCallActivity", "[FLOW] terminateCall() - User initiated, calling CallManager.endCall()")
+                callManager.endCall(
+                    callAttemptId = id,
+                    initiator = "business",
+                    reason = reason
+                )
+            }
+        } else {
+            android.util.Log.d("ActiveCallActivity", "[FLOW] terminateCall() - Server initiated ($reason), skipping server signal")
         }
         
-        android.util.Log.d("ActiveCallActivity", "[FLOW] endCall() - Calling cleanup() and finishing activity")
+        android.util.Log.d("ActiveCallActivity", "[FLOW] terminateCall() - Performing local cleanup and finishing activity")
         cleanup()
         finish()
+    }
+    
+    private fun endCall() {
+        android.util.Log.d("ActiveCallActivity", "[FLOW] endCall() - Delegating to terminateCall() for user action")
+        terminateCall("user_action")
     }
     
     private fun startCallTimer() {
@@ -351,7 +369,7 @@ class ActiveCallActivity : AppCompatActivity(), SocketManager.CallEventListener 
         if (!socketManager.connect()) {
             android.util.Log.e("ActiveCallActivity", "[SOCKET] Failed to initialize socket connection")
             binding.callStatus.text = "Connection failed"
-            Handler(Looper.getMainLooper()).postDelayed({ endCall() }, 3000)
+            Handler(Looper.getMainLooper()).postDelayed({ terminateCall("socket_connection_failed") }, 3000)
             return
         }
         
@@ -383,7 +401,7 @@ class ActiveCallActivity : AppCompatActivity(), SocketManager.CallEventListener 
                     // Connection timeout
                     android.util.Log.e("ActiveCallActivity", "[SOCKET] Socket connection timeout - ending call")
                     binding.callStatus.text = "Connection timeout"
-                    Handler(Looper.getMainLooper()).postDelayed({ endCall() }, 2000)
+                    Handler(Looper.getMainLooper()).postDelayed({ terminateCall("connection_timeout") }, 2000)
                 }
             }
         }
@@ -432,10 +450,10 @@ class ActiveCallActivity : AppCompatActivity(), SocketManager.CallEventListener 
     override fun onCallEnded(callAttemptId: String, duration: Int, reason: String?) {
         android.util.Log.d("ActiveCallActivity", "[CALLBACK] onCallEnded() - Call ended from server: $callAttemptId, duration: ${duration}s, reason: $reason")
         if (this.callAttemptId == callAttemptId) {
-            android.util.Log.d("ActiveCallActivity", "[CALLBACK] onCallEnded() - Call IDs match, ending activity")
+            android.util.Log.d("ActiveCallActivity", "[CALLBACK] onCallEnded() - Call IDs match, terminating activity")
             runOnUiThread {
-                android.util.Log.d("ActiveCallActivity", "[CALLBACK] onCallEnded() - Ending activity on UI thread")
-                endCall()
+                android.util.Log.d("ActiveCallActivity", "[CALLBACK] onCallEnded() - Terminating activity on UI thread")
+                terminateCall("server_ended")
             }
         } else {
             android.util.Log.w("ActiveCallActivity", "[CALLBACK] onCallEnded() - Call ID mismatch: expected ${this.callAttemptId}, got $callAttemptId")
@@ -445,10 +463,10 @@ class ActiveCallActivity : AppCompatActivity(), SocketManager.CallEventListener 
     override fun onCallFailed(callAttemptId: String, reason: String) {
         android.util.Log.d("ActiveCallActivity", "[CALLBACK] onCallFailed() - Call failed from server: $callAttemptId, reason: $reason")
         if (this.callAttemptId == callAttemptId) {
-            android.util.Log.d("ActiveCallActivity", "[CALLBACK] onCallFailed() - Call IDs match, ending activity")
+            android.util.Log.d("ActiveCallActivity", "[CALLBACK] onCallFailed() - Call IDs match, terminating activity")
             runOnUiThread {
-                android.util.Log.d("ActiveCallActivity", "[CALLBACK] onCallFailed() - Ending activity on UI thread due to failure")
-                endCall()
+                android.util.Log.d("ActiveCallActivity", "[CALLBACK] onCallFailed() - Terminating activity on UI thread due to failure")
+                terminateCall("server_failed")
             }
         } else {
             android.util.Log.w("ActiveCallActivity", "[CALLBACK] onCallFailed() - Call ID mismatch: expected ${this.callAttemptId}, got $callAttemptId")
