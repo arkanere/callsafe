@@ -548,6 +548,15 @@ class SocketManager private constructor(private val context: Context) {
         activeCallsData.remove(callAttemptId)
         Log.d(TAG, "[SOCKET] handleCallEnded() - Final activeCallsData size: ${activeCallsData.size}")
         
+        // Cancel notification (ensure it's cleared regardless of CallManager state)
+        try {
+            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            notificationManager.cancel(callAttemptId.hashCode())
+            Log.d(TAG, "[SOCKET] Notification cancelled for ended call: $callAttemptId")
+        } catch (e: Exception) {
+            Log.e(TAG, "[SOCKET] Failed to cancel notification for ended call", e)
+        }
+        
         // Notify activity about call ending
         Log.d(TAG, "[SOCKET] handleCallEnded() - Notifying call event listener")
         callEventListener?.onCallEnded(callAttemptId, duration, reason)
