@@ -3,6 +3,10 @@ package tech.callsafe.business.services
 import android.content.Context
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import tech.callsafe.business.R
 import tech.callsafe.business.activities.ActiveCallActivity
 import tech.callsafe.business.activities.IncomingCallActivity
@@ -12,6 +16,9 @@ import tech.callsafe.business.receivers.CallActionReceiver
 import tech.callsafe.business.utils.RingtoneManager
 
 class CallSafeFirebaseMessagingService : FirebaseMessagingService() {
+    
+    // Coroutine scope for async operations
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     
     override fun onCreate() {
         super.onCreate()
@@ -28,21 +35,27 @@ class CallSafeFirebaseMessagingService : FirebaseMessagingService() {
         when (messageType) {
             "call:incoming" -> {
                 android.util.Log.d("CallSafeFirebase", "[FCM] onMessageReceived() - Handling call:incoming message")
+                
+                // IMMEDIATE validation (2-5ms)
                 val callAttemptId = remoteMessage.data["callAttemptId"] ?: return
                 val sourceId = remoteMessage.data["sourceId"] ?: return
                 val timestamp = remoteMessage.data["timestamp"]?.toLongOrNull() ?: return
                 
-                android.util.Log.d("CallSafeFirebase", "[FCM] onMessageReceived() - Creating incoming call notification via CallNotificationManager")
-                val notificationManager = CallNotificationManager.getInstance(this)
-                notificationManager.updateNotificationForCallState(
-                    callAttemptId = callAttemptId,
-                    callState = CallManager.CallState.INCOMING,
-                    sourceId = sourceId,
-                    timestamp = timestamp
-                )
-                
-                // Start ringtone
+                android.util.Log.d("CallSafeFirebase", "[FCM] onMessageReceived() - Starting ringtone immediately after validation")
+                // Start ringtone ASAP after validation (pre-warmed singleton = fast)
                 RingtoneManager.getInstance(this).startRingtone()
+                
+                // Create notification asynchronously (doesn't block ringtone)
+                serviceScope.launch {
+                    android.util.Log.d("CallSafeFirebase", "[FCM] Creating incoming call notification via CallNotificationManager (async)")
+                    val notificationManager = CallNotificationManager.getInstance(this@CallSafeFirebaseMessagingService)
+                    notificationManager.updateNotificationForCallState(
+                        callAttemptId = callAttemptId,
+                        callState = CallManager.CallState.INCOMING,
+                        sourceId = sourceId,
+                        timestamp = timestamp
+                    )
+                }
             }
             
             "call:cancelled" -> {
