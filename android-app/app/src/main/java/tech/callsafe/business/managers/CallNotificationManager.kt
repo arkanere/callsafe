@@ -119,7 +119,7 @@ class CallNotificationManager private constructor(private val context: Context) 
         
         // Full-screen intent for standard incoming call UI
         val fullScreenIntent = Intent(context, IncomingCallActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS
             putExtra("callAttemptId", callAttemptId)
             putExtra("sourceId", sourceId)
             putExtra("timestamp", timestamp)
@@ -131,7 +131,7 @@ class CallNotificationManager private constructor(private val context: Context) 
         
         // Accept call action - directly launch ActiveCallActivity with auto-accept
         val acceptIntent = Intent(context, ActiveCallActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS
             putExtra("callAttemptId", callAttemptId)
             putExtra("sourceId", sourceId)
             putExtra("autoAccept", true)
@@ -181,7 +181,7 @@ class CallNotificationManager private constructor(private val context: Context) 
         
         // Return to call intent
         val returnIntent = Intent(context, ActiveCallActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS
             putExtra("callAttemptId", callAttemptId)
             putExtra("sourceId", sourceId)
         }
@@ -209,7 +209,7 @@ class CallNotificationManager private constructor(private val context: Context) 
         
         // Return to call intent
         val returnIntent = Intent(context, ActiveCallActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS
             putExtra("callAttemptId", callAttemptId)
             putExtra("sourceId", sourceId)
         }
