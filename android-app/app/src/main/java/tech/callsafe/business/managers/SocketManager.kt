@@ -367,15 +367,9 @@ class SocketManager private constructor(private val context: Context) {
             Log.w(TAG, "[SOCKET] saveCallEndedLocally() - Available keys: ${activeCallsData.keys}")
         }
         
-        // Clean up tracking data
-        Log.d(TAG, "[SOCKET] saveCallEndedLocally() - Cleaning up activeCallsData")
-        val removedData = activeCallsData.remove(callAttemptId)
-        if (removedData != null) {
-            Log.d(TAG, "[SOCKET] saveCallEndedLocally() - Successfully removed call data from activeCallsData")
-        } else {
-            Log.w(TAG, "[SOCKET] saveCallEndedLocally() - WARNING: No data to remove from activeCallsData")
-        }
-        Log.d(TAG, "[SOCKET] saveCallEndedLocally() - Final activeCallsData size: ${activeCallsData.size}")
+        // Don't clean up tracking data here - let handleCallEnded() do final cleanup after server confirmation
+        Log.d(TAG, "[SOCKET] saveCallEndedLocally() - Keeping call data for server confirmation")
+        Log.d(TAG, "[SOCKET] saveCallEndedLocally() - Current activeCallsData size: ${activeCallsData.size}")
         Log.d(TAG, "[SOCKET] saveCallEndedLocally() - EXIT POINT")
     }
     

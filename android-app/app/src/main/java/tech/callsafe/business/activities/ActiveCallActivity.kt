@@ -105,8 +105,17 @@ class ActiveCallActivity : AppCompatActivity(), SocketManager.CallEventListener 
             
             // Handle auto-accept if launched directly from notification (WhatsApp style)
             if (autoAccept && callAttemptId != null) {
-                android.util.Log.d("ActiveCallActivity", "[ACTIVITY] onCreate() - Auto-accepting call from full-screen intent")
-                acceptIncomingCall(callAttemptId!!)
+                android.util.Log.d("ActiveCallActivity", "[ACTIVITY] onCreate() - Auto-accept requested, validating call state first")
+                
+                // Validate call state before attempting to accept
+                if (isCallStillValid(callAttemptId!!)) {
+                    android.util.Log.d("ActiveCallActivity", "[ACTIVITY] onCreate() - Call is valid, proceeding with auto-accept")
+                    acceptIncomingCall(callAttemptId!!)
+                } else {
+                    android.util.Log.w("ActiveCallActivity", "[ACTIVITY] onCreate() - Call is no longer valid, cancelling notification and finishing")
+                    cancelNotificationAndFinish(callAttemptId!!)
+                    return
+                }
             }
         } catch (e: Exception) {
             android.util.Log.e("ActiveCallActivity", "[ACTIVITY] onCreate() - ERROR during initialization", e)
@@ -312,6 +321,45 @@ class ActiveCallActivity : AppCompatActivity(), SocketManager.CallEventListener 
     private fun endCall() {
         android.util.Log.d("ActiveCallActivity", "[FLOW] endCall() - Delegating to terminateCall() for user action")
         terminateCall("user_action")
+    }
+    
+    private fun isCallStillValid(callAttemptId: String): Boolean {
+        android.util.Log.d("ActiveCallActivity", "[VALIDATION] isCallStillValid() - Checking call state for: $callAttemptId")
+        
+        val currentCallId = callManager.getCurrentCallAttemptId()
+        val callState = callManager.getCallState()
+        
+        android.util.Log.d("ActiveCallActivity", "[VALIDATION] Current call ID: $currentCallId")
+        android.util.Log.d("ActiveCallActivity", "[VALIDATION] Call state: $callState")
+        
+        // For fresh incoming calls, IDLE state with null currentCallId is expected and valid
+        if (callState == CallManager.CallState.IDLE && currentCallId == null) {
+            android.util.Log.d("ActiveCallActivity", "[VALIDATION] Fresh incoming call detected - valid")
+            return true
+        }
+        
+        // For ongoing calls, check if this matches the current call and it's not ended
+        val isValid = currentCallId == callAttemptId && callState != CallManager.CallState.ENDED
+        android.util.Log.d("ActiveCallActivity", "[VALIDATION] Ongoing call validation: $isValid")
+        
+        return isValid
+    }
+    
+    private fun cancelNotificationAndFinish(callAttemptId: String) {
+        android.util.Log.d("ActiveCallActivity", "[VALIDATION] cancelNotificationAndFinish() - Call already ended, cleaning up")
+        
+        // Cancel the stale notification
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+        notificationManager.cancel(callAttemptId.hashCode())
+        android.util.Log.d("ActiveCallActivity", "[VALIDATION] Stale notification cancelled")
+        
+        // Update UI to show call ended
+        binding.callStatus.text = "Call ended"
+        
+        // Finish activity after brief delay to show message
+        Handler(Looper.getMainLooper()).postDelayed({
+            finish()
+        }, 1500)
     }
     
     private fun startCallTimer() {
