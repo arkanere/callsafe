@@ -102,7 +102,8 @@ class IncomingCallActivity : AppCompatActivity() {
             callManager.acceptCall(
                 callAttemptId = id,
                 deviceType = "mobile",
-                deviceId = getUniqueDeviceId(this)
+                deviceId = getUniqueDeviceId(this),
+                sourceId = sourceId
             )
             
             // Navigate to active call activity
@@ -138,10 +139,10 @@ class IncomingCallActivity : AppCompatActivity() {
         // Stop ringtone if activity is destroyed
         RingtoneManager.getInstance(this).stopRingtone()
         
-        // Cancel notification if activity is destroyed
+        // Cancel notification if activity is destroyed via CallNotificationManager
         callAttemptId?.let { id ->
-            val notificationManager = getSystemService(NOTIFICATION_SERVICE) as android.app.NotificationManager
-            notificationManager.cancel(id.hashCode())
+            val notificationManager = tech.callsafe.business.managers.CallNotificationManager.getInstance(this)
+            notificationManager.cancelNotification(id)
         }
     }
 }

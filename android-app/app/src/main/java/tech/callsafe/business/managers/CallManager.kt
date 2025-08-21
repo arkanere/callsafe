@@ -4,9 +4,11 @@ import android.content.Context
 import android.util.Log
 import org.json.JSONObject
 
-class CallManager private constructor(context: Context) {
+class CallManager private constructor(private val context: Context) {
     private val socketManager = SocketManager.getInstance(context)
+    private val notificationManager = CallNotificationManager.getInstance(context)
     private var currentCallAttemptId: String? = null
+    private var currentSourceId: String? = null
     private var callState: CallState = CallState.IDLE
     
     enum class CallState {
@@ -25,11 +27,12 @@ class CallManager private constructor(context: Context) {
         }
     }
     
-    fun acceptCall(callAttemptId: String, deviceType: String, deviceId: String) {
+    fun acceptCall(callAttemptId: String, deviceType: String, deviceId: String, sourceId: String? = null) {
         Log.d(TAG, "[FLOW] acceptCall() - ENTRY POINT: Call acceptance initiated")
         Log.d(TAG, "[CALL] acceptCall() - callAttemptId: $callAttemptId, deviceType: $deviceType, deviceId: $deviceId")
         currentCallAttemptId = callAttemptId
-        callState = CallState.CONNECTING
+        currentSourceId = sourceId
+        updateCallState(CallState.CONNECTING)
         Log.d(TAG, "[CALL] Call state changed to CONNECTING")
         
         val acceptData = JSONObject().apply {
@@ -66,8 +69,9 @@ class CallManager private constructor(context: Context) {
         socketManager.emit("call:reject", rejectData)
         
         Log.d(TAG, "[CALL] Call state changed to IDLE, clearing currentCallAttemptId")
-        callState = CallState.IDLE
+        updateCallState(CallState.IDLE)
         currentCallAttemptId = null
+        currentSourceId = null
     }
     
     fun endCall(callAttemptId: String, initiator: String, reason: String) {
@@ -91,8 +95,9 @@ class CallManager private constructor(context: Context) {
         Log.d(TAG, "[CALL] endCall() - Call saved to history locally")
         
         Log.d(TAG, "[CALL] Call state changed to ENDED, clearing currentCallAttemptId")
-        callState = CallState.ENDED
+        updateCallState(CallState.ENDED)
         currentCallAttemptId = null
+        currentSourceId = null
     }
     
     fun updateDeviceStatus(deviceId: String, status: String) {
@@ -124,6 +129,35 @@ class CallManager private constructor(context: Context) {
     fun setCallState(state: CallState) {
         Log.d(TAG, "[FLOW] setCallState() - ENTRY POINT: Call state change")
         Log.d(TAG, "[CALL] setCallState() - changing from $callState to $state")
-        callState = state
+        updateCallState(state)
+    }
+    
+    /**
+     * Update call state and automatically notify NotificationManager
+     */
+    private fun updateCallState(newState: CallState) {
+        Log.d(TAG, "[STATE] updateCallState() - changing from $callState to $newState")
+        val oldState = callState
+        callState = newState
+        
+        // Notify NotificationManager of state change
+        currentCallAttemptId?.let { callId ->
+            Log.d(TAG, "[STATE] Notifying NotificationManager of state change")
+            notificationManager.updateNotificationForCallState(
+                callAttemptId = callId,
+                callState = newState,
+                sourceId = currentSourceId
+            )
+        }
+    }
+    
+    /**
+     * Set incoming call info (used when call is first received)
+     */
+    fun setIncomingCallInfo(callAttemptId: String, sourceId: String) {
+        Log.d(TAG, "[INCOMING] setIncomingCallInfo() - callId: $callAttemptId, sourceId: $sourceId")
+        currentCallAttemptId = callAttemptId
+        currentSourceId = sourceId
+        updateCallState(CallState.INCOMING)
     }
 }

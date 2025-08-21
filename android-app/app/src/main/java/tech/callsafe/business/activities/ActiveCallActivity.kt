@@ -156,6 +156,9 @@ class ActiveCallActivity : AppCompatActivity(), SocketManager.CallEventListener 
                 runOnUiThread {
                     binding.callStatus.text = "Connected"
                     callStartTime = System.currentTimeMillis()
+                    
+                    // Update call state to CONNECTED (triggers notification update)
+                    callManager.setCallState(CallManager.CallState.CONNECTED)
                 }
             }
             
@@ -348,9 +351,9 @@ class ActiveCallActivity : AppCompatActivity(), SocketManager.CallEventListener 
     private fun cancelNotificationAndFinish(callAttemptId: String) {
         android.util.Log.d("ActiveCallActivity", "[VALIDATION] cancelNotificationAndFinish() - Call already ended, cleaning up")
         
-        // Cancel the stale notification
-        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
-        notificationManager.cancel(callAttemptId.hashCode())
+        // Cancel the stale notification via CallNotificationManager
+        val notificationManager = tech.callsafe.business.managers.CallNotificationManager.getInstance(this)
+        notificationManager.cancelNotification(callAttemptId)
         android.util.Log.d("ActiveCallActivity", "[VALIDATION] Stale notification cancelled")
         
         // Update UI to show call ended
@@ -399,10 +402,7 @@ class ActiveCallActivity : AppCompatActivity(), SocketManager.CallEventListener 
         android.util.Log.d("ActiveCallActivity", "[ACTIVITY] acceptIncomingCall() - Stopping ringtone")
         tech.callsafe.business.utils.RingtoneManager.getInstance(this).stopRingtone()
         
-        // Cancel the notification
-        android.util.Log.d("ActiveCallActivity", "[ACTIVITY] acceptIncomingCall() - Cancelling notification")
-        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
-        notificationManager.cancel(callAttemptId.hashCode())
+        // Notification will be automatically updated to "connecting" state by CallManager
         
         // Ensure socket connection before accepting call
         android.util.Log.d("ActiveCallActivity", "[ACTIVITY] acceptIncomingCall() - Ensuring socket connection")
@@ -435,7 +435,8 @@ class ActiveCallActivity : AppCompatActivity(), SocketManager.CallEventListener 
                     callManager.acceptCall(
                         callAttemptId = callAttemptId,
                         deviceType = "mobile",
-                        deviceId = tech.callsafe.business.utils.getUniqueDeviceId(this@ActiveCallActivity)
+                        deviceId = tech.callsafe.business.utils.getUniqueDeviceId(this@ActiveCallActivity),
+                        sourceId = sourceId
                     )
                     android.util.Log.d("ActiveCallActivity", "[FLOW] acceptIncomingCall() - Call acceptance completed")
                     
