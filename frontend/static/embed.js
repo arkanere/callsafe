@@ -18,6 +18,31 @@
     TURN_CREDENTIAL: '***REDACTED***'
   };
 
+  // Debug logging utility - ALWAYS logs in production for debugging call issues
+  function debugLog(category, message, data = null) {
+    // Check if debugging is disabled via window flag (for future control)
+    if (window.CALLSAFE_DISABLE_DEBUG === true) {
+      return;
+    }
+    
+    const timestamp = new Date().toISOString();
+    const logPrefix = `[CallSafe Debug ${timestamp}] [${category.toUpperCase()}]`;
+    
+    // Always log in production to help debug call connection issues
+    // Critical categories that should ALWAYS log even if debugging is limited
+    const criticalCategories = ['socket', 'call', 'cleanup', 'modal'];
+    const isCritical = criticalCategories.includes(category.toLowerCase());
+    
+    // Log if it's critical OR if debugging is not specifically disabled
+    if (isCritical || window.CALLSAFE_DISABLE_DEBUG !== true) {
+      if (data) {
+        console.log(`${logPrefix} ${message}`, data);
+      } else {
+        console.log(`${logPrefix} ${message}`);
+      }
+    }
+  }
+
   // Security and validation utilities
   function sanitizeInput(input) {
     return String(input)
@@ -46,6 +71,7 @@
   // WebRTC Manager Class
   class WebRTCManager {
     constructor(socket) {
+      debugLog('webrtc', 'WebRTCManager constructor called', { socketConnected: !!socket });
       this.socket = socket;
       this.peerConnection = null;
       this.localStream = null;
@@ -56,11 +82,16 @@
     }
 
     getIceServers() {
+      debugLog('webrtc', 'Getting ICE servers configuration');
       const iceServers = [];
 
       // Add STUN servers
       iceServers.push({ urls: CONFIG.STUN_SERVER_1 });
       iceServers.push({ urls: CONFIG.STUN_SERVER_2 });
+      debugLog('webrtc', 'Added STUN servers', { 
+        stun1: CONFIG.STUN_SERVER_1, 
+        stun2: CONFIG.STUN_SERVER_2 
+      });
 
       // Add TURN server as fallback if configured
       if (CONFIG.TURN_SERVER_URL && CONFIG.TURN_USERNAME && CONFIG.TURN_CREDENTIAL) {
@@ -69,49 +100,93 @@
           username: CONFIG.TURN_USERNAME,
           credential: CONFIG.TURN_CREDENTIAL
         });
-        console.log('CallSafe: TURN server configured as fallback');
+        debugLog('webrtc', 'TURN server configured as fallback', { 
+          turnUrl: CONFIG.TURN_SERVER_URL,
+          username: CONFIG.TURN_USERNAME 
+        });
       } else {
-        console.log('CallSafe: TURN server not configured - using STUN only');
+        debugLog('webrtc', 'TURN server not configured - using STUN only');
       }
 
+      debugLog('webrtc', 'ICE servers configuration complete', { totalServers: iceServers.length });
       return iceServers;
     }
 
     async initialize(callId, localStream) {
+      debugLog('webrtc', 'Initializing WebRTC manager', { 
+        callId, 
+        hasLocalStream: !!localStream,
+        localStreamTracks: localStream ? localStream.getTracks().length : 0
+      });
+      
       this.callId = callId;
       this.localStream = localStream;
       
       // Create peer connection with dynamic ICE servers
       const iceServers = this.getIceServers();
-      console.log('CallSafe: Using ICE servers:', iceServers.length);
+      debugLog('webrtc', 'Creating RTCPeerConnection', { 
+        iceServersCount: iceServers.length,
+        iceTransportPolicy: 'all',
+        iceCandidatePoolSize: 10
+      });
       
       this.peerConnection = new RTCPeerConnection({
         iceServers: iceServers,
         iceTransportPolicy: 'all', // Allow both STUN and TURN, with STUN preferred
         iceCandidatePoolSize: 10   // Pre-gather ICE candidates for faster connection
       });
+      
+      debugLog('webrtc', 'RTCPeerConnection created successfully');
 
       // Add local stream
       if (this.localStream) {
+        debugLog('webrtc', 'Adding local stream tracks to peer connection', {
+          trackCount: this.localStream.getTracks().length
+        });
         this.localStream.getTracks().forEach(track => {
+          debugLog('webrtc', 'Adding track to peer connection', {
+            kind: track.kind,
+            enabled: track.enabled,
+            readyState: track.readyState
+          });
           this.peerConnection.addTrack(track, this.localStream);
         });
+      } else {
+        debugLog('webrtc', 'No local stream available to add');
       }
 
       // Handle remote stream
       this.peerConnection.ontrack = (event) => {
+        debugLog('webrtc', 'Remote track received', {
+          streamCount: event.streams.length,
+          trackKind: event.track.kind
+        });
         this.remoteStream = event.streams[0];
         this.playRemoteAudio(this.remoteStream);
         this.connectionState = 'connected';
+        debugLog('webrtc', 'Connection state changed to connected via ontrack');
       };
 
       // Handle ICE candidates
       this.peerConnection.onicecandidate = (event) => {
         if (event.candidate && this.socket && this.callId) {
+          debugLog('webrtc', 'Sending ICE candidate', {
+            callAttemptId: this.callId,
+            candidateType: event.candidate.type,
+            foundation: event.candidate.foundation
+          });
           this.socket.emit('webrtc:ice-candidate', {
             callAttemptId: this.callId,
             candidate: event.candidate,
             timestamp: Date.now()
+          });
+        } else if (event.candidate === null) {
+          debugLog('webrtc', 'ICE candidate gathering complete');
+        } else {
+          debugLog('webrtc', 'ICE candidate ignored - missing socket or callId', {
+            hasCandidate: !!event.candidate,
+            hasSocket: !!this.socket,
+            hasCallId: !!this.callId
           });
         }
       };
@@ -119,6 +194,11 @@
       // Handle connection state changes
       this.peerConnection.oniceconnectionstatechange = () => {
         const state = this.peerConnection.iceConnectionState;
+        debugLog('webrtc', 'ICE connection state changed', { 
+          newState: state,
+          previousState: this.connectionState 
+        });
+        
         if (state === 'connected' || state === 'completed') {
           this.connectionState = 'connected';
         } else if (state === 'failed' || state === 'disconnected') {
@@ -131,15 +211,33 @@
     }
 
     startConnectionMonitoring() {
+      debugLog('webrtc', 'Starting connection monitoring', { 
+        checkInterval: CONFIG.CONNECTION_CHECK_INTERVAL 
+      });
+      
       this.connectionCheckInterval = setInterval(() => {
         if (this.peerConnection) {
           const state = this.peerConnection.iceConnectionState;
+          const oldState = this.connectionState;
+          
           if (state === 'connected' || state === 'completed') {
             this.connectionState = 'connected';
+            if (oldState !== 'connected') {
+              debugLog('webrtc', 'Connection monitoring detected connection success', { 
+                iceState: state,
+                oldConnectionState: oldState 
+              });
+            }
           } else if (state === 'failed' || state === 'closed') {
             this.connectionState = 'failed';
+            debugLog('webrtc', 'Connection monitoring detected failure', { 
+              iceState: state,
+              oldConnectionState: oldState 
+            });
             this.stopConnectionMonitoring();
           }
+        } else {
+          debugLog('webrtc', 'Connection monitoring - no peer connection available');
         }
       }, CONFIG.CONNECTION_CHECK_INTERVAL);
     }
@@ -688,18 +786,29 @@
     }
     
     attachModalEvents() {
+      debugLog('modal', 'Attaching modal event listeners');
       const modal = this.widgetElement.querySelector('.callsafe-modal');
       const closeBtn = modal.querySelector('.callsafe-modal-close');
       const muteBtn = modal.querySelector('#callsafe-mute');
       const endBtn = modal.querySelector('#callsafe-end');
       
-      closeBtn.onclick = () => this.hideModal();
-      muteBtn.onclick = () => this.toggleMute();
-      endBtn.onclick = () => this.endCall();
+      closeBtn.onclick = () => {
+        debugLog('modal', 'Close button clicked - hiding modal');
+        this.hideModal();
+      };
+      muteBtn.onclick = () => {
+        debugLog('modal', 'Mute button clicked');
+        this.toggleMute();
+      };
+      endBtn.onclick = () => {
+        debugLog('modal', 'End call button clicked');
+        this.endCall();
+      };
       
       // Close modal on overlay click
       modal.querySelector('.callsafe-modal-overlay').onclick = (e) => {
         if (e.target === e.currentTarget) {
+          debugLog('modal', 'Modal overlay clicked - hiding modal');
           this.hideModal();
         }
       };
@@ -707,15 +816,23 @@
       // ESC key to close modal
       document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && modal.style.display !== 'none') {
+          debugLog('modal', 'ESC key pressed - hiding modal');
           this.hideModal();
         }
       });
+      
+      debugLog('modal', 'Modal event listeners attached successfully');
     }
     
     async initializeSocket() {
+      debugLog('socket', 'Initializing socket connection');
+      
       // Load Socket.IO client if not already available
       if (!window.io) {
+        debugLog('socket', 'Socket.IO not loaded, loading from CDN');
         await this.loadSocketIO();
+      } else {
+        debugLog('socket', 'Socket.IO already available');
       }
       
       await this.connectSocket();
@@ -723,10 +840,17 @@
     
     loadSocketIO() {
       return new Promise((resolve, reject) => {
+        debugLog('socket', 'Loading Socket.IO from CDN', { url: CONFIG.SOCKET_IO_CDN });
         const script = document.createElement('script');
         script.src = CONFIG.SOCKET_IO_CDN;
-        script.onload = resolve;
-        script.onerror = () => reject(new Error('Failed to load Socket.IO'));
+        script.onload = () => {
+          debugLog('socket', 'Socket.IO loaded successfully');
+          resolve();
+        };
+        script.onerror = () => {
+          debugLog('socket', 'Failed to load Socket.IO');
+          reject(new Error('Failed to load Socket.IO'));
+        };
         document.head.appendChild(script);
       });
     }
@@ -734,14 +858,23 @@
     async connectSocket() {
       return new Promise((resolve, reject) => {
         try {
+          debugLog('socket', 'Starting socket connection');
+          
           // Ensure Socket.IO is loaded
           if (!window.io) {
+            debugLog('socket', 'Socket.IO library not loaded');
             reject(new Error('Socket.IO library not loaded'));
             return;
           }
 
           // Get signaling server URL with environment variable support
           const signalingServerUrl = this.getSignalingServerUrl();
+          debugLog('socket', 'Connecting to signaling server', { 
+            url: signalingServerUrl,
+            transports: ['websocket', 'polling'],
+            timeout: CONFIG.CONNECTION_TIMEOUT,
+            forceNew: true
+          });
           
           this.socket = window.io(signalingServerUrl, {
             transports: ['websocket', 'polling'],
@@ -750,20 +883,33 @@
           });
           
           this.socket.on('connect', () => {
-            if (this.config.debug) {
-              console.log('CallSafe: Connected to server');
-            }
+            debugLog('socket', 'Connected to server successfully', { 
+              socketId: this.socket.id,
+              transport: this.socket.io.engine.transport.name 
+            });
             this.setupSocketEventHandlers();
             resolve();
           });
           
           this.socket.on('connect_error', (error) => {
-            console.error('CallSafe: Connection error', error);
+            debugLog('socket', 'Connection error occurred', { 
+              error: error.message,
+              type: error.type 
+            });
             reject(error);
           });
           
+          this.socket.on('disconnect', (reason) => {
+            debugLog('socket', 'Socket disconnected', { 
+              reason,
+              socketId: this.socket?.id 
+            });
+          });
+          
         } catch (error) {
-          console.error('CallSafe: Socket connection failed', error);
+          debugLog('socket', 'Socket connection setup failed', { 
+            error: error.message 
+          });
           reject(error);
         }
       });
@@ -787,12 +933,19 @@
     
     setupSocketEventHandlers() {
       if (!this.socket) {
-        console.error('CallSafe: Socket is null, cannot setup handlers');
+        debugLog('socket', 'Cannot setup handlers - socket is null');
         return;
       }
       
+      debugLog('socket', 'Setting up socket event handlers');
+      
       // Call accepted
       this.socket.on('call:accepted', async (data) => {
+        debugLog('socket-event', 'call:accepted received', { 
+          callAttemptId: data.callAttemptId,
+          currentCallId: this.currentCall?.id,
+          matches: data.callAttemptId === this.currentCall?.id
+        });
         if (data.callAttemptId === this.currentCall?.id) {
           await this.handleCallAccepted(data);
         }
@@ -800,6 +953,11 @@
       
       // WebRTC answer
       this.socket.on('webrtc:answer', async (data) => {
+        debugLog('socket-event', 'webrtc:answer received', { 
+          callAttemptId: data.callAttemptId,
+          currentCallId: this.currentCall?.id,
+          matches: data.callAttemptId === this.currentCall?.id
+        });
         if (data.callAttemptId === this.currentCall?.id) {
           await this.handleWebRTCAnswer(data.answer);
         }
@@ -807,6 +965,11 @@
       
       // ICE candidate
       this.socket.on('webrtc:ice-candidate', async (data) => {
+        debugLog('socket-event', 'webrtc:ice-candidate received', { 
+          callAttemptId: data.callAttemptId,
+          currentCallId: this.currentCall?.id,
+          candidateType: data.candidate?.type
+        });
         if (data.callAttemptId === this.currentCall?.id) {
           await this.handleICECandidate(data.candidate);
         }
@@ -814,24 +977,42 @@
       
       // Call failures
       this.socket.on('call:busy', (data) => {
+        debugLog('socket-event', 'call:busy received', { 
+          callAttemptId: data.callAttemptId,
+          currentCallId: this.currentCall?.id
+        });
         if (data.callAttemptId === this.currentCall?.id) {
           this.handleCallFailure('All agents are busy. Please try again later.');
         }
       });
       
       this.socket.on('call:unavailable', (data) => {
+        debugLog('socket-event', 'call:unavailable received', { 
+          callAttemptId: data.callAttemptId,
+          currentCallId: this.currentCall?.id
+        });
         if (data.callAttemptId === this.currentCall?.id) {
           this.handleCallFailure(this.config.offlineMessage);
         }
       });
       
       this.socket.on('call:timeout', (data) => {
+        debugLog('socket-event', 'call:timeout received', { 
+          callAttemptId: data.callAttemptId,
+          currentCallId: this.currentCall?.id,
+          timeoutDuration: data.timeoutDuration
+        });
         if (data.callAttemptId === this.currentCall?.id) {
           this.handleCallFailure('No response from agents. Please try again.');
         }
       });
       
       this.socket.on('call:failed', (data) => {
+        debugLog('socket-event', 'call:failed received', { 
+          callAttemptId: data.callAttemptId,
+          currentCallId: this.currentCall?.id,
+          reason: data.reason
+        });
         if (data.callAttemptId === this.currentCall?.id) {
           const message = data?.reason === 'connection_timeout'
             ? 'Connection timeout. Please try again.'
@@ -842,42 +1023,56 @@
       
       // Call ended
       this.socket.on('call:ended', (data) => {
+        debugLog('socket-event', 'call:ended received', { 
+          callAttemptId: data.callAttemptId,
+          currentCallId: this.currentCall?.id
+        });
         if (data.callAttemptId === this.currentCall?.id) {
           this.handleCallEnded();
         }
       });
       
-      // Disconnect handler
-      this.socket.on('disconnect', (reason) => {
-        if (this.config.debug) {
-          console.log('CallSafe: Disconnected from server', reason);
-        }
-      });
+      debugLog('socket', 'Socket event handlers setup complete');
     }
     
     async handleButtonClick() {
+      debugLog('call', 'Call button clicked', { 
+        hasCurrentCall: !!this.currentCall,
+        currentCallState: this.currentCall?.state
+      });
+      
       if (this.currentCall) {
+        debugLog('call', 'Showing modal for existing call');
         this.showModal();
       } else {
+        debugLog('call', 'Initiating new call');
         await this.initiateCall();
       }
     }
     
     async initiateCall() {
+      debugLog('call', 'Call initiation started', { 
+        isEnabled: this.isEnabled,
+        handle: this.config.handle,
+        sourceId: this.config.sourceId
+      });
+      
       if (!this.isEnabled) {
-        console.warn('CallSafe: Widget is disabled');
+        debugLog('call', 'Call initiation failed - widget disabled');
         return { success: false, error: { code: 'WIDGET_DISABLED', message: 'Widget is disabled' } };
       }
       
       try {
         // Generate call attempt ID
         const callAttemptId = this.generateCallId();
+        debugLog('call', 'Generated call attempt ID', { callAttemptId });
         
         if (!validateCallAttemptId(callAttemptId)) {
           throw new Error('Invalid call attempt ID generated');
         }
         
         // Request microphone permission
+        debugLog('call', 'Requesting microphone permission');
         const localStream = await navigator.mediaDevices.getUserMedia({
           audio: {
             echoCancellation: true,
@@ -885,6 +1080,10 @@
             autoGainControl: true
           },
           video: false
+        });
+        debugLog('call', 'Microphone permission granted', { 
+          streamId: localStream.id,
+          trackCount: localStream.getTracks().length
         });
         
         // Create call object
@@ -894,40 +1093,48 @@
           state: 'connecting',
           duration: 0
         };
+        debugLog('call', 'Call object created', this.currentCall);
         
         // Update UI
+        debugLog('ui', 'Updating UI for call initiation');
         this.updateButtonState('connecting', 'Connecting...');
         this.showModal();
         this.updateStatusMessage('Finding agent...');
         
         // Load Socket.IO and connect to signaling server
+        debugLog('call', 'Initializing socket connection');
         await this.initializeSocket();
         
         // Initialize WebRTC
+        debugLog('call', 'Initializing WebRTC');
         this.webrtcManager = new WebRTCManager(this.socket);
         await this.webrtcManager.initialize(callAttemptId, localStream);
         
         // Start connection monitoring
+        debugLog('call', 'Starting connection state monitoring');
         this.startConnectionStateMonitoring();
         
         // Send call initiate
-        this.socket.emit('call:initiate', {
+        const initiateData = {
           callAttemptId: sanitizeInput(callAttemptId),
           handle: sanitizeInput(this.config.handle),
           sourceId: sanitizeInput(this.config.sourceId),
           timestamp: Date.now()
-        });
+        };
+        debugLog('call', 'Sending call:initiate to server', initiateData);
+        this.socket.emit('call:initiate', initiateData);
         
         this.emit('call:initiated', { callAttemptId });
-        
-        if (this.config.debug) {
-          console.log('CallSafe: Call initiated', callAttemptId);
-        }
+        debugLog('call', 'Call initiated successfully', { callAttemptId });
         
         return { success: true, callAttemptId };
         
       } catch (error) {
-        console.error('CallSafe: Failed to initiate call', error);
+        debugLog('call', 'Call initiation failed', { 
+          error: error.message,
+          errorName: error.name,
+          stack: error.stack
+        });
         
         let errorMessage;
         if (error.name === 'NotAllowedError') {
@@ -1172,63 +1379,86 @@
     }
     
     endCall() {
-      if (!this.currentCall) return;
+      debugLog('call', 'End call requested', { 
+        hasCurrentCall: !!this.currentCall,
+        currentCallId: this.currentCall?.id,
+        currentCallState: this.currentCall?.state,
+        hasSocket: !!this.socket
+      });
+      
+      if (!this.currentCall) {
+        debugLog('call', 'End call ignored - no current call');
+        return;
+      }
       
       // Emit end call event
       if (this.socket) {
-        this.socket.emit('call:end', {
+        const endData = {
           callAttemptId: this.currentCall.id,
           initiator: 'customer',
           reason: 'user_action',
           timestamp: Date.now()
-        });
+        };
+        debugLog('call', 'Sending call:end to server', endData);
+        this.socket.emit('call:end', endData);
         
         // Don't cleanup here - wait for server's call:ended response
+        debugLog('call', 'Setting failsafe cleanup timeout');
         this.setFailsafeCleanup();
       } else {
         // If no socket, cleanup immediately
+        debugLog('call', 'No socket available - cleaning up immediately');
         this.cleanup();
       }
       
-      if (this.config.debug) {
-        console.log('CallSafe: Call ended by user');
-      }
+      debugLog('call', 'Call end process initiated');
     }
     
     cleanup() {
+      debugLog('cleanup', 'Starting cleanup process', {
+        hasCurrentCall: !!this.currentCall,
+        hasSocket: !!this.socket,
+        hasWebRTC: !!this.webrtcManager,
+        hasCleanupTimeout: !!this.cleanupTimeout
+      });
+      
       // Clear any pending timeouts
       this.clearConnectionTimeout();
       this.stopCallTimer();
       
       if (this.cleanupTimeout) {
+        debugLog('cleanup', 'Clearing cleanup timeout');
         clearTimeout(this.cleanupTimeout);
         this.cleanupTimeout = null;
       }
       
       // Stop WebRTC and media streams
       if (this.webrtcManager) {
+        debugLog('cleanup', 'Cleaning up WebRTC manager');
         this.webrtcManager.cleanup();
         this.webrtcManager = null;
       }
       
       // Disconnect socket
       if (this.socket) {
+        debugLog('cleanup', 'Disconnecting socket', { socketId: this.socket.id });
         this.socket.disconnect();
         this.socket = null;
       }
       
       // Reset state
+      const previousCallState = this.currentCall?.state;
       this.currentCall = null;
       this.isMuted = false;
+      debugLog('cleanup', 'State reset complete', { previousCallState });
       
       // Reset UI
+      debugLog('cleanup', 'Resetting UI');
       this.updateButtonState('idle', this.config.buttonText);
       this.hideModal();
       this.hideCallControls();
       
-      if (this.config.debug) {
-        console.log('CallSafe: Cleanup completed');
-      }
+      debugLog('cleanup', 'Cleanup process completed');
     }
     
     updateButtonState(state, text) {
@@ -1250,18 +1480,39 @@
     }
     
     showModal() {
+      debugLog('modal', 'Showing modal', { 
+        hasCurrentCall: !!this.currentCall,
+        currentCallState: this.currentCall?.state
+      });
       const modal = this.widgetElement.querySelector('.callsafe-modal');
       if (modal) {
         modal.style.display = 'block';
         this.emit('show');
+        debugLog('modal', 'Modal shown successfully');
+      } else {
+        debugLog('modal', 'Failed to show modal - modal element not found');
       }
     }
     
     hideModal() {
+      debugLog('modal', 'Hiding modal', { 
+        hasCurrentCall: !!this.currentCall,
+        currentCallState: this.currentCall?.state,
+        reason: 'user_action'
+      });
       const modal = this.widgetElement.querySelector('.callsafe-modal');
       if (modal) {
         modal.style.display = 'none';
         this.emit('hide');
+        debugLog('modal', 'Modal hidden successfully');
+        
+        // If there's an active call that's not connected, end it
+        if (this.currentCall && this.currentCall.state !== 'connected') {
+          debugLog('call', 'Ending call due to modal close during connection phase');
+          this.endCall();
+        }
+      } else {
+        debugLog('modal', 'Failed to hide modal - modal element not found');
       }
     }
     
