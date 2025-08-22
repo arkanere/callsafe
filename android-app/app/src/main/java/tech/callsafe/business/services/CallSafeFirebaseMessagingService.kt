@@ -45,6 +45,11 @@ class CallSafeFirebaseMessagingService : FirebaseMessagingService() {
                 // Start ringtone ASAP after validation (pre-warmed singleton = fast)
                 RingtoneManager.getInstance(this).startRingtone()
                 
+                // Set incoming call info in CallManager (CRITICAL: needed for ActiveCallActivity validation)
+                android.util.Log.d("CallSafeFirebase", "[FCM] onMessageReceived() - Setting incoming call info in CallManager")
+                val callManager = CallManager.getInstance(this)
+                callManager.setIncomingCallInfo(callAttemptId, sourceId)
+                
                 // Create notification asynchronously (doesn't block ringtone)
                 serviceScope.launch {
                     android.util.Log.d("CallSafeFirebase", "[FCM] Creating incoming call notification via CallNotificationManager (async)")
