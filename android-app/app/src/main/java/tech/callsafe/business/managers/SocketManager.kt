@@ -397,53 +397,21 @@ class SocketManager private constructor(private val context: Context) {
     private fun handleIncomingCall(callAttemptId: String, sourceId: String, timestamp: Long) {
         Log.d(TAG, "[SOCKET] handleIncomingCall() - callAttemptId: $callAttemptId, sourceId: $sourceId, timestamp: $timestamp")
         
-        // Track this call for history
-        activeCallsData[callAttemptId] = CallData(
-            callAttemptId = callAttemptId,
-            sourceId = sourceId,
-            startTime = timestamp
-        )
-        
-        // TODO: Implement incoming call handling
-        // For now, let's just log and auto-reject to test the flow
-        Log.w(TAG, "[SOCKET] INCOMING CALL RECEIVED! This should trigger IncomingCallActivity")
-        Log.w(TAG, "[SOCKET] Auto-rejecting call for testing purposes")
-        
-        // Auto-reject for testing
-        val rejectData = org.json.JSONObject().apply {
-            put("type", "call:reject")
-            put("callAttemptId", callAttemptId)
-            put("deviceType", "mobile")
-            put("reason", "testing")
-            put("timestamp", System.currentTimeMillis())
+        // Track this call for history - only add if not already present to avoid overwriting accepted calls
+        if (!activeCallsData.containsKey(callAttemptId)) {
+            activeCallsData[callAttemptId] = CallData(
+                callAttemptId = callAttemptId,
+                sourceId = sourceId,
+                startTime = timestamp
+            )
+            Log.d(TAG, "[SOCKET] Call registered in activeCallsData for history tracking")
+        } else {
+            Log.d(TAG, "[SOCKET] Call already exists in activeCallsData, not overwriting")
         }
         
-        socket?.emit("call:reject", rejectData)
-        Log.d(TAG, "[SOCKET] Auto-reject sent for testing")
-        
-        // Save rejected call to history
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                callHistoryManager.saveCall(
-                    callAttemptId = callAttemptId,
-                    sourceId = sourceId,
-                    startTime = timestamp,
-                    endTime = System.currentTimeMillis(),
-                    duration = 0,
-                    status = "rejected",
-                    reason = "auto_rejected_for_testing",
-                    callType = "incoming",
-                    deviceInfo = "Android Mobile",
-                    connectionType = "webrtc"
-                )
-                Log.d(TAG, "[SOCKET] Rejected call saved to history")
-            } catch (e: Exception) {
-                Log.e(TAG, "[SOCKET] Failed to save rejected call to history", e)
-            }
-        }
-        
-        // Clean up tracking data
-        activeCallsData.remove(callAttemptId)
+        // The call is now properly tracked and will be handled by FCM -> ActiveCallActivity flow
+        // WebRTC events will be routed to the active call activity via the webrtcEventListener
+        Log.d(TAG, "[SOCKET] Incoming call properly registered, ready for WebRTC events")
     }
     
     private fun handleCallCancelled(callAttemptId: String, reason: String) {
