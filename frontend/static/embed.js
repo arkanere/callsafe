@@ -1175,22 +1175,39 @@
     
     async handleCallAccepted(data) {
       try {
+        debugLog('call', 'Call accepted by business', { 
+          callAttemptId: data.callAttemptId,
+          deviceType: data.deviceType,
+          deviceId: data.deviceId
+        });
+        
+        // Calculate business response time
+        if (this.currentCall && this.currentCall.startTime) {
+          const responseTime = Date.now() - this.currentCall.startTime;
+          debugLog('analytics', 'Business response time', { 
+            responseTimeMs: responseTime,
+            responseTimeSeconds: Math.round(responseTime / 1000 * 10) / 10,
+            callAttemptId: data.callAttemptId
+          });
+        }
+        
         this.updateStatusMessage('Agent accepted, connecting...');
         this.currentCall.state = 'ringing';
         
         // Create WebRTC offer
         if (this.webrtcManager) {
+          debugLog('webrtc', 'Creating WebRTC offer for accepted call');
           await this.webrtcManager.createOffer(data.callAttemptId);
         }
         
         this.emit('call:connecting');
-        
-        if (this.config.debug) {
-          console.log('CallSafe: Call accepted, setting up WebRTC');
-        }
+        debugLog('call', 'Call acceptance handling completed');
         
       } catch (error) {
-        console.error('CallSafe: Failed to set up WebRTC', error);
+        debugLog('call', 'Failed to handle call acceptance', { 
+          error: error.message,
+          callAttemptId: data.callAttemptId 
+        });
         this.handleConnectionFailure();
       }
     }
@@ -1222,6 +1239,21 @@
     }
     
     handleCallConnected() {
+      debugLog('call', 'Call fully connected', { 
+        callAttemptId: this.currentCall?.id,
+        previousState: this.currentCall?.state
+      });
+      
+      // Calculate total connection time (initiate to connected)
+      if (this.currentCall && this.currentCall.startTime) {
+        const connectionTime = Date.now() - this.currentCall.startTime;
+        debugLog('analytics', 'Total connection time', { 
+          connectionTimeMs: connectionTime,
+          connectionTimeSeconds: Math.round(connectionTime / 1000 * 10) / 10,
+          callAttemptId: this.currentCall.id
+        });
+      }
+      
       this.currentCall.state = 'connected';
       this.updateStatusMessage('Connected to agent');
       this.updateButtonState('connected', 'In Call');
@@ -1236,10 +1268,7 @@
       this.clearConnectionTimeout();
       
       this.emit('call:connected');
-      
-      if (this.config.debug) {
-        console.log('CallSafe: Call connected successfully');
-      }
+      debugLog('call', 'Call connection setup completed');
     }
     
     handleConnectionFailure() {
@@ -1267,8 +1296,26 @@
     }
     
     handleCallEnded() {
+      debugLog('call', 'Call ended by server', { 
+        callAttemptId: this.currentCall?.id,
+        currentState: this.currentCall?.state
+      });
+      
+      // Calculate call duration
+      if (this.currentCall && this.currentCall.startTime) {
+        const callDuration = Date.now() - this.currentCall.startTime;
+        debugLog('analytics', 'Call duration', { 
+          durationMs: callDuration,
+          durationSeconds: Math.round(callDuration / 1000 * 10) / 10,
+          durationMinutes: Math.round(callDuration / 60000 * 10) / 10,
+          callAttemptId: this.currentCall.id,
+          callState: this.currentCall.state
+        });
+      }
+      
       // Clear any pending cleanup timeout since server responded
       if (this.cleanupTimeout) {
+        debugLog('cleanup', 'Clearing pending cleanup timeout - server responded');
         clearTimeout(this.cleanupTimeout);
         this.cleanupTimeout = null;
       }
@@ -1277,6 +1324,7 @@
       this.emit('call:ended');
       
       // Cleanup directly since server confirmed
+      debugLog('cleanup', 'Scheduling cleanup in 2 seconds');
       setTimeout(() => this.cleanup(), 2000);
     }
     

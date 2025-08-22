@@ -465,6 +465,8 @@ class ActiveCallActivity : AppCompatActivity(), SocketManager.CallEventListener 
         callTimer = null
         webRTCManager.cleanup()
         socketManager.setWebRTCEventListener(null) // Unregister WebRTC event listener
+        socketManager.disconnect() // Disconnect WebSocket when call ends
+        android.util.Log.d("ActiveCallActivity", "[FLOW] cleanup() - WebSocket disconnected")
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
     

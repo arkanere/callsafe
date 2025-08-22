@@ -98,6 +98,11 @@ class CallManager private constructor(private val context: Context) {
         updateCallState(CallState.ENDED)
         currentCallAttemptId = null
         currentSourceId = null
+        
+        // Disconnect socket when call ends to prevent background reconnection issues
+        Log.d(TAG, "[CALL] endCall() - Disconnecting socket to clean up connection")
+        socketManager.disconnect()
+        Log.d(TAG, "[CALL] endCall() - Socket disconnected successfully")
     }
     
     fun updateDeviceStatus(deviceId: String, status: String) {
