@@ -90,13 +90,8 @@ class SocketManager private constructor(private val context: Context) {
             
             on(Socket.EVENT_DISCONNECT) { args ->
                 Log.w(TAG, "[SOCKET] Disconnected: ${args[0]}")
-                // Attempt reconnection if not server-initiated
-                if (args[0] != "io server disconnect") {
-                    Log.d(TAG, "[SOCKET] Client-side disconnect, attempting reconnection")
-                    attemptReconnection()
-                } else {
-                    Log.d(TAG, "[SOCKET] Server-initiated disconnect, not reconnecting")
-                }
+                // Cold start design - stay disconnected after call ends
+                Log.d(TAG, "[SOCKET] Staying disconnected for cold start behavior")
             }
             
             on(Socket.EVENT_CONNECT_ERROR) { args ->
@@ -373,20 +368,9 @@ class SocketManager private constructor(private val context: Context) {
         Log.d(TAG, "[SOCKET] saveCallEndedLocally() - EXIT POINT")
     }
     
-    private fun attemptReconnection() {
-        Log.d(TAG, "[SOCKET] attemptReconnection() called")
-        // Implement reconnection logic if needed
-        // For now, just try to reconnect after a delay
-        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-            Log.d(TAG, "[SOCKET] Checking connection status for reconnection")
-            if (socket?.connected() != true) {
-                Log.d(TAG, "[SOCKET] Socket not connected, attempting reconnection")
-                connect()
-            } else {
-                Log.d(TAG, "[SOCKET] Socket already connected, skipping reconnection")
-            }
-        }, 5000) // 5 second delay
-    }
+    // REMOVED: attemptReconnection() method for cold start behavior
+    // The socket will now stay disconnected after calls end, and only reconnect
+    // when explicitly needed (e.g., new incoming calls via FCM)
     
     private fun handleConnectionError(exception: Exception) {
         Log.e(TAG, "[SOCKET] handleConnectionError() called")
