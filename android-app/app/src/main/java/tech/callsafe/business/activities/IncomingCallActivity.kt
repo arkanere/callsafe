@@ -98,19 +98,12 @@ class IncomingCallActivity : AppCompatActivity() {
         RingtoneManager.getInstance(this).stopRingtone()
         
         callAttemptId?.let { id ->
-            android.util.Log.d("IncomingCallActivity", "[FLOW] acceptCall() - Calling CallManager.acceptCall()")
-            callManager.acceptCall(
-                callAttemptId = id,
-                deviceType = "mobile",
-                deviceId = getUniqueDeviceId(this),
-                sourceId = sourceId
-            )
-            
-            // Navigate to active call activity
-            android.util.Log.d("IncomingCallActivity", "[FLOW] acceptCall() - Starting ActiveCallActivity")
+            // Route through ActiveCallActivity with autoAccept to ensure proper socket connection handling
+            android.util.Log.d("IncomingCallActivity", "[FLOW] acceptCall() - Routing to ActiveCallActivity with autoAccept")
             val intent = Intent(this, ActiveCallActivity::class.java).apply {
                 putExtra("callAttemptId", id)
                 putExtra("sourceId", sourceId)
+                putExtra("autoAccept", true) // This triggers ensureSocketConnectionAndAccept()
             }
             startActivity(intent)
             finish()
