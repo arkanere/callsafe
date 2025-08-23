@@ -66,7 +66,7 @@ export async function POST({ request }) {
       email: user.email,
       handle,
       sourceId: user.sourceid || 'website',
-      exp: Math.floor(Date.now() / 1000) + (24 * 60 * 60) // 24 hours
+      exp: Math.floor(Date.now() / 1000) + (6 * 30 * 24 * 60 * 60) // 6 months
     };
     const token = jwt.sign(tokenPayload, JWT_SECRET);
     console.log('[LOGIN API] JWT token created successfully');
