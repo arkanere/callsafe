@@ -37,6 +37,7 @@ class LoginActivity : AppCompatActivity() {
         Log.d(TAG, "[LOGIN] Setting up UI and click listeners")
         setupUI()
         setupClickListeners()
+        handleLogoutReason()
         Log.d(TAG, "[LOGIN] Initialization complete")
     }
     
@@ -64,6 +65,16 @@ class LoginActivity : AppCompatActivity() {
             startActivity(intent)
         }
         Log.d(TAG, "[LOGIN] Click listeners setup complete")
+    }
+    
+    private fun handleLogoutReason() {
+        Log.d(TAG, "[LOGIN] Checking for logout reason")
+        val logoutReason = intent.getStringExtra("logout_reason")
+        if (!logoutReason.isNullOrEmpty()) {
+            Log.d(TAG, "[LOGIN] Automatic logout reason: $logoutReason")
+            // Show logout reason to user (could be a toast or dialog)
+            android.widget.Toast.makeText(this, logoutReason, android.widget.Toast.LENGTH_LONG).show()
+        }
     }
     
     private fun performLogin() {

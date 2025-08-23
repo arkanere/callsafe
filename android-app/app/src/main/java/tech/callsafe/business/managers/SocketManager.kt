@@ -2,6 +2,9 @@ package tech.callsafe.business.managers
 
 import android.app.NotificationManager
 import android.content.Context
+import android.content.Intent
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import io.socket.client.IO
 import io.socket.client.Socket
@@ -11,6 +14,7 @@ import kotlinx.coroutines.launch
 import org.json.JSONObject
 import org.webrtc.IceCandidate
 import org.webrtc.SessionDescription
+import tech.callsafe.business.activities.LoginActivity
 import tech.callsafe.business.utils.RingtoneManager
 import tech.callsafe.business.utils.getUniqueDeviceId
 
@@ -18,6 +22,11 @@ class SocketManager private constructor(private val context: Context) {
     private var socket: Socket? = null
     private val authManager: AuthenticationManager = AuthenticationManager(context)
     private val callHistoryManager: CallHistoryManager = CallHistoryManager(context)
+    
+    // Token validation components
+    private val tokenValidationHandler = Handler(Looper.getMainLooper())
+    private var tokenValidationRunnable: Runnable? = null
+    private val TOKEN_VALIDATION_INTERVAL = 24 * 60 * 60 * 1000L // 24 hours in milliseconds
     
     // WebRTC event listener interface for communication with active call
     interface WebRTCEventListener {
@@ -86,6 +95,8 @@ class SocketManager private constructor(private val context: Context) {
                 Log.d(TAG, "[SOCKET] Connected successfully")
                 // Register device for call reception
                 registerDevice()
+                // Start periodic token validation after successful connection
+                startTokenValidation()
             }
             
             on(Socket.EVENT_DISCONNECT) { args ->
@@ -244,6 +255,8 @@ class SocketManager private constructor(private val context: Context) {
     
     fun disconnect() {
         Log.d(TAG, "[SOCKET] disconnect() called")
+        // Stop token validation when disconnecting
+        stopTokenValidation()
         socket?.disconnect()
         socket = null
         Log.d(TAG, "[SOCKET] Socket disconnected and cleared")
@@ -374,8 +387,88 @@ class SocketManager private constructor(private val context: Context) {
     
     private fun handleConnectionError(exception: Exception) {
         Log.e(TAG, "[SOCKET] handleConnectionError() called")
-        // Handle connection errors
         Log.e(TAG, "[SOCKET] Connection error details", exception)
+        
+        val errorMessage = exception.message?.lowercase() ?: ""
+        
+        // Check for JWT-related authentication errors
+        if (errorMessage.contains("jwt expired") || 
+            errorMessage.contains("authentication failed") ||
+            errorMessage.contains("token expired") ||
+            errorMessage.contains("unauthorized") ||
+            errorMessage.contains("forbidden")) {
+            
+            Log.w(TAG, "[SOCKET] JWT authentication error detected, performing automatic logout")
+            performAutomaticLogout("Your session has expired. Please log in again.")
+        }
+    }
+    
+    /**
+     * Performs automatic logout when JWT expires or authentication fails
+     */
+    private fun performAutomaticLogout(reason: String = "Authentication failed") {
+        Log.w(TAG, "[AUTH] performAutomaticLogout() called - reason: $reason")
+        
+        try {
+            // Stop token validation timer
+            stopTokenValidation()
+            
+            // Disconnect socket
+            disconnect()
+            
+            // Clear stored credentials
+            authManager.logout()
+            
+            // Create intent to redirect to login screen
+            val intent = Intent(context, LoginActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                putExtra("logout_reason", reason)
+            }
+            
+            Log.d(TAG, "[AUTH] Starting LoginActivity for automatic logout")
+            context.startActivity(intent)
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "[AUTH] Error during automatic logout", e)
+        }
+    }
+    
+    /**
+     * Starts periodic token validation (every 24 hours)
+     */
+    private fun startTokenValidation() {
+        Log.d(TAG, "[TOKEN-VALIDATION] Starting periodic token validation (24-hour intervals)")
+        
+        stopTokenValidation() // Stop any existing validation
+        
+        tokenValidationRunnable = object : Runnable {
+            override fun run() {
+                Log.d(TAG, "[TOKEN-VALIDATION] Performing periodic token validation check")
+                
+                if (!authManager.isTokenValid()) {
+                    Log.w(TAG, "[TOKEN-VALIDATION] Token expired during periodic check")
+                    performAutomaticLogout("Your session has expired. Please log in again.")
+                } else {
+                    Log.d(TAG, "[TOKEN-VALIDATION] Token is still valid, scheduling next check")
+                    // Schedule next validation in 24 hours
+                    tokenValidationHandler.postDelayed(this, TOKEN_VALIDATION_INTERVAL)
+                }
+            }
+        }
+        
+        // Start the first validation check in 24 hours
+        tokenValidationHandler.postDelayed(tokenValidationRunnable!!, TOKEN_VALIDATION_INTERVAL)
+    }
+    
+    /**
+     * Stops periodic token validation
+     */
+    private fun stopTokenValidation() {
+        Log.d(TAG, "[TOKEN-VALIDATION] Stopping periodic token validation")
+        tokenValidationRunnable?.let { runnable ->
+            tokenValidationHandler.removeCallbacks(runnable)
+            tokenValidationRunnable = null
+        }
     }
     
     private fun handleIncomingCall(callAttemptId: String, sourceId: String, timestamp: Long) {
@@ -716,7 +809,19 @@ class SocketManager private constructor(private val context: Context) {
             
             // Listen for registration errors
             tempSocket.on("error") { args ->
-                Log.e(TAG, "[FCM-REGISTRATION] Registration failed: ${args?.firstOrNull()}")
+                val error = args?.firstOrNull()
+                Log.e(TAG, "[FCM-REGISTRATION] Registration failed: $error")
+                
+                // Check for JWT-related errors during FCM registration
+                val errorMessage = error?.toString()?.lowercase() ?: ""
+                if (errorMessage.contains("jwt expired") || 
+                    errorMessage.contains("authentication failed") ||
+                    errorMessage.contains("token expired")) {
+                    
+                    Log.w(TAG, "[FCM-REGISTRATION] JWT error during FCM registration, performing automatic logout")
+                    performAutomaticLogout("Your session has expired. Please log in again.")
+                }
+                
                 safeDisconnect()
             }
             
@@ -737,7 +842,19 @@ class SocketManager private constructor(private val context: Context) {
             }
             
             tempSocket.on(Socket.EVENT_CONNECT_ERROR) { args ->
-                Log.e(TAG, "[FCM-REGISTRATION] Temporary socket connection failed: ${args?.firstOrNull()}")
+                val error = args?.firstOrNull()
+                Log.e(TAG, "[FCM-REGISTRATION] Temporary socket connection failed: $error")
+                
+                // Check for JWT-related connection errors during FCM registration
+                val errorMessage = error?.toString()?.lowercase() ?: ""
+                if (errorMessage.contains("jwt expired") || 
+                    errorMessage.contains("authentication failed") ||
+                    errorMessage.contains("token expired")) {
+                    
+                    Log.w(TAG, "[FCM-REGISTRATION] JWT connection error during FCM registration")
+                    performAutomaticLogout("Your session has expired. Please log in again.")
+                }
+                
                 safeDisconnect()
             }
             
