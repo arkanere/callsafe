@@ -111,6 +111,7 @@ class CallNotificationManager private constructor(private val context: Context) 
             CallManager.CallState.CONNECTING -> NotificationState.CONNECTING
             CallManager.CallState.CONNECTED -> NotificationState.CONNECTED
             CallManager.CallState.ENDED -> NotificationState.ENDED
+            CallManager.CallState.CANCELLED -> NotificationState.ENDED
         }
     }
     

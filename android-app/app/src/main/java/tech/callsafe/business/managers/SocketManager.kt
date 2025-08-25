@@ -38,6 +38,7 @@ class SocketManager private constructor(private val context: Context) {
     interface CallEventListener {
         fun onCallEnded(callAttemptId: String, duration: Int, reason: String?)
         fun onCallFailed(callAttemptId: String, reason: String)
+        fun onCallCancelled(callAttemptId: String, reason: String)
     }
     
     private var webrtcEventListener: WebRTCEventListener? = null
@@ -538,6 +539,10 @@ class SocketManager private constructor(private val context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "[SOCKET] Failed to cancel notification", e)
         }
+        
+        // Notify activity via CallEventListener (consistent with existing pattern)
+        callEventListener?.onCallCancelled(callAttemptId, reason)
+        Log.d(TAG, "[SOCKET] CallEventListener notified of cancellation")
         
         // Clean up tracking data
         activeCallsData.remove(callAttemptId)

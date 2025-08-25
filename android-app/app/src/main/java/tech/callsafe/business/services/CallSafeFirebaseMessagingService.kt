@@ -66,8 +66,15 @@ class CallSafeFirebaseMessagingService : FirebaseMessagingService() {
             "call:cancelled" -> {
                 android.util.Log.d("CallSafeFirebase", "[FCM] onMessageReceived() - Handling call:cancelled message")
                 val callAttemptId = remoteMessage.data["callAttemptId"] ?: return
-                android.util.Log.d("CallSafeFirebase", "[FCM] onMessageReceived() - Cancelling incoming call notification via CallNotificationManager")
+                val reason = remoteMessage.data["reason"] ?: "unknown"
+                android.util.Log.d("CallSafeFirebase", "[FCM] onMessageReceived() - Call cancelled: $callAttemptId, reason: $reason")
                 
+                // Update call state via CallManager (central coordination)
+                val callManager = CallManager.getInstance(this)
+                callManager.cancelCall(callAttemptId, reason)
+                
+                // Cancel notification and stop ringtone
+                android.util.Log.d("CallSafeFirebase", "[FCM] onMessageReceived() - Cancelling incoming call notification via CallNotificationManager")
                 val notificationManager = CallNotificationManager.getInstance(this)
                 notificationManager.cancelNotification(callAttemptId)
                 

@@ -12,7 +12,7 @@ class CallManager private constructor(private val context: Context) {
     private var callState: CallState = CallState.IDLE
     
     enum class CallState {
-        IDLE, INCOMING, CONNECTING, CONNECTED, ENDED
+        IDLE, INCOMING, CONNECTING, CONNECTED, ENDED, CANCELLED
     }
     
     companion object {
@@ -153,6 +153,21 @@ class CallManager private constructor(private val context: Context) {
                 callState = newState,
                 sourceId = currentSourceId
             )
+        }
+    }
+    
+    /**
+     * Cancel a call (used when call is cancelled remotely)
+     */
+    fun cancelCall(callAttemptId: String, reason: String) {
+        Log.d(TAG, "[CALL] cancelCall() - callAttemptId: $callAttemptId, reason: $reason")
+        if (currentCallAttemptId == callAttemptId) {
+            Log.d(TAG, "[CALL] Call IDs match, updating state to CANCELLED")
+            updateCallState(CallState.CANCELLED)
+            currentCallAttemptId = null
+            currentSourceId = null
+        } else {
+            Log.w(TAG, "[CALL] Call ID mismatch: expected $currentCallAttemptId, got $callAttemptId")
         }
     }
     

@@ -429,16 +429,32 @@ class ActiveCallActivity : AppCompatActivity(), SocketManager.CallEventListener 
             override fun run() {
                 android.util.Log.d("ActiveCallActivity", "[SOCKET] Connection check attempt ${retryCount + 1}/$maxRetries")
                 
+                // CHECK: Validate call wasn't cancelled during connection attempts
+                if (callManager.getCallState() == CallManager.CallState.CANCELLED) {
+                    android.util.Log.d("ActiveCallActivity", "[SOCKET] Call was cancelled during connection - aborting")
+                    binding.callStatus.text = "Call ended"
+                    terminateCall("cancelled_during_connection")
+                    return
+                }
+                
                 if (socketManager.isConnected()) {
                     android.util.Log.d("ActiveCallActivity", "[SOCKET] Socket connected - accepting call")
-                    // Socket is connected, now accept the call
-                    callManager.acceptCall(
-                        callAttemptId = callAttemptId,
-                        deviceType = "mobile",
-                        deviceId = tech.callsafe.business.utils.getUniqueDeviceId(this@ActiveCallActivity),
-                        sourceId = sourceId
-                    )
-                    android.util.Log.d("ActiveCallActivity", "[FLOW] acceptIncomingCall() - Call acceptance completed")
+                    
+                    // Final validation before accepting
+                    if (callManager.getCallState() != CallManager.CallState.CANCELLED) {
+                        // Socket is connected, now accept the call
+                        callManager.acceptCall(
+                            callAttemptId = callAttemptId,
+                            deviceType = "mobile",
+                            deviceId = tech.callsafe.business.utils.getUniqueDeviceId(this@ActiveCallActivity),
+                            sourceId = sourceId
+                        )
+                        android.util.Log.d("ActiveCallActivity", "[FLOW] acceptIncomingCall() - Call acceptance completed")
+                    } else {
+                        android.util.Log.d("ActiveCallActivity", "[SOCKET] Call cancelled just before accept - aborting")
+                        binding.callStatus.text = "Call ended"
+                        terminateCall("cancelled_before_accept")
+                    }
                     
                 } else if (retryCount < maxRetries) {
                     // Retry after 500ms
@@ -521,6 +537,20 @@ class ActiveCallActivity : AppCompatActivity(), SocketManager.CallEventListener 
             }
         } else {
             android.util.Log.w("ActiveCallActivity", "[CALLBACK] onCallFailed() - Call ID mismatch: expected ${this.callAttemptId}, got $callAttemptId")
+        }
+    }
+    
+    override fun onCallCancelled(callAttemptId: String, reason: String) {
+        android.util.Log.d("ActiveCallActivity", "[CALLBACK] onCallCancelled() - Call cancelled from server: $callAttemptId, reason: $reason")
+        if (this.callAttemptId == callAttemptId) {
+            android.util.Log.d("ActiveCallActivity", "[CALLBACK] onCallCancelled() - Call IDs match, terminating activity")
+            runOnUiThread {
+                android.util.Log.d("ActiveCallActivity", "[CALLBACK] onCallCancelled() - Terminating activity on UI thread due to cancellation")
+                binding.callStatus.text = "Call ended"
+                terminateCall("cancelled_by_remote")
+            }
+        } else {
+            android.util.Log.w("ActiveCallActivity", "[CALLBACK] onCallCancelled() - Call ID mismatch: expected ${this.callAttemptId}, got $callAttemptId")
         }
     }
 }
