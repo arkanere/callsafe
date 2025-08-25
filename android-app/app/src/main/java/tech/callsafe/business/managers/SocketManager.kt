@@ -23,6 +23,17 @@ class SocketManager private constructor(private val context: Context) {
     private val authManager: AuthenticationManager = AuthenticationManager(context)
     private val callHistoryManager: CallHistoryManager = CallHistoryManager(context)
     
+    // Connection state tracking (like widget's pattern)
+    private var isSocketConnected = false
+    private val messageQueue = mutableListOf<QueuedMessage>()
+    
+    // Data class for queued messages
+    private data class QueuedMessage(
+        val eventName: String,
+        val data: JSONObject,
+        val timestamp: Long
+    )
+    
     // Token validation components
     private val tokenValidationHandler = Handler(Looper.getMainLooper())
     private var tokenValidationRunnable: Runnable? = null
@@ -94,6 +105,9 @@ class SocketManager private constructor(private val context: Context) {
         socket?.apply {
             on(Socket.EVENT_CONNECT) {
                 Log.d(TAG, "[SOCKET] Connected successfully")
+                isSocketConnected = true
+                // Flush any queued messages (like widget pattern)
+                flushMessageQueue()
                 // Register device for call reception
                 registerDevice()
                 // Start periodic token validation after successful connection
@@ -102,6 +116,7 @@ class SocketManager private constructor(private val context: Context) {
             
             on(Socket.EVENT_DISCONNECT) { args ->
                 Log.w(TAG, "[SOCKET] Disconnected: ${args[0]}")
+                isSocketConnected = false
                 // Cold start design - stay disconnected after call ends
                 Log.d(TAG, "[SOCKET] Staying disconnected for cold start behavior")
             }
@@ -250,21 +265,79 @@ class SocketManager private constructor(private val context: Context) {
     }
     
     fun emit(eventType: String, data: JSONObject) {
-        Log.d(TAG, "[SOCKET] Emitting event: $eventType with data: $data")
-        socket?.emit(eventType, data)
+        if (socket?.connected() == true && isSocketConnected) {
+            Log.d(TAG, "[SOCKET] Sending message immediately: $eventType")
+            socket!!.emit(eventType, data)
+        } else {
+            Log.d(TAG, "[SOCKET] Queueing message - socket not connected: $eventType")
+            messageQueue.add(QueuedMessage(eventType, data, System.currentTimeMillis()))
+            
+            // For critical events like call:reject, attempt immediate reconnection
+            if (eventType == "call:reject" || eventType == "call:accept" || eventType == "call:end") {
+                Log.d(TAG, "[SOCKET] Critical event queued, attempting immediate reconnection")
+                attemptImmediateReconnection()
+            }
+        }
     }
     
+    /**
+     * Flush queued messages when socket reconnects (like widget pattern)
+     */
+    private fun flushMessageQueue() {
+        if (messageQueue.isEmpty()) return
+        
+        Log.d(TAG, "[SOCKET] Flushing ${messageQueue.size} queued messages")
+        
+        val iterator = messageQueue.iterator()
+        while (iterator.hasNext()) {
+            val message = iterator.next()
+            val queuedDuration = System.currentTimeMillis() - message.timestamp
+            Log.d(TAG, "[SOCKET] Sending queued message: ${message.eventName} (queued for ${queuedDuration}ms)")
+            socket?.emit(message.eventName, message.data)
+            iterator.remove()
+        }
+        
+        Log.d(TAG, "[SOCKET] Message queue flushed successfully")
+    }
+    
+    /**
+     * Attempt immediate reconnection for critical events
+     */
+    private fun attemptImmediateReconnection() {
+        Log.d(TAG, "[SOCKET] attemptImmediateReconnection() called")
+        
+        if (isSocketConnected) {
+            Log.d(TAG, "[SOCKET] Already connected, no need to reconnect")
+            return
+        }
+        
+        val token = authManager.getStoredToken()
+        if (token == null) {
+            Log.w(TAG, "[SOCKET] No valid token for immediate reconnection")
+            return
+        }
+        
+        Log.d(TAG, "[SOCKET] Attempting immediate reconnection for critical event")
+        connect()
+    }
+
     fun disconnect() {
         Log.d(TAG, "[SOCKET] disconnect() called")
         // Stop token validation when disconnecting
         stopTokenValidation()
+        isSocketConnected = false
+        // Clear message queue on explicit disconnect
+        if (messageQueue.isNotEmpty()) {
+            Log.d(TAG, "[SOCKET] Clearing ${messageQueue.size} queued messages on disconnect")
+            messageQueue.clear()
+        }
         socket?.disconnect()
         socket = null
         Log.d(TAG, "[SOCKET] Socket disconnected and cleared")
     }
     
     fun isConnected(): Boolean {
-        return socket?.connected() == true
+        return socket?.connected() == true && isSocketConnected
     }
     
     fun setWebRTCEventListener(listener: WebRTCEventListener?) {
