@@ -70,9 +70,10 @@
 
   // WebRTC Manager Class
   class WebRTCManager {
-    constructor(socket) {
+    constructor(socket, sendMessageFn) {
       debugLog('webrtc', 'WebRTCManager constructor called', { socketConnected: !!socket });
       this.socket = socket;
+      this.sendMessage = sendMessageFn;
       this.peerConnection = null;
       this.localStream = null;
       this.remoteStream = null;
@@ -169,13 +170,13 @@
 
       // Handle ICE candidates
       this.peerConnection.onicecandidate = (event) => {
-        if (event.candidate && this.socket && this.callId) {
+        if (event.candidate && this.sendMessage && this.callId) {
           debugLog('webrtc', 'Sending ICE candidate', {
             callAttemptId: this.callId,
             candidateType: event.candidate.type,
             foundation: event.candidate.foundation
           });
-          this.socket.emit('webrtc:ice-candidate', {
+          this.sendMessage('webrtc:ice-candidate', {
             callAttemptId: this.callId,
             candidate: event.candidate,
             timestamp: Date.now()
@@ -183,9 +184,9 @@
         } else if (event.candidate === null) {
           debugLog('webrtc', 'ICE candidate gathering complete');
         } else {
-          debugLog('webrtc', 'ICE candidate ignored - missing socket or callId', {
+          debugLog('webrtc', 'ICE candidate ignored - missing sendMessage or callId', {
             hasCandidate: !!event.candidate,
-            hasSocket: !!this.socket,
+            hasSendMessage: !!this.sendMessage,
             hasCallId: !!this.callId
           });
         }
@@ -257,7 +258,7 @@
       const offer = await this.peerConnection.createOffer();
       await this.peerConnection.setLocalDescription(offer);
 
-      this.socket.emit('webrtc:offer', {
+      this.sendMessage('webrtc:offer', {
         callAttemptId: callAttemptId,
         offer: offer,
         timestamp: Date.now()
@@ -353,6 +354,10 @@
       this.isVisible = true;
       this.isEnabled = true;
       this.isMuted = false;
+      
+      // Message queuing for socket connection race condition
+      this.messageQueue = [];
+      this.socketConnected = false;
       
       this.init();
     }
@@ -824,6 +829,35 @@
       debugLog('modal', 'Modal event listeners attached successfully');
     }
     
+    // Message queuing system to handle socket connection race conditions
+    sendSocketMessage(eventName, data) {
+      if (this.socket && this.socketConnected) {
+        debugLog('socket', 'Sending message immediately', { eventName, data });
+        this.socket.emit(eventName, data);
+      } else {
+        debugLog('socket', 'Queueing message - socket not connected', { eventName, data });
+        this.messageQueue.push({ eventName, data, timestamp: Date.now() });
+      }
+    }
+    
+    flushMessageQueue() {
+      if (this.messageQueue.length === 0) return;
+      
+      debugLog('socket', 'Flushing queued messages', { queueLength: this.messageQueue.length });
+      
+      while (this.messageQueue.length > 0) {
+        const message = this.messageQueue.shift();
+        debugLog('socket', 'Sending queued message', { 
+          eventName: message.eventName, 
+          data: message.data,
+          queuedFor: Date.now() - message.timestamp 
+        });
+        this.socket.emit(message.eventName, message.data);
+      }
+      
+      debugLog('socket', 'Message queue flushed successfully');
+    }
+    
     async initializeSocket() {
       debugLog('socket', 'Initializing socket connection');
       
@@ -887,7 +921,9 @@
               socketId: this.socket.id,
               transport: this.socket.io.engine.transport.name 
             });
+            this.socketConnected = true;
             this.setupSocketEventHandlers();
+            this.flushMessageQueue();
             resolve();
           });
           
@@ -904,6 +940,7 @@
               reason,
               socketId: this.socket?.id 
             });
+            this.socketConnected = false;
           });
           
         } catch (error) {
@@ -1107,7 +1144,7 @@
         
         // Initialize WebRTC
         debugLog('call', 'Initializing WebRTC');
-        this.webrtcManager = new WebRTCManager(this.socket);
+        this.webrtcManager = new WebRTCManager(this.socket, this.sendSocketMessage.bind(this));
         await this.webrtcManager.initialize(callAttemptId, localStream);
         
         // Start connection monitoring
@@ -1122,7 +1159,7 @@
           timestamp: Date.now()
         };
         debugLog('call', 'Sending call:initiate to server', initiateData);
-        this.socket.emit('call:initiate', initiateData);
+        this.sendSocketMessage('call:initiate', initiateData);
         
         this.emit('call:initiated', { callAttemptId });
         debugLog('call', 'Call initiated successfully', { callAttemptId });
@@ -1275,7 +1312,7 @@
       console.error('CallSafe: Connection failed');
       
       if (this.socket && this.currentCall) {
-        this.socket.emit('call:failed', {
+        this.sendSocketMessage('call:failed', {
           callAttemptId: this.currentCall.id,
           reason: 'connection_failed',
           timestamp: Date.now()
@@ -1448,7 +1485,7 @@
           timestamp: Date.now()
         };
         debugLog('call', 'Sending call:end to server', endData);
-        this.socket.emit('call:end', endData);
+        this.sendSocketMessage('call:end', endData);
         
         // Don't cleanup here - wait for server's call:ended response
         debugLog('call', 'Setting failsafe cleanup timeout');
@@ -1492,6 +1529,13 @@
         debugLog('cleanup', 'Disconnecting socket', { socketId: this.socket.id });
         this.socket.disconnect();
         this.socket = null;
+      }
+      
+      // Reset socket state and clear message queue
+      this.socketConnected = false;
+      if (this.messageQueue.length > 0) {
+        debugLog('cleanup', 'Clearing message queue', { queuedMessages: this.messageQueue.length });
+        this.messageQueue = [];
       }
       
       // Reset state
