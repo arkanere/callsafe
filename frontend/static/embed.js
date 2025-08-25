@@ -1099,7 +1099,7 @@
         debugLog('ui', 'Updating UI for call initiation');
         this.updateButtonState('connecting', 'Connecting...');
         this.showModal();
-        this.updateStatusMessage('Finding agent...');
+        this.updateStatusMessage('Finding agent... (takes ~10 seconds)');
         
         // Load Socket.IO and connect to signaling server
         debugLog('call', 'Initializing socket connection');
