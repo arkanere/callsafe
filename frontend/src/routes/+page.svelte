@@ -251,12 +251,15 @@
         <p class="text-xl text-gray-600 mb-12 font-light leading-relaxed max-w-2xl mx-auto">
           Privacy-focused browser-based calling solution that removes phone number barriers and boosts user engagement.
         </p>
-        <button 
+        <button
           on:click={openLoginModal}
           class="bg-gray-900 text-white px-12 py-4 text-lg font-medium tracking-wide hover:bg-gray-800 transition-colors duration-300"
         >
-          Get Started
+          Start Free Trial
         </button>
+        <p class="text-gray-600 mt-4 font-light">
+          No credit card required for the first 2 months
+        </p>
       </div>
     </section>
   
@@ -369,15 +372,20 @@
         <h2 class="text-4xl font-light text-gray-900 mb-8">
           Start Converting More Visitors
         </h2>
-        <p class="text-lg text-gray-600 font-light mb-12 leading-relaxed">
+        <p class="text-lg text-gray-600 font-light mb-8 leading-relaxed">
           Let privacy-conscious users reach you instantly without phone number barriers.
         </p>
-        <button 
-          on:click={openLoginModal}
-          class="bg-gray-900 text-white px-12 py-4 text-lg font-medium tracking-wide hover:bg-gray-800 transition-colors duration-300"
-        >
-          Start Your Free Trial
-        </button>
+        <div class="inline-flex flex-col items-center">
+          <button
+            on:click={openLoginModal}
+            class="bg-gray-900 text-white px-12 py-4 text-lg font-medium tracking-wide hover:bg-gray-800 transition-colors duration-300 mb-4"
+          >
+            Start Your Free Trial
+          </button>
+          <p class="text-gray-600 font-light">
+            No credit card required for the first 2 months
+          </p>
+        </div>
       </div>
     </section>
 
@@ -413,6 +421,13 @@
           <p class="text-gray-600 font-light">
             {isSignUpMode ? 'Join premium service providers using CallSafe' : 'Access your CallSafe account'}
           </p>
+          {#if isSignUpMode}
+            <div class="mt-4 p-3 bg-green-50 border border-green-200 rounded">
+              <p class="text-sm text-green-800 font-medium">
+                No credit card required for the first 2 months
+              </p>
+            </div>
+          {/if}
         </div>
         
         <form on:submit|preventDefault={handleSubmit}>

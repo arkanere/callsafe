@@ -7,17 +7,17 @@
     {
       id: 'professional',
       name: 'Professional',
-      price: '$0',
-      originalPrice: '$499',
-      period: 'first 2 months',
+      price: '$19',
+      originalPrice: '',
+      period: 'per month',
       calls: 'Up to 100 calls',
       features: [
+        'No credit card required for first 2 months',
         'Up to 100 anonymous calls per month',
         'Web dashboard access',
         'Call analytics included',
         'Standard support',
-        'Perfect for professional service businesses',
-        'Introductory price - $499/month after 2 months'
+        'Perfect for professional service businesses'
       ],
       buttonText: 'Start Professional',
       popular: false
@@ -25,10 +25,11 @@
     {
       id: 'premium',
       name: 'Premium',
-      price: '$999',
+      price: '$29',
       period: 'per month',
       calls: 'Up to 500 calls',
       features: [
+        'No credit card required for first 2 months',
         'Up to 500 anonymous calls per month',
         'Web dashboard access',
         'Call analytics included',
@@ -59,7 +60,7 @@
 
 <svelte:head>
   <title>Pricing - CallSafe</title>
-  <meta name="description" content="Privacy-focused browser-based calling solutions for businesses. Professional plans starting at $499/month.">
+  <meta name="description" content="Privacy-focused browser-based calling solutions for businesses. Professional plans starting at $19/month.">
 </svelte:head>
 
 <!-- Navigation Bar -->
@@ -82,6 +83,12 @@
     <div class="pricing-header">
       <h1>Privacy-Focused Calling Solutions</h1>
       <p>Browser-based anonymous calling that removes phone number barriers and boosts user engagement.</p>
+      <div class="no-card-notice">
+        <svg class="info-icon" viewBox="0 0 20 20" fill="currentColor">
+          <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/>
+        </svg>
+        No credit card required for the first 2 months
+      </div>
     </div>
 
     <div class="pricing-grid">
@@ -205,6 +212,26 @@
     max-width: 700px;
     margin: 0 auto;
     line-height: 1.6;
+  }
+
+  .no-card-notice {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 1.5rem;
+    padding: 0.75rem 1.5rem;
+    background: #f0fdf4;
+    border: 1px solid #86efac;
+    border-radius: 0.5rem;
+    color: #166534;
+    font-size: 1rem;
+    font-weight: 500;
+  }
+
+  .info-icon {
+    width: 1.25rem;
+    height: 1.25rem;
+    flex-shrink: 0;
   }
 
   .pricing-grid {
