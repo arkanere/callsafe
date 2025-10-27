@@ -453,23 +453,49 @@
               <button class="callsafe-modal-close" aria-label="Close">&times;</button>
             </div>
             <div class="callsafe-modal-body">
-              <div class="callsafe-status-message" id="callsafe-status">Ready to call</div>
-              <div class="callsafe-call-timer" id="callsafe-timer" style="display: none;">00:00</div>
+              <!-- Confirmation UI (shown before call is placed) -->
+              <div class="callsafe-confirmation" id="callsafe-confirmation">
+                <div class="callsafe-confirmation-message">Ready to connect on call?</div>
+              </div>
+              <!-- Call Status UI (shown during/after call) -->
+              <div class="callsafe-call-status" id="callsafe-call-status" style="display: none;">
+                <div class="callsafe-status-message" id="callsafe-status">Ready to call</div>
+                <div class="callsafe-call-timer" id="callsafe-timer" style="display: none;">00:00</div>
+              </div>
             </div>
             <div class="callsafe-modal-footer">
-              <button class="callsafe-control-btn mute-btn" id="callsafe-mute" style="display: none;">
-                <svg viewBox="0 0 24 24" width="20" height="20">
-                  <path fill="currentColor" d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
-                  <path fill="currentColor" d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
-                </svg>
-                Mute
-              </button>
-              <button class="callsafe-control-btn end-btn" id="callsafe-end">
-                <svg viewBox="0 0 24 24" width="20" height="20">
-                  <path fill="currentColor" d="M12 9c-1.6 0-3.15.25-4.6.72v3.1c0 .39-.23.74-.56.9-.98.49-1.87 1.12-2.66 1.85-.18.18-.43.28-.7.28-.28 0-.53-.11-.71-.29L.29 13.08c-.18-.17-.29-.42-.29-.7 0-.28.11-.53.29-.71C3.34 8.78 7.46 7 12 7s8.66 1.78 11.71 4.67c.18.18.29.43.29.71 0 .28-.11.53-.29.7l-2.48 2.48c-.18.18-.43.29-.71.29-.27 0-.52-.1-.7-.28-.79-.73-1.68-1.36-2.66-1.85-.33-.16-.56-.51-.56-.9v-3.1C15.15 9.25 13.6 9 12 9z"/>
-                </svg>
-                End Call
-              </button>
+              <!-- Confirmation Buttons -->
+              <div class="callsafe-confirmation-buttons" id="callsafe-confirmation-buttons">
+                <button class="callsafe-control-btn cancel-btn" id="callsafe-cancel">
+                  Cancel
+                </button>
+                <button class="callsafe-control-btn call-now-btn" id="callsafe-call-now">
+                  <svg viewBox="0 0 24 24" width="20" height="20">
+                    <path fill="currentColor" d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56-.35-.12-.74-.03-1.01.24l-1.57 1.97c-2.83-1.35-5.48-3.9-6.89-6.83l1.95-1.66c.27-.28.35-.67.24-1.02-.37-1.11-.56-2.3-.56-3.53 0-.54-.45-.99-.99-.99H4.19C3.65 3 3 3.24 3 3.99 3 13.28 10.73 21 20.01 21c.71 0 .99-.63.99-1.18v-3.45c0-.54-.45-.99-.99-.99z"/>
+                  </svg>
+                  Call Now
+                </button>
+              </div>
+              <!-- Call Control Buttons -->
+              <div class="callsafe-call-buttons" id="callsafe-call-buttons" style="display: none;">
+                <button class="callsafe-control-btn mute-btn" id="callsafe-mute" style="display: none;">
+                  <svg viewBox="0 0 24 24" width="20" height="20">
+                    <path fill="currentColor" d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+                    <path fill="currentColor" d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+                  </svg>
+                  Mute
+                </button>
+                <button class="callsafe-control-btn end-btn" id="callsafe-end">
+                  <svg viewBox="0 0 24 24" width="20" height="20">
+                    <path fill="currentColor" d="M12 9c-1.6 0-3.15.25-4.6.72v3.1c0 .39-.23.74-.56.9-.98.49-1.87 1.12-2.66 1.85-.18.18-.43.28-.7.28-.28 0-.53-.11-.71-.29L.29 13.08c-.18-.17-.29-.42-.29-.7 0-.28.11-.53.29-.71C3.34 8.78 7.46 7 12 7s8.66 1.78 11.71 4.67c.18.18.29.43.29.71 0 .28-.11.53-.29.7l-2.48 2.48c-.18.18-.43.29-.71.29-.27 0-.52-.1-.7-.28-.79-.73-1.68-1.36-2.66-1.85-.33-.16-.56-.51-.56-.9v-3.1C15.15 9.25 13.6 9 12 9z"/>
+                  </svg>
+                  End Call
+                </button>
+              </div>
+              <!-- Branding -->
+              <div class="callsafe-branding" id="callsafe-branding">
+                Powered with <a href="https://callsafe.tech" target="_blank" rel="noopener noreferrer" class="callsafe-link">CallSafe</a>
+              </div>
             </div>
           </div>
         </div>
@@ -662,7 +688,23 @@
           padding: 24px;
           text-align: center;
         }
-        
+
+        .callsafe-confirmation {
+          padding: 20px 0;
+        }
+
+        .callsafe-confirmation-message {
+          font-size: 18px;
+          font-weight: 500;
+          color: #333;
+          margin-bottom: 0;
+          line-height: 1.5;
+        }
+
+        .callsafe-call-status {
+          /* Status display during/after call */
+        }
+
         .callsafe-status-message {
           font-size: 16px;
           font-weight: 500;
@@ -680,10 +722,39 @@
         .callsafe-modal-footer {
           padding: 16px 24px 24px;
           display: flex;
+          flex-direction: column;
           gap: 12px;
           justify-content: center;
+          align-items: center;
         }
-        
+
+        .callsafe-confirmation-buttons,
+        .callsafe-call-buttons {
+          display: flex;
+          gap: 12px;
+          width: 100%;
+          justify-content: center;
+        }
+
+        .callsafe-branding {
+          font-size: 12px;
+          color: #6c757d;
+          text-align: center;
+          margin-top: 8px;
+        }
+
+        .callsafe-link {
+          color: #667eea;
+          text-decoration: none;
+          font-weight: 600;
+          transition: color 0.2s ease;
+        }
+
+        .callsafe-link:hover {
+          color: #764ba2;
+          text-decoration: underline;
+        }
+
         .callsafe-control-btn {
           display: flex;
           align-items: center;
@@ -697,9 +768,29 @@
           transition: all 0.2s ease;
           background: white;
         }
-        
+
         .callsafe-control-btn svg {
           flex-shrink: 0;
+        }
+
+        .cancel-btn {
+          border-color: #6c757d;
+          color: #6c757d;
+        }
+
+        .cancel-btn:hover {
+          background: #6c757d;
+          color: white;
+        }
+
+        .call-now-btn {
+          border-color: #28a745;
+          color: #28a745;
+        }
+
+        .call-now-btn:hover {
+          background: #28a745;
+          color: white;
         }
         
         .mute-btn {
@@ -732,33 +823,59 @@
           background: #2d3748;
           color: white;
         }
-        
+
         .theme-dark .callsafe-modal-header {
           border-bottom-color: #4a5568;
         }
-        
+
         .theme-dark .callsafe-modal-title {
           color: white;
         }
-        
+
         .theme-dark .callsafe-modal-close {
           color: #a0aec0;
         }
-        
+
         .theme-dark .callsafe-modal-close:hover {
           background: #4a5568;
           color: white;
         }
-        
+
+        .theme-dark .callsafe-confirmation-message {
+          color: #e2e8f0;
+        }
+
         .theme-dark .callsafe-status-message {
           color: #e2e8f0;
         }
-        
+
         .theme-dark .callsafe-control-btn {
           background: #2d3748;
           color: #e2e8f0;
         }
-        
+
+        .theme-dark .cancel-btn:hover {
+          background: #6c757d;
+          color: white;
+        }
+
+        .theme-dark .call-now-btn:hover {
+          background: #28a745;
+          color: white;
+        }
+
+        .theme-dark .callsafe-branding {
+          color: #a0aec0;
+        }
+
+        .theme-dark .callsafe-link {
+          color: #90a4f4;
+        }
+
+        .theme-dark .callsafe-link:hover {
+          color: #b4a3d8;
+        }
+
         /* Mobile Responsive */
         @media (max-width: 768px) {
           .callsafe-button {
@@ -794,13 +911,28 @@
       debugLog('modal', 'Attaching modal event listeners');
       const modal = this.widgetElement.querySelector('.callsafe-modal');
       const closeBtn = modal.querySelector('.callsafe-modal-close');
+      const callNowBtn = modal.querySelector('#callsafe-call-now');
+      const cancelBtn = modal.querySelector('#callsafe-cancel');
       const muteBtn = modal.querySelector('#callsafe-mute');
       const endBtn = modal.querySelector('#callsafe-end');
-      
+
       closeBtn.onclick = () => {
         debugLog('modal', 'Close button clicked - hiding modal');
         this.hideModal();
       };
+
+      // Confirmation buttons
+      callNowBtn.onclick = () => {
+        debugLog('modal', 'Call Now button clicked');
+        this.handleCallNow();
+      };
+
+      cancelBtn.onclick = () => {
+        debugLog('modal', 'Cancel button clicked - hiding modal');
+        this.hideModal();
+      };
+
+      // Call control buttons
       muteBtn.onclick = () => {
         debugLog('modal', 'Mute button clicked');
         this.toggleMute();
@@ -809,7 +941,7 @@
         debugLog('modal', 'End call button clicked');
         this.endCall();
       };
-      
+
       // Close modal on overlay click
       modal.querySelector('.callsafe-modal-overlay').onclick = (e) => {
         if (e.target === e.currentTarget) {
@@ -817,7 +949,7 @@
           this.hideModal();
         }
       };
-      
+
       // ESC key to close modal
       document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && modal.style.display !== 'none') {
@@ -825,7 +957,7 @@
           this.hideModal();
         }
       });
-      
+
       debugLog('modal', 'Modal event listeners attached successfully');
     }
     
@@ -1073,18 +1205,56 @@
     }
     
     async handleButtonClick() {
-      debugLog('call', 'Call button clicked', { 
+      debugLog('call', 'Call button clicked', {
         hasCurrentCall: !!this.currentCall,
         currentCallState: this.currentCall?.state
       });
-      
+
       if (this.currentCall) {
         debugLog('call', 'Showing modal for existing call');
         this.showModal();
       } else {
-        debugLog('call', 'Initiating new call');
-        await this.initiateCall();
+        debugLog('call', 'Showing confirmation modal');
+        this.showConfirmationModal();
       }
+    }
+
+    showConfirmationModal() {
+      debugLog('modal', 'Showing confirmation modal');
+
+      // Show confirmation UI, hide call status UI
+      const confirmationUI = this.widgetElement.querySelector('#callsafe-confirmation');
+      const callStatusUI = this.widgetElement.querySelector('#callsafe-call-status');
+      const confirmationButtons = this.widgetElement.querySelector('#callsafe-confirmation-buttons');
+      const callButtons = this.widgetElement.querySelector('#callsafe-call-buttons');
+      const branding = this.widgetElement.querySelector('#callsafe-branding');
+
+      if (confirmationUI) confirmationUI.style.display = 'block';
+      if (callStatusUI) callStatusUI.style.display = 'none';
+      if (confirmationButtons) confirmationButtons.style.display = 'flex';
+      if (callButtons) callButtons.style.display = 'none';
+      if (branding) branding.style.display = 'block';
+
+      this.showModal();
+      debugLog('modal', 'Confirmation modal shown');
+    }
+
+    async handleCallNow() {
+      debugLog('call', 'Call Now confirmed - initiating call');
+
+      // Switch to call status UI
+      const confirmationUI = this.widgetElement.querySelector('#callsafe-confirmation');
+      const callStatusUI = this.widgetElement.querySelector('#callsafe-call-status');
+      const confirmationButtons = this.widgetElement.querySelector('#callsafe-confirmation-buttons');
+      const callButtons = this.widgetElement.querySelector('#callsafe-call-buttons');
+
+      if (confirmationUI) confirmationUI.style.display = 'none';
+      if (callStatusUI) callStatusUI.style.display = 'block';
+      if (confirmationButtons) confirmationButtons.style.display = 'none';
+      if (callButtons) callButtons.style.display = 'flex';
+
+      // Initiate the call
+      await this.initiateCall();
     }
     
     async initiateCall() {
