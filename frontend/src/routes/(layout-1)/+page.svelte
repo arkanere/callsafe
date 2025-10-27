@@ -21,7 +21,7 @@
       console.log('[MAIN PAGE] Token valid:', isTokenValid);
       if (isTokenValid) {
         console.log('[MAIN PAGE] Redirecting to /user');
-        goto('/user');
+        window.location.href = '/user';
       } else {
         console.log('[MAIN PAGE] User not authenticated, staying on main page');
       }
@@ -147,7 +147,7 @@
           // Success - redirect to user page
           console.log('[MAIN PAGE] Redirecting to /user');
           closeLoginModal();
-          goto('/user');
+          window.location.href = '/user';
         } else {
           console.log('[MAIN PAGE] Signup failed:', result.error);
           loginError = result.error || 'Failed to create account';
@@ -182,7 +182,7 @@
         // Success - redirect to user dashboard
         console.log('[MAIN PAGE] Redirecting to /user');
         closeLoginModal();
-        goto('/user');
+        window.location.href = '/user';
         
       } catch (error) {
         console.error('[MAIN PAGE] Login error:', error);
