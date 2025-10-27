@@ -1,0 +1,13 @@
+# Allow all search engines to crawl the site
+User-agent: *
+Allow: /
+
+# Sitemap location (update this URL to match your domain)
+Sitemap: https://www.callsafe.tech/sitemap.xml
+
+# Disallow crawling of user-specific pages
+Disallow: /user/
+Disallow: /embed/
+
+# Disallow API routes
+Disallow: /api/
