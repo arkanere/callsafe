@@ -194,15 +194,31 @@
         
         <!-- Embed Code -->
         <div class="mb-4">
-          <h3 class="text-sm font-medium text-gray-700 mb-2">Embed Code:</h3>
+          <h3 class="text-sm font-medium text-gray-700 mb-2">Embed Code (Optimized for Fast Page Load):</h3>
           <div class="bg-gray-50 p-3 rounded-lg">
             <div class="mb-2">
-              <code class="text-sm text-gray-700 break-all">&lt;script src="https://callsafe.tech/embed.js" data-handle="{callSafeHandle}" data-source-id="your-page-id"&gt;&lt;/script&gt;</code>
+              <code class="text-xs text-gray-700 break-all block whitespace-pre-wrap font-mono">&lt;script&gt;
+  window.addEventListener('load', function() &#123;
+    var script = document.createElement('script');
+    script.src = 'https://callsafe.tech/embed.js';
+    script.setAttribute('data-handle', '{callSafeHandle}');
+    script.setAttribute('data-source-id', 'PUT_YOUR_PAGE_ID_HERE');
+    document.body.appendChild(script);
+  &#125;);
+&lt;/script&gt;</code>
             </div>
             <div class="flex items-center justify-between">
-              <span class="text-xs text-gray-500">Replace "your-page-id" with your tracking ID</span>
+              <span class="text-xs text-gray-500">Replace "PUT_YOUR_PAGE_ID_HERE" with your tracking ID</span>
               <button
-                on:click={() => copyToClipboard(`<script src="https://callsafe.tech/embed.js" data-handle="${callSafeHandle}" data-source-id="your-page-id"></script>`)}
+                on:click={() => copyToClipboard(`<script>
+  window.addEventListener('load', function() {
+    var script = document.createElement('script');
+    script.src = 'https://callsafe.tech/embed.js';
+    script.setAttribute('data-handle', '${callSafeHandle}');
+    script.setAttribute('data-source-id', 'PUT_YOUR_PAGE_ID_HERE');
+    document.body.appendChild(script);
+  });
+</script>`)}
                 class="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-sm font-semibold transition-colors duration-200"
               >
                 {copied ? 'Copied!' : 'Copy Embed Code'}
