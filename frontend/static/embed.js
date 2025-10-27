@@ -9,13 +9,11 @@
     AUTO_RESET_DELAY: 3000,
     CONNECTION_CHECK_INTERVAL: 1000,
     SOCKET_IO_CDN: 'https://cdn.socket.io/4.7.4/socket.io.min.js',
-    
+
     // WebRTC ICE Servers
     STUN_SERVER_1: 'stun:stun.l.google.com:19302',
-    STUN_SERVER_2: 'stun:stun1.l.google.com:19302',
-    TURN_SERVER_URL: 'turn:a.relay.metered.ca:80',
-    TURN_USERNAME: '***REDACTED***',
-    TURN_CREDENTIAL: '***REDACTED***'
+    STUN_SERVER_2: 'stun:stun1.l.google.com:19302'
+    // TURN credentials removed - fetched dynamically from server
   };
 
   // Debug logging utility - ALWAYS logs in production for debugging call issues
@@ -80,33 +78,44 @@
       this.callId = null;
       this.connectionState = 'idle';
       this.connectionCheckInterval = null;
+      this.turnCredentials = null; // Dynamic TURN credentials from server
+    }
+
+    setTurnCredentials(credentials) {
+      debugLog('webrtc', 'Received TURN credentials from server', {
+        hasUrls: !!credentials.urls,
+        urlCount: credentials.urls?.length,
+        expiresAt: credentials.expiresAt ? new Date(credentials.expiresAt * 1000).toISOString() : 'unknown'
+      });
+      this.turnCredentials = credentials;
     }
 
     getIceServers() {
       debugLog('webrtc', 'Getting ICE servers configuration');
       const iceServers = [];
 
-      // Add STUN servers
+      // Add STUN servers (public servers, safe to hardcode)
       iceServers.push({ urls: CONFIG.STUN_SERVER_1 });
       iceServers.push({ urls: CONFIG.STUN_SERVER_2 });
-      debugLog('webrtc', 'Added STUN servers', { 
-        stun1: CONFIG.STUN_SERVER_1, 
-        stun2: CONFIG.STUN_SERVER_2 
+      debugLog('webrtc', 'Added STUN servers', {
+        stun1: CONFIG.STUN_SERVER_1,
+        stun2: CONFIG.STUN_SERVER_2
       });
 
-      // Add TURN server as fallback if configured
-      if (CONFIG.TURN_SERVER_URL && CONFIG.TURN_USERNAME && CONFIG.TURN_CREDENTIAL) {
+      // Add TURN server with dynamic credentials if available
+      if (this.turnCredentials) {
         iceServers.push({
-          urls: CONFIG.TURN_SERVER_URL,
-          username: CONFIG.TURN_USERNAME,
-          credential: CONFIG.TURN_CREDENTIAL
+          urls: this.turnCredentials.urls,
+          username: this.turnCredentials.username,
+          credential: this.turnCredentials.credential
         });
-        debugLog('webrtc', 'TURN server configured as fallback', { 
-          turnUrl: CONFIG.TURN_SERVER_URL,
-          username: CONFIG.TURN_USERNAME 
+        debugLog('webrtc', 'TURN server configured with time-limited credentials', {
+          turnUrls: this.turnCredentials.urls,
+          expiresAt: new Date(this.turnCredentials.expiresAt * 1000).toISOString(),
+          username: this.turnCredentials.username
         });
       } else {
-        debugLog('webrtc', 'TURN server not configured - using STUN only');
+        debugLog('webrtc', 'No TURN credentials available - using STUN only (may fail on restrictive networks)');
       }
 
       debugLog('webrtc', 'ICE servers configuration complete', { totalServers: iceServers.length });
@@ -336,7 +345,7 @@
     }
   }
 
-  // Main CallSafe Widget Class
+  // Main CallSafeWidget Class
   class CallSafeWidget {
     constructor(config, scriptElement) {
       this.version = '5.0.0';
@@ -354,11 +363,15 @@
       this.isVisible = true;
       this.isEnabled = true;
       this.isMuted = false;
-      
+
       // Message queuing for socket connection race condition
       this.messageQueue = [];
       this.socketConnected = false;
-      
+
+      // TURN credentials (fetched dynamically)
+      this.turnCredentials = null;
+      this.turnCredentialsFetchPromise = null;
+
       this.init();
     }
     
@@ -369,22 +382,71 @@
           this.renderUnsupportedMessage();
           return;
         }
-        
+
         // Create widget UI
         this.createWidget();
-        
+
+        // Pre-fetch TURN credentials in background (don't block initialization)
+        this.prefetchTurnCredentials();
+
         // Mark as ready
         this.isReady = true;
         this.emit('ready');
-        
+
         if (this.config.debug) {
           console.log('CallSafe Widget initialized', this.config);
         }
-        
+
       } catch (error) {
         console.error('CallSafe: Initialization failed', error);
         this.emit('error', { message: 'Initialization failed', error });
       }
+    }
+
+    prefetchTurnCredentials() {
+      debugLog('turn', 'Pre-fetching TURN credentials in background');
+
+      // Fetch credentials from signaling server
+      this.turnCredentialsFetchPromise = fetch(`${CONFIG.DEFAULT_SIGNALING_SERVER}/api/turn-credentials`)
+        .then(res => {
+          if (!res.ok) {
+            throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+          }
+          return res.json();
+        })
+        .then(credentials => {
+          this.turnCredentials = credentials;
+          debugLog('turn', 'TURN credentials pre-fetched successfully', {
+            expiresAt: credentials.expiresAt ? new Date(credentials.expiresAt * 1000).toISOString() : 'unknown',
+            urlCount: credentials.urls?.length
+          });
+          return credentials;
+        })
+        .catch(error => {
+          debugLog('turn', 'Failed to pre-fetch TURN credentials (will use STUN only)', {
+            error: error.message
+          });
+          return null; // Graceful degradation - STUN only
+        });
+    }
+
+    async getTurnCredentials() {
+      // If already fetched, return immediately
+      if (this.turnCredentials) {
+        debugLog('turn', 'Using cached TURN credentials');
+        return this.turnCredentials;
+      }
+
+      // If fetch in progress, wait for it
+      if (this.turnCredentialsFetchPromise) {
+        debugLog('turn', 'Waiting for TURN credentials fetch to complete');
+        return await this.turnCredentialsFetchPromise;
+      }
+
+      // Fallback: fetch now (shouldn't happen if prefetch worked)
+      debugLog('turn', 'No cached credentials, fetching now');
+      this.prefetchTurnCredentials();
+      return await this.turnCredentialsFetchPromise;
     }
     
     createWidget() {
@@ -1273,26 +1335,30 @@
         // Generate call attempt ID
         const callAttemptId = this.generateCallId();
         debugLog('call', 'Generated call attempt ID', { callAttemptId });
-        
+
         if (!validateCallAttemptId(callAttemptId)) {
           throw new Error('Invalid call attempt ID generated');
         }
-        
-        // Request microphone permission
-        debugLog('call', 'Requesting microphone permission');
-        const localStream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true
-          },
-          video: false
-        });
-        debugLog('call', 'Microphone permission granted', { 
+
+        // Get microphone permission and TURN credentials in parallel
+        debugLog('call', 'Requesting microphone permission and fetching TURN credentials in parallel');
+        const [localStream, turnCredentials] = await Promise.all([
+          navigator.mediaDevices.getUserMedia({
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true
+            },
+            video: false
+          }),
+          this.getTurnCredentials()
+        ]);
+
+        debugLog('call', 'Microphone permission granted', {
           streamId: localStream.id,
           trackCount: localStream.getTracks().length
         });
-        
+
         // Create call object
         this.currentCall = {
           id: callAttemptId,
@@ -1301,20 +1367,26 @@
           duration: 0
         };
         debugLog('call', 'Call object created', this.currentCall);
-        
+
         // Update UI
         debugLog('ui', 'Updating UI for call initiation');
         this.updateButtonState('connecting', 'Connecting...');
         this.showModal();
         this.updateStatusMessage('Finding agent... (takes ~10 seconds)');
-        
+
         // Load Socket.IO and connect to signaling server
         debugLog('call', 'Initializing socket connection');
         await this.initializeSocket();
-        
-        // Initialize WebRTC
-        debugLog('call', 'Initializing WebRTC');
+
+        // Initialize WebRTC with TURN credentials
+        debugLog('call', 'Initializing WebRTC with credentials');
         this.webrtcManager = new WebRTCManager(this.socket, this.sendSocketMessage.bind(this));
+
+        // Set TURN credentials if available
+        if (turnCredentials) {
+          this.webrtcManager.setTurnCredentials(turnCredentials);
+        }
+
         await this.webrtcManager.initialize(callAttemptId, localStream);
         
         // Start connection monitoring
