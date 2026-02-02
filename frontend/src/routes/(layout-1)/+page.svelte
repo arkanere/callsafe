@@ -392,18 +392,26 @@
     <!-- Footer -->
     <footer class="border-t border-gray-100 py-12">
       <div class="max-w-6xl mx-auto px-6">
-        <div class="text-center space-x-8">
-          <a 
-            href="/privacy-policy" 
+        <div class="text-center space-x-8 mb-6">
+          <a
+            href="/privacy-policy"
             class="text-gray-600 hover:text-gray-900 font-light transition-colors duration-300"
           >
             Privacy Policy
           </a>
-          <a 
-            href="/terms-of-service" 
+          <a
+            href="/terms-of-service"
             class="text-gray-600 hover:text-gray-900 font-light transition-colors duration-300"
           >
             Terms of Service
+          </a>
+        </div>
+        <div class="text-center">
+          <a
+            href="mailto:hello@callsafe.tech"
+            class="text-gray-600 hover:text-gray-900 font-light transition-colors duration-300"
+          >
+            hello@callsafe.tech
           </a>
         </div>
       </div>
