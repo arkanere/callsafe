@@ -26,6 +26,7 @@ export async function POST({ request }) {
       console.log('[REFRESH API] Creating new token with extended expiration');
       // Create new token with extended expiration
       const newTokenPayload = {
+        userId: decoded.userId,
         email: decoded.email,
         handle: decoded.handle,
         sourceId: decoded.sourceId,

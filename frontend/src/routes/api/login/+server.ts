@@ -63,6 +63,7 @@ export async function POST({ request }) {
     console.log('[LOGIN API] Creating JWT token');
     // Create JWT token with user data
     const tokenPayload = {
+      userId: user.id,
       email: user.email,
       handle,
       sourceId: user.sourceid || 'website',

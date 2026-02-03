@@ -2,24 +2,44 @@
 import { createPool } from '@vercel/postgres';
 import { POSTGRES_URL } from '$env/static/private';
 import { json } from '@sveltejs/kit';
+import { extractBearerToken, verifyJWT, canAccessUserResource } from '$lib/server/auth.js';
 
 function createDbPool() {
     return createPool({ connectionString: POSTGRES_URL });
 }
 
 // GET - Fetch user data including sourceId
-export async function GET({ url }) {
+export async function GET({ url, request }) {
     console.log('[USER API] GET request received');
     const pool = createDbPool();
     console.log('[USER API] Database pool created');
-    
+
     try {
         const userId = url.searchParams.get('userId');
         console.log('[USER API] Request userId:', userId);
-        
+
         if (!userId) {
             console.log('[USER API] Missing userId parameter');
             return json({ success: false, error: 'User ID is required' }, { status: 400 });
+        }
+
+        // Extract and verify JWT token
+        const token = extractBearerToken(request.headers.get('authorization'));
+        if (!token) {
+            console.log('[USER API] Missing or invalid authorization header');
+            return json({ success: false, error: 'Unauthorized' }, { status: 401 });
+        }
+
+        const tokenResult = verifyJWT(token);
+        if (!tokenResult.valid) {
+            console.log('[USER API] Invalid token:', tokenResult.error);
+            return json({ success: false, error: 'Invalid or expired token' }, { status: 401 });
+        }
+
+        // Verify user can only access their own data
+        if (!canAccessUserResource(tokenResult.payload.userId, userId)) {
+            console.log('[USER API] Authorization failed: user', tokenResult.payload.userId, 'cannot access user', userId);
+            return json({ success: false, error: 'Forbidden: You can only access your own data' }, { status: 403 });
         }
 
         console.log('[USER API] Querying database for user data');
