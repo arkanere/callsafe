@@ -45,7 +45,8 @@
 
   onMount(async () => {
     // Check authentication
-    if (!AuthManager.isTokenValid()) {
+    const isAuthenticated = await AuthManager.isAuthenticated();
+    if (!isAuthenticated) {
       goto('/');
       return;
     }

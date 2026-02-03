@@ -10,13 +10,19 @@ export class ConnectionManager {
 
   async connect(): Promise<Socket> {
     console.log('[CONNECTION MANAGER] connect(): Initiating connection');
-    
-    const token = AuthManager.getToken();
-    if (!token) {
-      console.error('[CONNECTION MANAGER] connect(): No authentication token available');
+
+    // Get short-lived token for Socket.IO authentication
+    const tokenResponse = await fetch('/api/socket-token', {
+      credentials: 'include'
+    });
+
+    if (!tokenResponse.ok) {
+      console.error('[CONNECTION MANAGER] connect(): Failed to get socket token');
       throw new Error('Authentication required');
     }
-    console.log('[CONNECTION MANAGER] connect(): Authentication token retrieved');
+
+    const { token } = await tokenResponse.json();
+    console.log('[CONNECTION MANAGER] connect(): Socket token retrieved');
 
     const socketUrl = env.VITE_SIGNALING_SERVER_URL || 'https://tunnel.callsafe.tech';
     console.log('[CONNECTION MANAGER] connect(): Creating socket.io connection to', socketUrl);

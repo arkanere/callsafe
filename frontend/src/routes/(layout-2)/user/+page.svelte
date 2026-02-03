@@ -17,26 +17,27 @@
   }
   
   // Check for authentication and load user data
-  onMount(() => {
+  onMount(async () => {
     console.log('[USER PAGE] Component mounted');
-    console.log('[USER PAGE] Checking token validity');
-    
-    if (!AuthManager.isTokenValid()) {
-      console.log('[USER PAGE] Token invalid, redirecting to /');
+    console.log('[USER PAGE] Checking authentication');
+
+    const isAuthenticated = await AuthManager.isAuthenticated();
+    if (!isAuthenticated) {
+      console.log('[USER PAGE] Not authenticated, redirecting to /');
       goto('/');
       return;
     }
-    
-    console.log('[USER PAGE] Token valid, loading user data');
-    // Load user data from JWT token
-    userData = AuthManager.getUserFromToken();
-    console.log('[USER PAGE] User data from token:', userData);
-    
+
+    console.log('[USER PAGE] Authenticated, loading user data');
+    // Load user data from auth API
+    userData = await AuthManager.getUserData();
+    console.log('[USER PAGE] User data loaded:', userData);
+
     if (userData) {
       callSafeHandle = userData.handle;
       console.log('[USER PAGE] CallSafe handle set:', callSafeHandle);
     }
-    
+
     // Load additional user data from API if needed
     loadUserData();
   });

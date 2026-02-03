@@ -14,12 +14,12 @@
     let currentUser = null;
     
     // Check if user is already authenticated
-    onMount(() => {
+    onMount(async () => {
       console.log('[MAIN PAGE] Component mounted');
-      console.log('[MAIN PAGE] Checking token validity');
-      const isTokenValid = AuthManager.isTokenValid();
-      console.log('[MAIN PAGE] Token valid:', isTokenValid);
-      if (isTokenValid) {
+      console.log('[MAIN PAGE] Checking authentication');
+      const isAuthenticated = await AuthManager.isAuthenticated();
+      console.log('[MAIN PAGE] Authenticated:', isAuthenticated);
+      if (isAuthenticated) {
         console.log('[MAIN PAGE] Redirecting to /user');
         window.location.href = '/user';
       } else {
@@ -135,16 +135,10 @@
         console.log('[MAIN PAGE] Signup response data:', { ...result, user: result.user ? { ...result.user, password: '[REDACTED]' } : undefined });
         
         if (result.success) {
-          console.log('[MAIN PAGE] Signup successful, storing user data');
-          // Store user session
+          console.log('[MAIN PAGE] Signup successful, user auto-logged in');
           currentUser = result.user;
-          
-          // Store userId in localStorage for session management
-          localStorage.setItem('callsafe_userId', result.user.id.toString());
-          localStorage.setItem('callsafe_user', JSON.stringify(result.user));
-          console.log('[MAIN PAGE] User data stored in localStorage');
-          
-          // Success - redirect to user page
+
+          // Success - redirect to user page (auth cookie set by server)
           console.log('[MAIN PAGE] Redirecting to /user');
           closeLoginModal();
           window.location.href = '/user';

@@ -3,6 +3,13 @@ import { POSTGRES_URL } from '$env/static/private';
 import { json } from '@sveltejs/kit';
 import bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
+import jwt from 'jsonwebtoken';
+
+const JWT_SECRET = process.env.JWT_SECRET;
+
+if (!JWT_SECRET) {
+  throw new Error('FATAL: JWT_SECRET environment variable is not set. Application cannot start.');
+}
 
 function createDbPool() {
     return createPool({ connectionString: POSTGRES_URL });
@@ -23,7 +30,7 @@ function validatePassword(password) {
     return isValid;
 }
 
-export async function POST({ request }) {
+export async function POST({ request, cookies }) {
     console.log('[SIGNUP API] POST request received');
     const pool = createDbPool();
     console.log('[SIGNUP API] Database pool created');
@@ -125,27 +132,38 @@ export async function POST({ request }) {
         const newHandle = handleResult.rows[0];
         console.log('[SIGNUP API] Handle created successfully:', { id: newHandle.id, handle: newHandle.handle });
 
+        console.log('[SIGNUP API] Creating JWT token for auto-login');
+        // Create JWT token to auto-login the user after signup
+        const tokenPayload = {
+            userId: newUser.id,
+            email: newUser.email,
+            handle: newHandle.handle,
+            sourceId: newUser.sourceid,
+            exp: Math.floor(Date.now() / 1000) + (24 * 60 * 60) // 24 hours
+        };
+        const token = jwt.sign(tokenPayload, JWT_SECRET);
+        console.log('[SIGNUP API] JWT token created');
+
+        // Set httpOnly cookie for auto-login
+        cookies.set('auth_token', token, {
+            httpOnly: true,
+            secure: true,
+            sameSite: 'strict',
+            path: '/',
+            maxAge: 60 * 60 * 24 // 24 hours
+        });
+        console.log('[SIGNUP API] Auth token set as httpOnly cookie');
+
         const responseData = {
             success: true,
             message: 'Account created successfully',
             user: {
-                id: newUser.id,
                 email: newUser.email,
-                name: newUser.name,
-                createdAt: newUser.created_at,
-                isActive: newUser.is_active,
-                sourceId: newUser.sourceid,
-                isEmbedded: newUser.isembedded
-            },
-            handle: {
-                id: newHandle.id,
-                handleId: newHandle.handle_id,
                 handle: newHandle.handle,
-                isEmbedded: newHandle.is_embedded,
-                createdAt: newHandle.created_at
+                sourceId: newUser.sourceid
             }
         };
-        console.log('[SIGNUP API] Signup successful, returning response:', responseData);
+        console.log('[SIGNUP API] Signup successful, returning response');
         return json(responseData, { status: 201 });
 
     } catch (error) {
