@@ -116,8 +116,8 @@ export async function POST({ request }) {
         console.log('[SIGNUP API] Generated handle:', handle);
 
         const handleResult = await pool.query(
-            `INSERT INTO callsafelinks (user_id, handle_id, handle, is_embedded) 
-             VALUES ($1, $2, $3, $4) 
+            `INSERT INTO callsafehandles (user_id, handle_id, handle, is_embedded)
+             VALUES ($1, $2, $3, $4)
              RETURNING *`,
             [newUser.id, handleId, handle, false]
         );
