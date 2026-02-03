@@ -406,6 +406,11 @@
             Terms of Service
           </a>
         </div>
+        <div class="text-center mb-6">
+          <p class="text-gray-700 font-light max-w-2xl mx-auto leading-relaxed">
+            We believe privacy should default in online interactions. We are building products to bring this vision into reality.
+          </p>
+        </div>
         <div class="text-center">
           <a
             href="mailto:hello@callsafe.tech"
