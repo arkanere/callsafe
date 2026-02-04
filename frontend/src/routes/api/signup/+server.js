@@ -4,6 +4,7 @@ import { json } from '@sveltejs/kit';
 import bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
 import jwt from 'jsonwebtoken';
+import validator from 'validator';
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
@@ -17,8 +18,20 @@ function createDbPool() {
 
 function validateEmail(email) {
     console.log('[SIGNUP API] Validating email:', email);
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    const isValid = emailRegex.test(email);
+
+    // Length check (RFC 5321)
+    if (!email || email.length > 254) {
+        console.log('[SIGNUP API] Email validation failed: invalid length');
+        return false;
+    }
+
+    // RFC 5322 compliant validation
+    const isValid = validator.isEmail(email, {
+        allow_utf8_local_part: false,
+        require_tld: true,
+        allow_ip_domain: false
+    });
+
     console.log('[SIGNUP API] Email validation result:', isValid);
     return isValid;
 }
