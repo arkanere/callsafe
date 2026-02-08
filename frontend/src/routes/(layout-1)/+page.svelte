@@ -268,7 +268,16 @@
             CallSafe lets website visitors call you directly from their browser without sharing their phone number. Users click a button on your website and connect instantly via secure browser calling.
           </p>
         </div>
-        
+
+        <!-- Demo GIF -->
+        <div class="mb-20 flex justify-center">
+          <img
+            src="/CallsafeLive.gif"
+            alt="CallSafe product demonstration"
+            class="max-w-4xl w-full rounded-lg shadow-lg"
+          />
+        </div>
+
         <div class="grid grid-cols-1 md:grid-cols-3 gap-16">
           <div class="text-center">
             <div class="text-3xl font-light text-gray-900 mb-4">Anonymous Calling</div>
