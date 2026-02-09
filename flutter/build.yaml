@@ -1,0 +1,10 @@
+# Build configuration for code generation
+targets:
+  $default:
+    builders:
+      freezed:
+        generate_for:
+          - lib/src/protocol/models/*.dart
+      json_serializable:
+        generate_for:
+          - lib/src/protocol/models/*.dart
