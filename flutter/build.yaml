@@ -5,6 +5,8 @@ targets:
       freezed:
         generate_for:
           - lib/src/protocol/models/*.dart
+          - lib/src/call/*.dart
       json_serializable:
         generate_for:
           - lib/src/protocol/models/*.dart
+          - lib/src/call/*.dart
