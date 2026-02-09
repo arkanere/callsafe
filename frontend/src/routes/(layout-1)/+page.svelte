@@ -274,7 +274,7 @@
           <img
             src="/CallsafeLive.gif"
             alt="CallSafe product demonstration"
-            class="max-w-4xl w-full rounded-lg shadow-lg"
+            class="max-w-2xl w-full rounded-lg shadow-lg"
           />
         </div>
 
