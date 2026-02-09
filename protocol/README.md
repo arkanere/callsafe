@@ -17,8 +17,9 @@ All components (frontend, signaling server, mobile apps) must implement this pro
 ## Files
 
 - **`index.ts`** - Main TypeScript protocol specification
-- **`protocol.json`** - JSON schema for Android/Kotlin consumption
+- **`protocol.json`** - JSON schema for cross-platform consumption
 - **`generate-json.js`** - Script to generate JSON from TypeScript spec
+- **`generate-kotlin.js`** - Script to generate Kotlin constants from JSON schema
 - **`package.json`** - NPM package configuration
 
 ## Usage
@@ -50,20 +51,31 @@ if (!result.valid) {
 
 ### Kotlin (Android App)
 
-Load the JSON schema at runtime or generate constants:
+**AUTO-GENERATED** constants at `android-app/app/src/main/java/tech/callsafe/business/protocol/Protocol.kt`
 
 ```kotlin
-// Option 1: Parse JSON schema
-val protocolJson = assets.open("protocol.json").bufferedReader().use { it.readText() }
-val protocol = Json.decodeFromString<Protocol>(protocolJson)
+import tech.callsafe.business.protocol.Protocol
 
-// Option 2: Use generated constants (recommended)
-object MessageTypes {
-    const val CALL_INITIATE = "call:initiate"
-    const val CALL_ACCEPT = "call:accept"
-    // ... etc
-}
+// Use message type constants
+socket.emit(Protocol.MessageTypes.DEVICE_CONNECT, JSONObject().apply {
+    put("type", Protocol.MessageTypes.DEVICE_CONNECT)
+    put("deviceType", Protocol.DeviceType.MOBILE.value)
+    put("deviceId", deviceId)
+    put("protocolVersion", Protocol.VERSION)
+})
+
+// Use enums for type safety
+put("status", Protocol.DeviceStatus.AVAILABLE.value)
+put("callType", Protocol.CallType.VOICE.value)
 ```
+
+To regenerate Kotlin constants after protocol changes:
+```bash
+cd protocol
+node generate-kotlin.js
+```
+
+See `android-app/PROTOCOL.md` for complete usage guide.
 
 ## Message Categories
 
@@ -145,7 +157,8 @@ The server:
 3. Add validation schema to `MessageSchemas`
 4. Update `generate-json.js` to include new message
 5. Run `npm run generate-json` to update `protocol.json`
-6. Update this README with the new message
+6. Run `node generate-kotlin.js` to regenerate Android constants
+7. Update this README with the new message
 
 ## Validation
 
@@ -159,23 +172,45 @@ Validation occurs on the signaling server for all incoming messages. During Phas
 
 ## Migration Strategy
 
-Phase 1 (Current):
-- Protocol specification created
-- Magic strings replaced with protocol imports
-- Validation logging added (non-blocking)
-- Version negotiation implemented
+**Phase 1: Protocol Specification Creation** ✓
+- Protocol specification created in TypeScript
+- JSON schema generated for cross-platform use
+- Version 1.0.0 defined with 30 message types
 
-Future phases will use this protocol as the contract for:
-- Flutter mobile app (Phase 2)
-- Elixir signaling server (Phase 3)
+**Phase 2: Component Integration** ✓
+- Frontend (SvelteKit) uses protocol imports
+- Signaling server (Node.js) uses protocol imports
+- Protocol version added to connection handshake
+
+**Phase 3: Validation Layer** ✓
+- Message validation middleware on signaling server
+- All incoming messages validated against schemas
+- Violations logged (non-blocking during rollout)
+
+**Phase 4: Android Integration** ✓
+- Kotlin constants generated from protocol.json
+- Android app uses Protocol.kt instead of magic strings
+- Protocol version added to device:connect
+- Documentation created for Flutter migration
+
+Future phases:
+- **Phase 5**: Flutter mobile app (use same protocol.json)
+- **Phase 6**: Elixir signaling server (port validation logic)
 
 ## Compatibility
 
 Protocol version 1.0.0 is compatible with:
-- Frontend: SvelteKit (existing)
-- Signaling Server: Node.js (existing)
-- Mobile: Android Kotlin (existing), Flutter (planned Phase 2)
+- **Frontend**: SvelteKit (integrated, using protocol imports)
+- **Signaling Server**: Node.js (integrated, with validation middleware)
+- **Mobile**: Android Kotlin (integrated, using generated Protocol.kt)
+- **Future**: Flutter (will use same protocol.json schema)
 
 Major version increments indicate breaking changes.
 Minor version increments add backward-compatible features.
 Patch version increments are bug fixes only.
+
+## Platform-Specific Documentation
+
+- **TypeScript/JavaScript**: See usage examples above
+- **Android/Kotlin**: See `android-app/PROTOCOL.md`
+- **Flutter/Dart**: Will be documented in Phase 5
