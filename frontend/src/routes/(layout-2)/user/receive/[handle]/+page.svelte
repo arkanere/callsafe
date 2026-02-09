@@ -2,6 +2,7 @@
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { onMount, onDestroy } from 'svelte';
+  import { MessageTypes, PROTOCOL_VERSION } from '@callsafe/protocol';
   import { AuthManager } from '$lib/managers/auth-manager';
   import { ConnectionManager } from '$lib/managers/connection-manager';
   import { WebRTCManager } from '$lib/managers/webrtc-manager';
@@ -109,7 +110,7 @@
     if (!socket) return;
 
     // Incoming call handler
-    socket.on('call:incoming', (data: CallIncomingEvent) => {
+    socket.on(MessageTypes.CALL_INCOMING, (data: CallIncomingEvent) => {
       console.log('[CONNECTION] setupSocketEventHandlers(): === INCOMING CALL DATA FORMAT ===');
       console.log('[CONNECTION] setupSocketEventHandlers(): Raw data received:', data);
       console.log('[CONNECTION] setupSocketEventHandlers(): Data type:', typeof data);
@@ -145,7 +146,7 @@
     });
 
     // Call accepted handler (confirmation from server)
-    socket.on('call:accepted', async (data: CallAcceptedEvent) => {
+    socket.on(MessageTypes.CALL_ACCEPTED, async (data: CallAcceptedEvent) => {
       console.log('[CONNECTION] setupSocketEventHandlers(): Call accepted:', data);
       // WebRTC is already initialized when accepting the call
       // This event confirms the call was accepted on the server side
@@ -153,7 +154,7 @@
     });
 
     // WebRTC offer handler (business receives offer from customer)
-    socket.on('webrtc:offer', async (data: WebRTCOfferEvent) => {
+    socket.on(MessageTypes.WEBRTC_OFFER, async (data: WebRTCOfferEvent) => {
       console.log('[CONNECTION] setupSocketEventHandlers(): Received WebRTC offer');
       
       if (webrtcManager) {
@@ -182,7 +183,7 @@
     });
 
     // WebRTC answer handler
-    socket.on('webrtc:answer', async (data: WebRTCAnswerEvent) => {
+    socket.on(MessageTypes.WEBRTC_ANSWER, async (data: WebRTCAnswerEvent) => {
       console.log('[CONNECTION] setupSocketEventHandlers(): Received WebRTC answer');
       
       if (webrtcManager) {
@@ -198,7 +199,7 @@
     });
 
     // ICE candidate handler
-    socket.on('webrtc:ice-candidate', async (data: WebRTCIceCandidateEvent) => {
+    socket.on(MessageTypes.WEBRTC_ICE_CANDIDATE, async (data: WebRTCIceCandidateEvent) => {
       if (webrtcManager) {
         try {
           await webrtcManager.addIceCandidate(data.candidate);
@@ -209,7 +210,7 @@
     });
 
     // Call ended handler
-    socket.on('call:ended', (data: CallEndedEvent) => {
+    socket.on(MessageTypes.CALL_ENDED, (data: CallEndedEvent) => {
       console.log('[CONNECTION] setupSocketEventHandlers(): Call ended:', data);
       
       // Save to call history
@@ -227,7 +228,7 @@
     });
 
     // Call failed handler
-    socket.on('call:failed', (data: CallFailedEvent) => {
+    socket.on(MessageTypes.CALL_FAILED, (data: CallFailedEvent) => {
       console.log('[CONNECTION] setupSocketEventHandlers(): Call failed:', data);
       
       const errorMessage = data.reason === 'connection_timeout'
@@ -238,7 +239,7 @@
     });
 
     // Call cancelled handler
-    socket.on('call:cancelled', (data: CallCancelledEvent) => {
+    socket.on(MessageTypes.CALL_CANCELLED, (data: CallCancelledEvent) => {
       console.log('[CONNECTION] setupSocketEventHandlers(): Call cancelled:', data);
       
       // Stop any playing ringtone
@@ -305,13 +306,13 @@
     });
 
     // Connection events
-    socket.on('connect', () => {
+    socket.on(MessageTypes.CONNECT, () => {
       socketConnected = true;
       connectionStatus = 'Connected';
       errorMessage = '';
     });
 
-    socket.on('disconnect', () => {
+    socket.on(MessageTypes.DISCONNECT, () => {
       socketConnected = false;
       connectionStatus = 'Disconnected';
       isOnline = false;
@@ -321,20 +322,21 @@
   function registerDevice() {
     if (!socket) return;
 
-    socket.emit('device:connect', {
+    socket.emit(MessageTypes.DEVICE_CONNECT, {
       deviceType: 'web',
       deviceId: generateDeviceId(),
       pushToken: null,
+      protocolVersion: PROTOCOL_VERSION,
       timestamp: Date.now()
     });
-    
+
     // Set device as online by default after successful connection
-    socket.emit('device:status', {
+    socket.emit(MessageTypes.DEVICE_STATUS, {
       deviceId: generateDeviceId(),
       status: 'available',
       timestamp: Date.now()
     });
-    
+
     isOnline = true;
     connectionStatus = 'Online - Waiting for calls';
   }
@@ -347,7 +349,7 @@
 
     const newStatus = !isOnline;
     
-    socket.emit('device:status', {
+    socket.emit(MessageTypes.DEVICE_STATUS, {
       deviceId: generateDeviceId(),
       status: newStatus ? 'available' : 'unavailable',
       timestamp: Date.now()
@@ -381,7 +383,7 @@
       return;
     }
 
-    socket.emit('call:accept', {
+    socket.emit(MessageTypes.CALL_ACCEPT, {
       callAttemptId: callId,
       deviceType: 'web',
       deviceId: generateDeviceId(),
@@ -407,7 +409,7 @@
   function declineCall(callId: string) {
     if (!socket) return;
 
-    socket.emit('call:reject', {
+    socket.emit(MessageTypes.CALL_REJECT, {
       callAttemptId: callId,
       deviceType: 'web',
       timestamp: Date.now()
@@ -428,7 +430,7 @@
 
   function endCall() {
     if (getCurrentCall() && socket) {
-      socket.emit('call:end', {
+      socket.emit(MessageTypes.CALL_END, {
         callAttemptId: getCurrentCall()?.callAttemptId,
         initiator: 'business',
         reason: 'user_action',

@@ -1,0 +1,273 @@
+/**
+ * Generate JSON schema from TypeScript protocol specification
+ * This creates a JSON version for Android app consumption
+ */
+
+const fs = require('fs');
+const path = require('path');
+
+const protocol = {
+  version: '1.0.0',
+
+  messageTypes: {
+    // Call Lifecycle Messages
+    CALL_INITIATE: 'call:initiate',
+    CALL_ACCEPT: 'call:accept',
+    CALL_REJECT: 'call:reject',
+    CALL_END: 'call:end',
+    CALL_FAILED: 'call:failed',
+    CALL_INCOMING: 'call:incoming',
+    CALL_ACCEPTED: 'call:accepted',
+    CALL_CANCELLED: 'call:cancelled',
+    CALL_ENDED: 'call:ended',
+    CALL_BUSY: 'call:busy',
+    CALL_UNAVAILABLE: 'call:unavailable',
+    CALL_TIMEOUT: 'call:timeout',
+
+    // WebRTC Signaling Messages
+    WEBRTC_OFFER: 'webrtc:offer',
+    WEBRTC_ANSWER: 'webrtc:answer',
+    WEBRTC_ICE_CANDIDATE: 'webrtc:ice-candidate',
+
+    // Device Management Messages
+    DEVICE_CONNECT: 'device:connect',
+    DEVICE_DISCONNECT: 'device:disconnect',
+    DEVICE_STATUS: 'device:status',
+    DEVICE_CONNECTED: 'device:connected',
+    DEVICE_DISCONNECTED: 'device:disconnected',
+    DEVICE_STATUS_UPDATED: 'device:status-updated',
+
+    // Media Control Messages
+    MEDIA_TOGGLE: 'media:toggle',
+    CALL_ESCALATE: 'call:escalate',
+    CALL_DOWNGRADE: 'call:downgrade',
+    ESCALATION_ACCEPTED: 'escalation:accepted',
+    ESCALATION_REJECTED: 'escalation:rejected',
+
+    // System Messages
+    CONNECT: 'connect',
+    DISCONNECT: 'disconnect',
+    ERROR: 'error',
+    SERVER_SHUTDOWN: 'server:shutdown',
+  },
+
+  enums: {
+    CallType: {
+      VOICE: 'voice',
+      VIDEO: 'video',
+    },
+    DeviceType: {
+      WEB: 'web',
+      MOBILE: 'mobile',
+    },
+    DeviceStatus: {
+      AVAILABLE: 'available',
+      UNAVAILABLE: 'unavailable',
+    },
+    CallState: {
+      INITIATED: 'initiated',
+      RINGING: 'ringing',
+      CONNECTING: 'connecting',
+      CONNECTED: 'connected',
+      ENDED: 'ended',
+      FAILED: 'failed',
+      CANCELLED: 'cancelled',
+      BUSY: 'busy',
+      UNAVAILABLE: 'unavailable',
+      TIMEOUT: 'timeout',
+      CAMERA_PERMISSION_DENIED: 'camera_permission_denied',
+      VIDEO_PAUSED_BY_USER: 'video_paused_by_user',
+      VIDEO_PAUSED_BANDWIDTH: 'video_paused_bandwidth',
+      ESCALATION_PENDING: 'escalation_pending',
+    },
+    CallEndReason: {
+      NORMAL: 'normal',
+      CUSTOMER_HANGUP: 'customer_hangup',
+      BUSINESS_HANGUP: 'business_hangup',
+      CONNECTION_FAILED: 'connection_failed',
+      TIMEOUT: 'timeout',
+      REJECTED: 'rejected',
+    },
+    CallInitiator: {
+      CUSTOMER: 'customer',
+      BUSINESS: 'business',
+    },
+    MediaTrackType: {
+      AUDIO: 'audio',
+      VIDEO: 'video',
+    },
+    MediaToggleAction: {
+      ENABLE_CAMERA: 'enable_camera',
+      DISABLE_CAMERA: 'disable_camera',
+      ENABLE_MICROPHONE: 'enable_microphone',
+      DISABLE_MICROPHONE: 'disable_microphone',
+      FLIP_CAMERA: 'flip_camera',
+    },
+  },
+
+  messageSchemas: {
+    'call:initiate': {
+      required: ['callAttemptId', 'handle', 'callType', 'mediaCapabilities'],
+      optional: ['sourceId', 'timestamp'],
+      fields: {
+        callAttemptId: 'string (uuid)',
+        handle: 'string',
+        callType: 'CallType',
+        mediaCapabilities: 'MediaCapabilities',
+        sourceId: 'string',
+        timestamp: 'number',
+      },
+    },
+    'call:accept': {
+      required: ['callAttemptId', 'deviceType', 'deviceId'],
+      optional: ['mediaCapabilities', 'timestamp'],
+      fields: {
+        callAttemptId: 'string (uuid)',
+        deviceType: 'DeviceType',
+        deviceId: 'string',
+        mediaCapabilities: 'MediaCapabilities',
+        timestamp: 'number',
+      },
+    },
+    'call:reject': {
+      required: ['callAttemptId', 'deviceType'],
+      optional: ['reason', 'timestamp'],
+      fields: {
+        callAttemptId: 'string (uuid)',
+        deviceType: 'DeviceType',
+        reason: 'string',
+        timestamp: 'number',
+      },
+    },
+    'call:end': {
+      required: ['callAttemptId', 'initiator'],
+      optional: ['reason', 'timestamp'],
+      fields: {
+        callAttemptId: 'string (uuid)',
+        initiator: 'CallInitiator',
+        reason: 'CallEndReason',
+        timestamp: 'number',
+      },
+    },
+    'call:failed': {
+      required: ['callAttemptId', 'reason'],
+      optional: ['timestamp'],
+      fields: {
+        callAttemptId: 'string (uuid)',
+        reason: 'string',
+        timestamp: 'number',
+      },
+    },
+    'call:incoming': {
+      required: ['callAttemptId', 'sourceId', 'callType', 'timestamp'],
+      optional: [],
+      fields: {
+        callAttemptId: 'string (uuid)',
+        sourceId: 'string',
+        callType: 'CallType',
+        timestamp: 'number',
+      },
+    },
+    'call:accepted': {
+      required: ['callAttemptId', 'acceptingDevice', 'timestamp'],
+      optional: [],
+      fields: {
+        callAttemptId: 'string (uuid)',
+        acceptingDevice: 'DeviceType',
+        timestamp: 'number',
+      },
+    },
+    'call:cancelled': {
+      required: ['callAttemptId', 'reason', 'timestamp'],
+      optional: [],
+      fields: {
+        callAttemptId: 'string (uuid)',
+        reason: 'string',
+        timestamp: 'number',
+      },
+    },
+    'call:ended': {
+      required: ['callAttemptId', 'duration', 'timestamp'],
+      optional: ['reason'],
+      fields: {
+        callAttemptId: 'string (uuid)',
+        duration: 'number',
+        reason: 'CallEndReason',
+        timestamp: 'number',
+      },
+    },
+    'device:connect': {
+      required: ['deviceType', 'deviceId'],
+      optional: ['pushToken', 'protocolVersion', 'timestamp'],
+      fields: {
+        deviceType: 'DeviceType',
+        deviceId: 'string',
+        pushToken: 'string',
+        protocolVersion: 'string',
+        timestamp: 'number',
+      },
+    },
+    'device:status': {
+      required: ['deviceId', 'status'],
+      optional: ['timestamp'],
+      fields: {
+        deviceId: 'string',
+        status: 'DeviceStatus',
+        timestamp: 'number',
+      },
+    },
+    'media:toggle': {
+      required: ['callAttemptId', 'action', 'success'],
+      optional: ['timestamp'],
+      fields: {
+        callAttemptId: 'string (uuid)',
+        action: 'MediaToggleAction',
+        success: 'boolean',
+        timestamp: 'number',
+      },
+    },
+    'call:escalate': {
+      required: ['callAttemptId', 'requestedBy', 'mediaCapabilities'],
+      optional: ['timestamp'],
+      fields: {
+        callAttemptId: 'string (uuid)',
+        requestedBy: 'CallInitiator',
+        mediaCapabilities: 'MediaCapabilities',
+        timestamp: 'number',
+      },
+    },
+    'call:downgrade': {
+      required: ['callAttemptId', 'requestedBy'],
+      optional: ['reason', 'timestamp'],
+      fields: {
+        callAttemptId: 'string (uuid)',
+        requestedBy: 'CallInitiator',
+        reason: 'string',
+        timestamp: 'number',
+      },
+    },
+  },
+
+  stateTransitions: {
+    initiated: ['ringing', 'busy', 'unavailable', 'cancelled', 'failed'],
+    ringing: ['connecting', 'timeout', 'cancelled', 'failed'],
+    connecting: ['connected', 'camera_permission_denied', 'failed', 'cancelled'],
+    connected: ['ended', 'failed', 'escalation_pending', 'video_paused_by_user', 'video_paused_bandwidth'],
+    escalation_pending: ['connected', 'ended', 'failed'],
+    video_paused_by_user: ['connected', 'ended', 'failed'],
+    video_paused_bandwidth: ['connected', 'ended', 'failed'],
+    camera_permission_denied: ['connected', 'ended', 'failed'],
+    ended: [],
+    failed: [],
+    cancelled: [],
+    busy: [],
+    unavailable: [],
+    timeout: [],
+  },
+};
+
+// Write JSON file
+const outputPath = path.join(__dirname, 'protocol.json');
+fs.writeFileSync(outputPath, JSON.stringify(protocol, null, 2));
+
+console.log(`Protocol JSON schema generated at: ${outputPath}`);

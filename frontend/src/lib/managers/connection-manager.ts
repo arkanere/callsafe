@@ -1,4 +1,5 @@
 import { io, Socket } from 'socket.io-client';
+import { MessageTypes } from '@callsafe/protocol';
 import { AuthManager } from './auth-manager';
 import { env } from '$env/dynamic/public';
 
@@ -38,7 +39,7 @@ export class ConnectionManager {
     this.setupEventHandlers();
 
     return new Promise((resolve, reject) => {
-      this.socket!.on('connect', () => {
+      this.socket!.on(MessageTypes.CONNECT, () => {
         console.log('[CONNECTION MANAGER] connect(): Socket connected successfully');
         this.reconnectAttempts = 0;
         resolve(this.socket!);
@@ -71,7 +72,7 @@ export class ConnectionManager {
   private setupEventHandlers(): void {
     console.log('[CONNECTION MANAGER] setupEventHandlers(): Setting up socket event handlers');
     
-    this.socket!.on('disconnect', (reason) => {
+    this.socket!.on(MessageTypes.DISCONNECT, (reason) => {
       console.warn('[CONNECTION MANAGER] setupEventHandlers(): Socket disconnected:', reason);
 
       if (reason === 'io server disconnect') {
@@ -85,10 +86,10 @@ export class ConnectionManager {
       this.attemptReconnection();
     });
 
-    this.socket!.on('error', (error) => {
+    this.socket!.on(MessageTypes.ERROR, (error) => {
       console.error('[CONNECTION MANAGER] setupEventHandlers(): Socket error:', error);
 
-      if (error.type === 'AUTHENTICATION_REQUIRED') {
+      if (error.code === 'AUTHENTICATION_REQUIRED') {
         console.log('[CONNECTION MANAGER] setupEventHandlers(): Authentication required, logging out');
         // Token expired - redirect to login
         AuthManager.logout();

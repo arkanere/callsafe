@@ -1,4 +1,5 @@
 import { Socket } from 'socket.io-client';
+import { MessageTypes } from '@callsafe/protocol';
 
 export class WebRTCManager {
   private peerConnection: RTCPeerConnection | null = null;
@@ -91,7 +92,7 @@ export class WebRTCManager {
     this.peerConnection.onicecandidate = (event) => {
       if (event.candidate) {
         console.log('[WEBRTC MANAGER] initialize(): Sending ICE candidate');
-        this.socket.emit('webrtc:ice-candidate', {
+        this.socket.emit(MessageTypes.WEBRTC_ICE_CANDIDATE, {
           callAttemptId: callAttemptId,
           candidate: event.candidate,
           timestamp: Date.now()
@@ -135,7 +136,7 @@ export class WebRTCManager {
     await this.peerConnection.setLocalDescription(answer);
 
     console.log('[WEBRTC MANAGER] createAnswer(): Sending answer to signaling server');
-    this.socket.emit('webrtc:answer', {
+    this.socket.emit(MessageTypes.WEBRTC_ANSWER, {
       callAttemptId: callAttemptId,
       answer: answer,
       timestamp: Date.now()
@@ -160,7 +161,7 @@ export class WebRTCManager {
     await this.peerConnection.setLocalDescription(offer);
 
     console.log('[WEBRTC MANAGER] createOffer(): Sending offer to signaling server');
-    this.socket.emit('webrtc:offer', {
+    this.socket.emit(MessageTypes.WEBRTC_OFFER, {
       callAttemptId: callAttemptId,
       offer: offer,
       timestamp: Date.now()
@@ -240,7 +241,7 @@ export class WebRTCManager {
 
     console.log('[WEBRTC MANAGER] handleConnectionFailure(): Emitting call:failed event to signaling server');
     // Emit call:failed event to signaling server
-    this.socket.emit('call:failed', {
+    this.socket.emit(MessageTypes.CALL_FAILED, {
       callAttemptId: callAttemptId,
       reason: 'connection_failed',
       timestamp: Date.now()

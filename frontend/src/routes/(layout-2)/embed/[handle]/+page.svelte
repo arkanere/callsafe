@@ -2,6 +2,7 @@
   import { page } from '$app/stores';
   import { onMount, onDestroy } from 'svelte';
   import { io, type Socket } from 'socket.io-client';
+  import { MessageTypes } from '@callsafe/protocol';
   import { env } from '$env/dynamic/public';
   import { WebRTCManager } from '$lib/managers/webrtc-manager';
   import { customerCallState } from '$lib/stores/call-state';
@@ -114,7 +115,7 @@
 
       console.log('[EMBED PAGE] initiateCall(): Sending call initiate event');
       // Send call initiate - handle is from URL path parameter
-      socket!.emit('call:initiate', {
+      socket!.emit(MessageTypes.CALL_INITIATE, {
         callAttemptId,
         handle,
         sourceId,
@@ -138,7 +139,7 @@
       });
       console.log('[EMBED PAGE] connectToSignalingServer(): Socket.io instance created');
 
-      socket.on('connect', () => {
+      socket.on(MessageTypes.CONNECT, () => {
         console.log('[EMBED PAGE] connectToSignalingServer(): Socket connected successfully');
         setupSocketEventHandlers();
         resolve();
@@ -159,7 +160,7 @@
     }
 
     // Call accepted
-    socket.on('call:accepted', async (data: CallAcceptedEvent) => {
+    socket.on(MessageTypes.CALL_ACCEPTED, async (data: CallAcceptedEvent) => {
       console.log('[EMBED PAGE] setupSocketEventHandlers(): Call accepted event received:', data);
       callState = 'ringing';
       statusMessage = 'Agent accepted, connecting...';
@@ -189,7 +190,7 @@
     });
 
     // WebRTC answer
-    socket.on('webrtc:answer', async (data: WebRTCAnswerEvent) => {
+    socket.on(MessageTypes.WEBRTC_ANSWER, async (data: WebRTCAnswerEvent) => {
       console.log('[EMBED PAGE] setupSocketEventHandlers(): WebRTC answer received:', data);
       if (webrtcManager) {
         try {
@@ -206,7 +207,7 @@
     });
 
     // ICE candidate
-    socket.on('webrtc:ice-candidate', async (data: WebRTCIceCandidateEvent) => {
+    socket.on(MessageTypes.WEBRTC_ICE_CANDIDATE, async (data: WebRTCIceCandidateEvent) => {
       console.log('[EMBED PAGE] setupSocketEventHandlers(): ICE candidate received:', data);
       if (webrtcManager) {
         try {
@@ -221,23 +222,23 @@
     });
 
     // Call failures
-    socket.on('call:busy', (data: CallBusyEvent) => {
+    socket.on(MessageTypes.CALL_BUSY, (data: CallBusyEvent) => {
       console.log('[EMBED PAGE] setupSocketEventHandlers(): Call busy event received:', data);
       handleCallFailure('All agents are busy. Please try again later.');
     });
 
-    socket.on('call:unavailable', (data: CallUnavailableEvent) => {
+    socket.on(MessageTypes.CALL_UNAVAILABLE, (data: CallUnavailableEvent) => {
       console.log('[EMBED PAGE] setupSocketEventHandlers(): Call unavailable event received:', data);
       handleCallFailure('No agents available right now.');
     });
 
-    socket.on('call:timeout', (data: CallTimeoutEvent) => {
+    socket.on(MessageTypes.CALL_TIMEOUT, (data: CallTimeoutEvent) => {
       console.log('[EMBED PAGE] setupSocketEventHandlers(): Call timeout event received:', data);
       handleCallFailure('No response from agents. Please try again.');
     });
 
     // Call failed (WebRTC connection failures and timeouts)
-    socket.on('call:failed', (data: CallFailedEvent) => {
+    socket.on(MessageTypes.CALL_FAILED, (data: CallFailedEvent) => {
       console.log('[EMBED PAGE] setupSocketEventHandlers(): Call failed event received:', data);
       const message = data?.reason === 'connection_timeout'
         ? 'Connection timeout. Please try again.'
@@ -246,7 +247,7 @@
     });
 
     // Call ended
-    socket.on('call:ended', (data: CallEndedEvent) => {
+    socket.on(MessageTypes.CALL_ENDED, (data: CallEndedEvent) => {
       console.log('[EMBED PAGE] setupSocketEventHandlers(): Call ended event received:', data);
       
       // Clear any pending cleanup timeout since server responded
@@ -307,7 +308,7 @@
 
     // Emit call:failed event
     if (socket && callAttemptId) {
-      socket.emit('call:failed', {
+      socket.emit(MessageTypes.CALL_FAILED, {
         callAttemptId: callAttemptId,
         reason: 'connection_failed',  
         timestamp: Date.now()
@@ -358,7 +359,7 @@
 
   function endCall() {
     if (socket && callAttemptId) {
-      socket.emit('call:end', {
+      socket.emit(MessageTypes.CALL_END, {
         callAttemptId,
         initiator: 'customer',
         reason: 'user_action',
