@@ -204,3 +204,73 @@ class SignalingClient {
     _errorController.close();
   }
 }
+
+/// Mock implementation for testing and Phase 1 UI development
+class MockSignalingClient extends SignalingClient {
+  final StreamController<SignalingState> _mockStateController =
+      StreamController<SignalingState>.broadcast();
+
+  final StreamController<Map<String, dynamic>> _mockMessageController =
+      StreamController<Map<String, dynamic>>.broadcast();
+
+  SignalingState _mockState = SignalingState.disconnected;
+
+  MockSignalingClient() : super('mock://localhost');
+
+  @override
+  SignalingState get state => _mockState;
+
+  @override
+  Stream<SignalingState> get stateStream => _mockStateController.stream;
+
+  @override
+  Stream<Map<String, dynamic>> get messageStream =>
+      _mockMessageController.stream;
+
+  @override
+  Task<Unit> connect({
+    required DeviceType deviceType,
+    required String deviceId,
+    String? pushToken,
+  }) {
+    return Task(() async {
+      _mockState = SignalingState.connecting;
+      _mockStateController.add(_mockState);
+
+      await Future.delayed(const Duration(milliseconds: 100));
+
+      _mockState = SignalingState.connected;
+      _mockStateController.add(_mockState);
+
+      return unit;
+    });
+  }
+
+  @override
+  Task<Unit> disconnect({String? deviceId}) {
+    return Task(() async {
+      _mockState = SignalingState.disconnected;
+      _mockStateController.add(_mockState);
+      return unit;
+    });
+  }
+
+  @override
+  void emit(String messageType, Map<String, dynamic> payload) {
+    // Mock emit - does nothing
+  }
+
+  /// Test helper to simulate incoming message
+  void simulateMessage(String type, Map<String, dynamic> payload) {
+    _mockMessageController.add({
+      'type': type,
+      'payload': payload,
+    });
+  }
+
+  @override
+  void dispose() {
+    _mockStateController.close();
+    _mockMessageController.close();
+  }
+}

@@ -8,6 +8,7 @@ import UserNotifications
     private var socketHandler: SocketChannelHandler?
     private var pushHandler: PushChannelHandler?
     private var audioHandler: AudioChannelHandler?
+    private var callHandler: CallChannelHandler?
 
     override func application(
         _ application: UIApplication,
@@ -21,6 +22,7 @@ import UserNotifications
         socketHandler = SocketChannelHandler(messenger: messenger)
         pushHandler = PushChannelHandler(messenger: messenger)
         audioHandler = AudioChannelHandler(messenger: messenger)
+        callHandler = CallChannelHandler(messenger: messenger)
 
         // Request notification permissions
         UNUserNotificationCenter.current().delegate = self
@@ -62,6 +64,7 @@ import UserNotifications
         socketHandler?.dispose()
         pushHandler?.dispose()
         audioHandler?.dispose()
+        callHandler?.dispose()
     }
 }
 
