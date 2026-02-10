@@ -1,0 +1,28 @@
+import Config
+
+config :callsafe_signaling,
+  port: String.to_integer(System.get_env("PORT") || "4000"),
+  env: :prod,
+
+  # Protocol validation
+  log_validation_failures: true,
+  reject_invalid_messages: false,
+
+  # Rate limiting
+  max_requests_per_device: 200,
+  max_requests_per_ip: 2000,
+  rate_limit_window_seconds: 60,
+
+  # Call timeouts (milliseconds)
+  timeout_ringing: 30_000,
+  timeout_connecting: 10_000,
+  timeout_idle: 300_000,
+
+  # TURN servers - loaded from environment
+  turn_servers: []
+
+# Logger configuration
+config :logger,
+  level: :info,
+  format: "$time $metadata[$level] $message\n",
+  metadata: [:request_id, :device_id, :call_attempt_id]
