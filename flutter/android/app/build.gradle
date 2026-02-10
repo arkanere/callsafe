@@ -1,6 +1,8 @@
 plugins {
     id "com.android.application"
     id "kotlin-android"
+    id "com.google.devtools.ksp" version "1.9.10-1.0.13"
+    id "com.google.gms.google-services"
     id "dev.flutter.flutter-gradle-plugin"
 }
 
@@ -41,7 +43,7 @@ android {
 
     defaultConfig {
         applicationId "com.callsafe.mobile"
-        minSdk 21
+        minSdk 24
         targetSdk 34
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
@@ -50,7 +52,33 @@ android {
     buildTypes {
         release {
             signingConfig signingConfigs.debug
+
+            buildConfigField "String", "SIGNALING_SERVER_URL", "\"wss://tunnel.callsafe.tech\""
+            buildConfigField "String", "API_BASE_URL", "\"https://callsafe.tech\""
+
+            // WebRTC ICE Servers
+            buildConfigField "String", "STUN_SERVER_1", "\"stun:stun.l.google.com:19302\""
+            buildConfigField "String", "STUN_SERVER_2", "\"stun:stun1.l.google.com:19302\""
+            buildConfigField "String", "TURN_SERVER_URL", "\"turn:a.relay.metered.ca:80\""
+            buildConfigField "String", "TURN_USERNAME", "\"***REDACTED***\""
+            buildConfigField "String", "TURN_CREDENTIAL", "\"***REDACTED***\""
         }
+
+        debug {
+            buildConfigField "String", "SIGNALING_SERVER_URL", "\"wss://tunnel.callsafe.tech\""
+            buildConfigField "String", "API_BASE_URL", "\"https://callsafe.tech\""
+
+            // WebRTC ICE Servers
+            buildConfigField "String", "STUN_SERVER_1", "\"stun:stun.l.google.com:19302\""
+            buildConfigField "String", "STUN_SERVER_2", "\"stun:stun1.l.google.com:19302\""
+            buildConfigField "String", "TURN_SERVER_URL", "\"turn:a.relay.metered.ca:80\""
+            buildConfigField "String", "TURN_USERNAME", "\"***REDACTED***\""
+            buildConfigField "String", "TURN_CREDENTIAL", "\"***REDACTED***\""
+        }
+    }
+
+    buildFeatures {
+        buildConfig true
     }
 }
 
@@ -60,4 +88,27 @@ flutter {
 
 dependencies {
     implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlin_version"
+
+    // WebRTC
+    implementation "io.github.webrtc-sdk:android:104.5112.09"
+
+    // Socket.IO
+    implementation "io.socket:socket.io-client:2.1.0"
+
+    // Room Database for call history
+    implementation "androidx.room:room-runtime:2.6.1"
+    implementation "androidx.room:room-ktx:2.6.1"
+    ksp "androidx.room:room-compiler:2.6.1"
+
+    // Networking (for API calls)
+    implementation "com.squareup.retrofit2:retrofit:2.9.0"
+    implementation "com.squareup.retrofit2:converter-gson:2.9.0"
+    implementation "com.squareup.okhttp3:okhttp:4.12.0"
+
+    // Firebase (for push notifications)
+    implementation platform("com.google.firebase:firebase-bom:32.7.0")
+    implementation "com.google.firebase:firebase-messaging-ktx"
+
+    // Coroutines (used by SocketManager)
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3"
 }
