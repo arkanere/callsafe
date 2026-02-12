@@ -19,10 +19,11 @@ defmodule CallsafeSignaling.DeviceRegistry do
   @type device_entry :: %{
           device_id: device_id,
           business_id: business_id,
-          connection_pid: connection_pid,
+          connection_pid: connection_pid | nil,
           device_type: device_type,
           status: device_status,
-          connected_at: integer()
+          connected_at: integer(),
+          push_token: String.t() | nil
         }
 
   # Client API
@@ -38,10 +39,10 @@ defmodule CallsafeSignaling.DeviceRegistry do
   Register a device connection.
   Returns {:ok, device_entry} or {:error, :already_registered}.
   """
-  @spec register(device_id, business_id, connection_pid, device_type, device_status) ::
+  @spec register(device_id, business_id, connection_pid | nil, device_type, device_status, String.t() | nil) ::
           {:ok, device_entry} | {:error, :already_registered}
-  def register(device_id, business_id, connection_pid, device_type, status \\ :available) do
-    GenServer.call(__MODULE__, {:register, device_id, business_id, connection_pid, device_type, status})
+  def register(device_id, business_id, connection_pid, device_type, status \\ :available, push_token \\ nil) do
+    GenServer.call(__MODULE__, {:register, device_id, business_id, connection_pid, device_type, status, push_token})
   end
 
   @doc """
@@ -102,6 +103,24 @@ defmodule CallsafeSignaling.DeviceRegistry do
     length(list_by_business(business_id))
   end
 
+  @doc """
+  Update device push token.
+  Returns {:ok, device_entry} or {:error, :not_found}.
+  """
+  @spec update_push_token(device_id, String.t() | nil) :: {:ok, device_entry} | {:error, :not_found}
+  def update_push_token(device_id, push_token) do
+    GenServer.call(__MODULE__, {:update_push_token, device_id, push_token})
+  end
+
+  @doc """
+  Update device connection PID (for reconnections).
+  Returns {:ok, device_entry} or {:error, :not_found}.
+  """
+  @spec update_connection_pid(device_id, connection_pid | nil) :: {:ok, device_entry} | {:error, :not_found}
+  def update_connection_pid(device_id, connection_pid) do
+    GenServer.call(__MODULE__, {:update_connection_pid, device_id, connection_pid})
+  end
+
   # Server callbacks
 
   @impl true
@@ -121,7 +140,7 @@ defmodule CallsafeSignaling.DeviceRegistry do
   end
 
   @impl true
-  def handle_call({:register, device_id, business_id, connection_pid, device_type, status}, _from, state) do
+  def handle_call({:register, device_id, business_id, connection_pid, device_type, status, push_token}, _from, state) do
     # Check if device already registered
     case :ets.lookup(:device_registry, {:device, device_id}) do
       [] ->
@@ -131,15 +150,18 @@ defmodule CallsafeSignaling.DeviceRegistry do
           connection_pid: connection_pid,
           device_type: device_type,
           status: status,
-          connected_at: System.system_time(:millisecond)
+          connected_at: System.system_time(:millisecond),
+          push_token: push_token
         }
 
         # Insert both device and business index entries
         :ets.insert(:device_registry, {{:device, device_id}, entry})
         :ets.insert(:device_registry, {{:business, business_id, device_id}, entry})
 
-        # Monitor the connection process for automatic cleanup
-        Process.monitor(connection_pid)
+        # Monitor the connection process for automatic cleanup if connection_pid is not nil
+        if connection_pid != nil do
+          Process.monitor(connection_pid)
+        end
 
         Logger.debug("Device registered: #{device_id} for business: #{business_id}")
         {:reply, {:ok, entry}, state}
@@ -183,6 +205,47 @@ defmodule CallsafeSignaling.DeviceRegistry do
   end
 
   @impl true
+  def handle_call({:update_push_token, device_id, push_token}, _from, state) do
+    case :ets.lookup(:device_registry, {:device, device_id}) do
+      [{_key, entry}] ->
+        updated_entry = %{entry | push_token: push_token}
+        business_id = entry.business_id
+
+        :ets.insert(:device_registry, {{:device, device_id}, updated_entry})
+        :ets.insert(:device_registry, {{:business, business_id, device_id}, updated_entry})
+
+        Logger.debug("Device push_token updated: #{device_id}")
+        {:reply, {:ok, updated_entry}, state}
+
+      [] ->
+        {:reply, {:error, :not_found}, state}
+    end
+  end
+
+  @impl true
+  def handle_call({:update_connection_pid, device_id, connection_pid}, _from, state) do
+    case :ets.lookup(:device_registry, {:device, device_id}) do
+      [{_key, entry}] ->
+        updated_entry = %{entry | connection_pid: connection_pid}
+        business_id = entry.business_id
+
+        :ets.insert(:device_registry, {{:device, device_id}, updated_entry})
+        :ets.insert(:device_registry, {{:business, business_id, device_id}, updated_entry})
+
+        # Monitor new connection process if not nil
+        if connection_pid != nil do
+          Process.monitor(connection_pid)
+        end
+
+        Logger.debug("Device connection_pid updated: #{device_id}")
+        {:reply, {:ok, updated_entry}, state}
+
+      [] ->
+        {:reply, {:error, :not_found}, state}
+    end
+  end
+
+  @impl true
   def handle_info({:DOWN, _ref, :process, pid, _reason}, state) do
     # Find device by connection_pid by scanning all device entries
     # This is not optimal but ETS map matching with variables is complex
@@ -191,9 +254,22 @@ defmodule CallsafeSignaling.DeviceRegistry do
     case Enum.find(all_devices, fn {_key, entry} -> entry.connection_pid == pid end) do
       {{:device, device_id}, entry} ->
         business_id = entry.business_id
-        :ets.delete(:device_registry, {:device, device_id})
-        :ets.delete(:device_registry, {:business, business_id, device_id})
-        Logger.debug("Device connection DOWN, auto-unregistered: #{device_id}")
+        device_type = entry.device_type
+
+        case device_type do
+          :mobile ->
+            # Mobile devices persist - just clear connection_pid
+            updated_entry = %{entry | connection_pid: nil}
+            :ets.insert(:device_registry, {{:device, device_id}, updated_entry})
+            :ets.insert(:device_registry, {{:business, business_id, device_id}, updated_entry})
+            Logger.debug("Mobile device connection DOWN, persisting device: #{device_id}")
+
+          :web ->
+            # Web devices are removed completely
+            :ets.delete(:device_registry, {:device, device_id})
+            :ets.delete(:device_registry, {:business, business_id, device_id})
+            Logger.debug("Web device connection DOWN, auto-unregistered: #{device_id}")
+        end
 
       nil ->
         :ok
