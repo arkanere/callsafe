@@ -35,7 +35,10 @@ defmodule CallsafeSignaling.Telemetry do
 
       # GenServer events
       [:callsafe_signaling, :genserver, :crashed],
-      [:callsafe_signaling, :genserver, :restarted]
+      [:callsafe_signaling, :genserver, :restarted],
+
+      # Decision capture events (for shadow mode validation)
+      [:callsafe_signaling, :decision, :captured]
     ]
 
     :telemetry.attach_many(
@@ -232,6 +235,12 @@ defmodule CallsafeSignaling.Telemetry do
     Logger.warning("GenServer restarted",
       module: metadata.module
     )
+  end
+
+  defp log_event([:callsafe_signaling, :decision, :captured], _measurements, _metadata) do
+    # Decision events are already logged by DecisionCapture module
+    # This handler is just for telemetry attachment
+    :ok
   end
 
   defp log_event(_event_name, _measurements, _metadata) do

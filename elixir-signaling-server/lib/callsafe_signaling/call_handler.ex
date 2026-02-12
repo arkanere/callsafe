@@ -12,7 +12,8 @@ defmodule CallsafeSignaling.CallHandler do
     CallSession,
     CallSessionSupervisor,
     FCM.PushService,
-    Stats
+    Stats,
+    DecisionCapture
   }
 
   alias CallsafeSignaling.Protocol.{MessageTypes, Enums}
@@ -272,11 +273,30 @@ defmodule CallsafeSignaling.CallHandler do
 
   # Find available devices for a business, excluding the caller
   defp find_available_devices(business_id, caller_id) do
+    all_devices = DeviceRegistry.list_by_business(business_id)
+
     devices =
-      DeviceRegistry.list_by_business(business_id)
+      all_devices
       |> Enum.filter(fn device ->
         device.device_id != caller_id and device.status == :available
       end)
+
+    # Capture device selection decision (even if none found)
+    selected_device_ids = Enum.map(devices, & &1.device_id)
+
+    DecisionCapture.emit(
+      :device_selected,
+      "call:initiate",
+      nil,
+      %{
+        business_id: business_id,
+        caller_id: caller_id,
+        total_devices: length(all_devices),
+        available_devices: selected_device_ids,
+        device_count: length(devices)
+      },
+      %{selection_criteria: "available_and_not_caller"}
+    )
 
     case devices do
       [] -> {:error, :no_available_devices}
@@ -319,6 +339,25 @@ defmodule CallsafeSignaling.CallHandler do
       "callType" => Atom.to_string(call_type),
       "timestamp" => System.system_time(:millisecond)
     }
+
+    # Capture message routing decision
+    routing_method =
+      if device.connection_pid do
+        "websocket"
+      else
+        "fcm"
+      end
+
+    DecisionCapture.emit_message_routed(
+      call_id,
+      MessageTypes.call_incoming(),
+      "server",
+      device.device_id,
+      %{
+        routing_method: routing_method,
+        device_type: device.device_type
+      }
+    )
 
     # Try to send via WebSocket first
     case device.connection_pid do
@@ -401,6 +440,15 @@ defmodule CallsafeSignaling.CallHandler do
         "acceptingDevice" => accepting_device_id,
         "timestamp" => System.system_time(:millisecond)
       }
+
+      # Capture message routing decision
+      DecisionCapture.emit_message_routed(
+        call_id,
+        MessageTypes.call_accepted(),
+        accepting_device_id,
+        "caller",
+        %{routing_method: "websocket"}
+      )
 
       send(caller_pid, {:send_message, message["type"], message})
     end

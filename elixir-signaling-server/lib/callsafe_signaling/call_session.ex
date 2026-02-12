@@ -10,6 +10,7 @@ defmodule CallsafeSignaling.CallSession do
 
   alias CallsafeSignaling.Protocol.{StateMachine, Enums}
   alias CallsafeSignaling.Telemetry
+  alias CallsafeSignaling.DecisionCapture
 
   @type call_id :: String.t()
   @type device_id :: String.t()
@@ -329,6 +330,19 @@ defmodule CallsafeSignaling.CallSession do
   def handle_call({:transition, new_state, updates}, _from, state) do
     case StateMachine.transition(state.state, new_state) do
       {:ok, validated_state} ->
+        # Capture state transition decision
+        DecisionCapture.emit_state_transition(
+          state.call_id,
+          nil,
+          state.state,
+          validated_state,
+          %{
+            business_id: state.business_id,
+            call_type: state.call_type,
+            updates: Map.keys(updates)
+          }
+        )
+
         # Cancel existing timers before transitioning
         updated_state =
           state
@@ -353,6 +367,15 @@ defmodule CallsafeSignaling.CallSession do
       {:error, :invalid_transition} ->
         Logger.warning(
           "Invalid transition for call #{state.call_id}: #{state.state} -> #{new_state}"
+        )
+
+        # Capture error decision
+        DecisionCapture.emit_error_returned(
+          state.call_id,
+          nil,
+          :invalid_transition,
+          "Cannot transition from #{state.state} to #{new_state}",
+          %{current_state: state.state, requested_state: new_state}
         )
 
         {:reply, {:error, :invalid_transition}, state}
@@ -390,6 +413,14 @@ defmodule CallsafeSignaling.CallSession do
   def handle_info(:ringing_timeout, state) do
     Logger.warning("Call #{state.call_id} timed out while ringing (#{@ringing_timeout}ms)")
 
+    # Capture timeout triggered decision
+    DecisionCapture.emit_timeout_triggered(
+      state.call_id,
+      :ringing,
+      state.state,
+      %{timeout_duration: @ringing_timeout}
+    )
+
     # Transition to timeout state
     case StateMachine.transition(state.state, :timeout) do
       {:ok, timeout_state} ->
@@ -417,6 +448,14 @@ defmodule CallsafeSignaling.CallSession do
   def handle_info(:connecting_timeout, state) do
     Logger.warning(
       "Call #{state.call_id} timed out while connecting WebRTC (#{@connecting_timeout}ms)"
+    )
+
+    # Capture timeout triggered decision
+    DecisionCapture.emit_timeout_triggered(
+      state.call_id,
+      :connecting,
+      state.state,
+      %{timeout_duration: @connecting_timeout}
     )
 
     # Transition to timeout state
@@ -490,11 +529,29 @@ defmodule CallsafeSignaling.CallSession do
   end
 
   defp schedule_timeout_for_state(state, :ringing) do
+    # Capture timeout set decision
+    DecisionCapture.emit_timeout_set(
+      state.call_id,
+      nil,
+      :ringing,
+      @ringing_timeout,
+      %{state: :ringing}
+    )
+
     timer_ref = Process.send_after(self(), :ringing_timeout, @ringing_timeout)
     Map.put(state, :ringing_timer, timer_ref)
   end
 
   defp schedule_timeout_for_state(state, :connecting) do
+    # Capture timeout set decision
+    DecisionCapture.emit_timeout_set(
+      state.call_id,
+      nil,
+      :connecting,
+      @connecting_timeout,
+      %{state: :connecting}
+    )
+
     timer_ref = Process.send_after(self(), :connecting_timeout, @connecting_timeout)
     Map.put(state, :connecting_timer, timer_ref)
   end
