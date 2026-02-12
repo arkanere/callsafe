@@ -82,4 +82,22 @@ defmodule CallsafeSignaling.Config do
   def reject_invalid_messages? do
     get(:reject_invalid_messages, false)
   end
+
+  @doc """
+  Get FCM notification configuration.
+  """
+  def fcm_config do
+    %{
+      enabled: get(:fcm_enabled, true),
+      retry_attempts: get(:fcm_retry_attempts, 3),
+      timeout_ms: get(:fcm_timeout_ms, 5_000)
+    }
+  end
+
+  @doc """
+  Check if telemetry is enabled.
+  """
+  def telemetry_enabled? do
+    get(:telemetry_enabled, true)
+  end
 end

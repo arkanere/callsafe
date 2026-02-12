@@ -9,6 +9,7 @@ defmodule CallsafeSignaling.CallSession do
   require Logger
 
   alias CallsafeSignaling.Protocol.{StateMachine, Enums}
+  alias CallsafeSignaling.Telemetry
 
   @type call_id :: String.t()
   @type device_id :: String.t()
@@ -280,6 +281,7 @@ defmodule CallsafeSignaling.CallSession do
   @impl true
   def init(initial_state) do
     Logger.info("Call session started: #{initial_state.call_id} (#{initial_state.call_type})")
+    Telemetry.emit_call_started(initial_state.call_id, initial_state.business_id, initial_state.call_type)
     {:ok, initial_state}
   end
 
@@ -294,6 +296,9 @@ defmodule CallsafeSignaling.CallSession do
       {:ok, validated_state} ->
         updated_state = Map.merge(state, updates) |> Map.put(:state, validated_state)
         Logger.debug("Call #{state.call_id} transitioned: #{state.state} -> #{validated_state}")
+
+        # Emit telemetry events for specific transitions
+        emit_transition_telemetry(validated_state, updated_state, state)
 
         # Auto-stop if terminal state reached
         if StateMachine.terminal?(validated_state) do
@@ -339,6 +344,26 @@ defmodule CallsafeSignaling.CallSession do
   @impl true
   def terminate(reason, state) do
     Logger.info("Call session terminated: #{state.call_id}, reason: #{inspect(reason)}")
+
+    # Emit telemetry for call ending
+    if state.connected_at do
+      duration = System.system_time(:millisecond) - state.connected_at
+      Telemetry.emit_call_ended(state.call_id, duration, reason)
+    end
+
     :ok
   end
+
+  # Helper for emitting telemetry on state transitions
+  defp emit_transition_telemetry(:connected, updated_state, old_state) do
+    setup_duration = updated_state.connected_at - old_state.initiated_at
+    Telemetry.emit_call_connected(updated_state.call_id, setup_duration)
+  end
+
+  defp emit_transition_telemetry(:failed, updated_state, _old_state) do
+    error = Map.get(updated_state.metadata, :error, "unknown")
+    Telemetry.emit_call_failed(updated_state.call_id, error)
+  end
+
+  defp emit_transition_telemetry(_state, _updated_state, _old_state), do: :ok
 end

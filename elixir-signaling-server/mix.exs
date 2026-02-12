@@ -23,7 +23,11 @@ defmodule CallsafeSignaling.MixProject do
   defp deps do
     [
       {:jason, "~> 1.4"},
-      {:uuid, "~> 1.1"}
+      {:uuid, "~> 1.1"},
+      {:req, "~> 0.5"},
+      {:telemetry, "~> 1.2"},
+      {:telemetry_metrics, "~> 1.0"},
+      {:telemetry_poller, "~> 1.0"}
     ]
   end
 end

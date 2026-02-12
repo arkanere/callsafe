@@ -19,10 +19,18 @@ config :callsafe_signaling,
   timeout_idle: 300_000,
 
   # TURN servers
-  turn_servers: []
+  turn_servers: [],
+
+  # FCM push notifications
+  fcm_enabled: true,
+  fcm_retry_attempts: 2,
+  fcm_timeout_ms: 5_000,
+
+  # Telemetry
+  telemetry_enabled: true
 
 # Logger configuration
 config :logger,
   level: :debug,
   format: "$time $metadata[$level] $message\n",
-  metadata: [:request_id, :device_id, :call_attempt_id]
+  metadata: [:request_id, :device_id, :call_attempt_id, :call_id]

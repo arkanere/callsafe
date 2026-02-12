@@ -19,7 +19,15 @@ config :callsafe_signaling,
   timeout_idle: 10_000,
 
   # TURN servers
-  turn_servers: []
+  turn_servers: [],
+
+  # FCM push notifications
+  fcm_enabled: false,
+  fcm_retry_attempts: 1,
+  fcm_timeout_ms: 1_000,
+
+  # Telemetry
+  telemetry_enabled: true
 
 # Logger configuration
 config :logger,

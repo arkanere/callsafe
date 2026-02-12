@@ -8,6 +8,9 @@ defmodule CallsafeSignaling.Application do
 
   @impl true
   def start(_type, _args) do
+    # Setup telemetry handlers before starting supervision tree
+    CallsafeSignaling.Telemetry.setup()
+
     children = [
       # Registry for call session process lookup
       {Registry, keys: :unique, name: CallsafeSignaling.CallRegistry},
