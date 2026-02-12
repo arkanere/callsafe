@@ -22,7 +22,10 @@ defmodule CallsafeSignaling.Application do
       CallsafeSignaling.Auth.RateLimiter,
 
       # Dynamic supervisor for call sessions
-      CallsafeSignaling.CallSessionSupervisor
+      CallsafeSignaling.CallSessionSupervisor,
+
+      # HTTP/WebSocket server
+      {CallsafeSignaling.HTTP.Server, port: get_port()}
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html
@@ -31,5 +34,9 @@ defmodule CallsafeSignaling.Application do
 
     Logger.info("CallsafeSignaling application starting")
     Supervisor.start_link(children, opts)
+  end
+
+  defp get_port do
+    Application.get_env(:callsafe_signaling, :http_port, 4000)
   end
 end
