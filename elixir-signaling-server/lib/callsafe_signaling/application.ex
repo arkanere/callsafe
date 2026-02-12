@@ -15,6 +15,9 @@ defmodule CallsafeSignaling.Application do
       # Device registry for connection tracking
       CallsafeSignaling.DeviceRegistry,
 
+      # Rate limiter for security
+      CallsafeSignaling.Auth.RateLimiter,
+
       # Dynamic supervisor for call sessions
       CallsafeSignaling.CallSessionSupervisor
     ]
