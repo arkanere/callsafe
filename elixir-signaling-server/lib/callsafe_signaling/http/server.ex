@@ -26,8 +26,8 @@ defmodule CallsafeSignaling.HTTP.Server do
     Logger.info("Starting HTTP server on port #{port}")
 
     case :cowboy.start_clear(:http_listener, cowboy_opts, %{
-      env: %{dispatch: dispatch}
-    }) do
+           env: %{dispatch: dispatch}
+         }) do
       {:ok, pid} ->
         Logger.info("HTTP server started successfully on port #{port}")
         {:ok, pid}

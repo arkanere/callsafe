@@ -103,8 +103,10 @@ defmodule CallsafeSignaling.Protocol.Enums do
   def valid_device_type?(_), do: false
 
   def valid_device_status?(status) when is_atom(status), do: status in @device_statuses
+
   def valid_device_status?(status) when is_binary(status),
     do: String.to_atom(status) in @device_statuses
+
   def valid_device_status?(_), do: false
 
   def valid_call_state?(state) when is_atom(state), do: state in @call_states
@@ -112,24 +114,32 @@ defmodule CallsafeSignaling.Protocol.Enums do
   def valid_call_state?(_), do: false
 
   def valid_call_end_reason?(reason) when is_atom(reason), do: reason in @call_end_reasons
+
   def valid_call_end_reason?(reason) when is_binary(reason),
     do: String.to_atom(reason) in @call_end_reasons
+
   def valid_call_end_reason?(_), do: false
 
   def valid_call_initiator?(initiator) when is_atom(initiator), do: initiator in @call_initiators
+
   def valid_call_initiator?(initiator) when is_binary(initiator),
     do: String.to_atom(initiator) in @call_initiators
+
   def valid_call_initiator?(_), do: false
 
   def valid_media_track_type?(type) when is_atom(type), do: type in @media_track_types
+
   def valid_media_track_type?(type) when is_binary(type),
     do: String.to_atom(type) in @media_track_types
+
   def valid_media_track_type?(_), do: false
 
   def valid_media_toggle_action?(action) when is_atom(action),
     do: action in @media_toggle_actions
+
   def valid_media_toggle_action?(action) when is_binary(action),
     do: String.to_atom(action) in @media_toggle_actions
+
   def valid_media_toggle_action?(_), do: false
 
   # String to atom conversion helpers

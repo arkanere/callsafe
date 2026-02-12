@@ -144,7 +144,10 @@ defmodule CallsafeSignaling.DeviceHandler do
         {:ok, @protocol_version}
 
       true ->
-        Logger.info("Client protocol version #{client_version}, using server version #{@protocol_version}")
+        Logger.info(
+          "Client protocol version #{client_version}, using server version #{@protocol_version}"
+        )
+
         {:ok, @protocol_version}
     end
   end
@@ -206,7 +209,14 @@ defmodule CallsafeSignaling.DeviceHandler do
 
   # Register device in DeviceRegistry
   defp register_device(device_id, business_id, connection_pid, device_type, push_token) do
-    case DeviceRegistry.register(device_id, business_id, connection_pid, device_type, :available, push_token) do
+    case DeviceRegistry.register(
+           device_id,
+           business_id,
+           connection_pid,
+           device_type,
+           :available,
+           push_token
+         ) do
       {:ok, entry} ->
         {:ok, entry}
 

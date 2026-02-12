@@ -93,7 +93,13 @@ defmodule CallsafeSignaling.Auth.JWT do
     exp = now + 3600
 
     header = %{"alg" => "HS256", "typ" => "JWT"}
-    payload = %{"device_id" => device_id, "business_id" => business_id, "iat" => now, "exp" => exp}
+
+    payload = %{
+      "device_id" => device_id,
+      "business_id" => business_id,
+      "iat" => now,
+      "exp" => exp
+    }
 
     header_b64 = encode_base64_json(header)
     payload_b64 = encode_base64_json(payload)

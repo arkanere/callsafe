@@ -14,7 +14,13 @@ defmodule CallsafeSignaling.Protocol.StateMachine do
     initiated: [:ringing, :busy, :unavailable, :cancelled, :failed],
     ringing: [:connecting, :timeout, :cancelled, :failed],
     connecting: [:connected, :camera_permission_denied, :failed, :cancelled],
-    connected: [:ended, :failed, :escalation_pending, :video_paused_by_user, :video_paused_bandwidth],
+    connected: [
+      :ended,
+      :failed,
+      :escalation_pending,
+      :video_paused_by_user,
+      :video_paused_bandwidth
+    ],
     escalation_pending: [:connected, :ended, :failed],
     video_paused_by_user: [:connected, :ended, :failed],
     video_paused_bandwidth: [:connected, :ended, :failed],

@@ -115,6 +115,7 @@ defmodule CallsafeSignaling.Protocol.Validator do
       false -> {:error, "Invalid UUID format: #{value}"}
     end
   end
+
   defp validate_uuid(_), do: {:error, "UUID must be a string"}
 
   defp validate_call_type(value) when is_binary(value) do
@@ -124,6 +125,7 @@ defmodule CallsafeSignaling.Protocol.Validator do
       {:error, "Invalid call type: #{value}"}
     end
   end
+
   defp validate_call_type(_), do: {:error, "Call type must be a string"}
 
   defp validate_device_type(value) when is_binary(value) do
@@ -133,6 +135,7 @@ defmodule CallsafeSignaling.Protocol.Validator do
       {:error, "Invalid device type: #{value}"}
     end
   end
+
   defp validate_device_type(_), do: {:error, "Device type must be a string"}
 
   defp validate_device_status(value) when is_binary(value) do
@@ -142,6 +145,7 @@ defmodule CallsafeSignaling.Protocol.Validator do
       {:error, "Invalid device status: #{value}"}
     end
   end
+
   defp validate_device_status(_), do: {:error, "Device status must be a string"}
 
   defp validate_call_initiator(value) when is_binary(value) do
@@ -151,6 +155,7 @@ defmodule CallsafeSignaling.Protocol.Validator do
       {:error, "Invalid call initiator: #{value}"}
     end
   end
+
   defp validate_call_initiator(_), do: {:error, "Call initiator must be a string"}
 
   defp validate_call_end_reason(value) when is_binary(value) do
@@ -160,6 +165,7 @@ defmodule CallsafeSignaling.Protocol.Validator do
       {:error, "Invalid call end reason: #{value}"}
     end
   end
+
   defp validate_call_end_reason(_), do: {:error, "Call end reason must be a string"}
 
   defp validate_media_toggle_action(value) when is_binary(value) do
@@ -169,6 +175,7 @@ defmodule CallsafeSignaling.Protocol.Validator do
       {:error, "Invalid media toggle action: #{value}"}
     end
   end
+
   defp validate_media_toggle_action(_), do: {:error, "Media toggle action must be a string"}
 
   defp validate_boolean(value) when is_boolean(value), do: :ok
@@ -185,16 +192,21 @@ defmodule CallsafeSignaling.Protocol.Validator do
     cond do
       not Map.has_key?(value, "canSend") ->
         {:error, "MediaCapabilities missing canSend field"}
+
       not Map.has_key?(value, "canReceive") ->
         {:error, "MediaCapabilities missing canReceive field"}
+
       not is_list(value["canSend"]) ->
         {:error, "canSend must be an array"}
+
       not is_list(value["canReceive"]) ->
         {:error, "canReceive must be an array"}
+
       true ->
         :ok
     end
   end
+
   defp validate_media_capabilities(_), do: {:error, "MediaCapabilities must be an object"}
 
   defp validate_ice_candidate(value) when is_map(value) do
@@ -207,5 +219,6 @@ defmodule CallsafeSignaling.Protocol.Validator do
       fields -> {:error, "ICE candidate missing fields: #{Enum.join(fields, ", ")}"}
     end
   end
+
   defp validate_ice_candidate(_), do: {:error, "ICE candidate must be an object"}
 end

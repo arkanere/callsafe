@@ -39,10 +39,27 @@ defmodule CallsafeSignaling.DeviceRegistry do
   Register a device connection.
   Returns {:ok, device_entry} or {:error, :already_registered}.
   """
-  @spec register(device_id, business_id, connection_pid | nil, device_type, device_status, String.t() | nil) ::
+  @spec register(
+          device_id,
+          business_id,
+          connection_pid | nil,
+          device_type,
+          device_status,
+          String.t() | nil
+        ) ::
           {:ok, device_entry} | {:error, :already_registered}
-  def register(device_id, business_id, connection_pid, device_type, status \\ :available, push_token \\ nil) do
-    GenServer.call(__MODULE__, {:register, device_id, business_id, connection_pid, device_type, status, push_token})
+  def register(
+        device_id,
+        business_id,
+        connection_pid,
+        device_type,
+        status \\ :available,
+        push_token \\ nil
+      ) do
+    GenServer.call(
+      __MODULE__,
+      {:register, device_id, business_id, connection_pid, device_type, status, push_token}
+    )
   end
 
   @doc """
@@ -107,7 +124,8 @@ defmodule CallsafeSignaling.DeviceRegistry do
   Update device push token.
   Returns {:ok, device_entry} or {:error, :not_found}.
   """
-  @spec update_push_token(device_id, String.t() | nil) :: {:ok, device_entry} | {:error, :not_found}
+  @spec update_push_token(device_id, String.t() | nil) ::
+          {:ok, device_entry} | {:error, :not_found}
   def update_push_token(device_id, push_token) do
     GenServer.call(__MODULE__, {:update_push_token, device_id, push_token})
   end
@@ -116,7 +134,8 @@ defmodule CallsafeSignaling.DeviceRegistry do
   Update device connection PID (for reconnections).
   Returns {:ok, device_entry} or {:error, :not_found}.
   """
-  @spec update_connection_pid(device_id, connection_pid | nil) :: {:ok, device_entry} | {:error, :not_found}
+  @spec update_connection_pid(device_id, connection_pid | nil) ::
+          {:ok, device_entry} | {:error, :not_found}
   def update_connection_pid(device_id, connection_pid) do
     GenServer.call(__MODULE__, {:update_connection_pid, device_id, connection_pid})
   end
@@ -140,7 +159,11 @@ defmodule CallsafeSignaling.DeviceRegistry do
   end
 
   @impl true
-  def handle_call({:register, device_id, business_id, connection_pid, device_type, status, push_token}, _from, state) do
+  def handle_call(
+        {:register, device_id, business_id, connection_pid, device_type, status, push_token},
+        _from,
+        state
+      ) do
     # Check if device already registered
     case :ets.lookup(:device_registry, {:device, device_id}) do
       [] ->
