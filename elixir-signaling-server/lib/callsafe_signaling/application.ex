@@ -21,6 +21,9 @@ defmodule CallsafeSignaling.Application do
       # Rate limiter for security
       CallsafeSignaling.Auth.RateLimiter,
 
+      # Stats tracking with :counters
+      CallsafeSignaling.Stats,
+
       # Dynamic supervisor for call sessions
       CallsafeSignaling.CallSessionSupervisor,
 

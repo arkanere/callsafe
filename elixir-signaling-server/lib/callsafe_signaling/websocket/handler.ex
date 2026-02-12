@@ -6,18 +6,18 @@ defmodule CallsafeSignaling.WebSocket.Handler do
 
   @behaviour :cowboy_websocket
   require Logger
-  alias CallsafeSignaling.MessageRouter
+  alias CallsafeSignaling.{MessageRouter, Stats}
 
   @type state :: %{
-    device_id: String.t() | nil,
-    protocol_version: String.t() | nil,
-    device_type: atom() | nil,
-    business_id: String.t() | nil,
-    authenticated: boolean(),
-    connection_pid: pid(),
-    ip_address: String.t(),
-    connected_at: DateTime.t()
-  }
+          device_id: String.t() | nil,
+          protocol_version: String.t() | nil,
+          device_type: atom() | nil,
+          business_id: String.t() | nil,
+          authenticated: boolean(),
+          connection_pid: pid(),
+          ip_address: String.t(),
+          connected_at: DateTime.t()
+        }
 
   # WebSocket upgrade callback
   @impl :cowboy_websocket
@@ -40,23 +40,34 @@ defmodule CallsafeSignaling.WebSocket.Handler do
     }
 
     Logger.debug("WebSocket connection from IP: #{ip_address}")
+
+    # Track connection stats
+    Stats.increment_connections_total()
+    Stats.increment_connections_active()
+
     {:cowboy_websocket, req, state}
   end
 
   # Handle incoming WebSocket frames
   @impl :cowboy_websocket
   def websocket_handle({:text, json}, state) do
+    # Track received message
+    Stats.increment_messages_received()
+
     case Jason.decode(json) do
       {:ok, message} ->
         handle_message(message, state)
 
       {:error, reason} ->
         Logger.warning("Invalid JSON received: #{inspect(reason)}")
-        error_response = Jason.encode!(%{
-          type: "error",
-          error: "invalid_json",
-          message: "Failed to parse message as JSON"
-        })
+
+        error_response =
+          Jason.encode!(%{
+            type: "error",
+            error: "invalid_json",
+            message: "Failed to parse message as JSON"
+          })
+
         {:reply, {:text, error_response}, state}
     end
   end
@@ -76,6 +87,8 @@ defmodule CallsafeSignaling.WebSocket.Handler do
     # Send message to WebSocket client
     case Jason.encode(message) do
       {:ok, json} ->
+        # Track sent message
+        Stats.increment_messages_sent()
         {:reply, {:text, json}, state}
 
       {:error, reason} ->
@@ -101,11 +114,18 @@ defmodule CallsafeSignaling.WebSocket.Handler do
 
       device_id ->
         cleanup_type = if device_type == :web, do: "removed", else: "persisted"
-        Logger.info("WebSocket connection terminated: #{device_id} (#{device_type}), cleanup: #{cleanup_type}, reason: #{inspect(reason)}")
+
+        Logger.info(
+          "WebSocket connection terminated: #{device_id} (#{device_type}), cleanup: #{cleanup_type}, reason: #{inspect(reason)}"
+        )
     end
 
     # DeviceRegistry will automatically handle cleanup via :DOWN message
     # Web devices will be removed, mobile devices will persist with connection_pid = nil
+
+    # Track disconnection stats
+    Stats.decrement_connections_active()
+
     :ok
   end
 
@@ -128,11 +148,12 @@ defmodule CallsafeSignaling.WebSocket.Handler do
 
       {:error, error_type, error_message, new_state} ->
         # Send error response
-        error_response = Jason.encode!(%{
-          "type" => "error",
-          "error" => error_type,
-          "message" => error_message
-        })
+        error_response =
+          Jason.encode!(%{
+            "type" => "error",
+            "error" => error_type,
+            "message" => error_message
+          })
 
         {:reply, {:text, error_response}, new_state}
     end

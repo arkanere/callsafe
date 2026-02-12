@@ -5,6 +5,7 @@ defmodule CallsafeSignaling.Telemetry do
   """
 
   require Logger
+  alias CallsafeSignaling.Stats
 
   @doc """
   Setup telemetry event handlers.
@@ -51,6 +52,8 @@ defmodule CallsafeSignaling.Telemetry do
   Emit call started event.
   """
   def emit_call_started(call_id, business_id, call_type) do
+    Stats.increment_calls_initiated()
+
     :telemetry.execute(
       [:callsafe_signaling, :call, :started],
       %{count: 1},
@@ -62,6 +65,8 @@ defmodule CallsafeSignaling.Telemetry do
   Emit call connected event.
   """
   def emit_call_connected(call_id, setup_duration_ms) do
+    Stats.increment_calls_connected()
+
     :telemetry.execute(
       [:callsafe_signaling, :call, :connected],
       %{duration: setup_duration_ms, count: 1},
@@ -73,6 +78,8 @@ defmodule CallsafeSignaling.Telemetry do
   Emit call ended event.
   """
   def emit_call_ended(call_id, call_duration_ms, end_reason) do
+    Stats.increment_calls_ended()
+
     :telemetry.execute(
       [:callsafe_signaling, :call, :ended],
       %{duration: call_duration_ms, count: 1},
@@ -84,6 +91,8 @@ defmodule CallsafeSignaling.Telemetry do
   Emit call failed event.
   """
   def emit_call_failed(call_id, failure_reason) do
+    Stats.increment_calls_failed()
+
     :telemetry.execute(
       [:callsafe_signaling, :call, :failed],
       %{count: 1},

@@ -5,6 +5,7 @@ defmodule CallsafeSignaling.FCM.PushService do
   """
 
   require Logger
+  alias CallsafeSignaling.Stats
 
   @fcm_endpoint "https://fcm.googleapis.com/fcm/send"
 
@@ -65,6 +66,9 @@ defmodule CallsafeSignaling.FCM.PushService do
       {:ok, %{status: status, body: response_body}} when status in 200..299 ->
         duration = System.monotonic_time(:millisecond) - start_time
 
+        # Track successful FCM notification
+        Stats.increment_fcm_sent()
+
         :telemetry.execute(
           [:callsafe_signaling, :fcm, :notification, :sent],
           %{duration: duration},
@@ -79,6 +83,9 @@ defmodule CallsafeSignaling.FCM.PushService do
         {:ok, response_body}
 
       {:ok, %{status: status, body: response_body}} ->
+        # Track failed FCM notification
+        Stats.increment_fcm_failed()
+
         Logger.warning("FCM request failed",
           status: status,
           response: inspect(response_body),
@@ -94,6 +101,9 @@ defmodule CallsafeSignaling.FCM.PushService do
         {:error, {:fcm_error, status, response_body}}
 
       {:error, reason} ->
+        # Track failed FCM notification
+        Stats.increment_fcm_failed()
+
         Logger.error("FCM request error",
           error: inspect(reason),
           call_id: payload.call_id
