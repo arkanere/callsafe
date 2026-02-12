@@ -28,8 +28,14 @@ defmodule CallsafeSignaling.CallSession do
           caller_pid: pid() | nil,
           callee_pid: pid() | nil,
           media_capabilities: map() | nil,
-          metadata: map()
+          metadata: map(),
+          ringing_timer: reference() | nil,
+          connecting_timer: reference() | nil
         }
+
+  # Timeout constants (in milliseconds)
+  @ringing_timeout 30_000
+  @connecting_timeout 30_000
 
   # Client API
 
@@ -53,7 +59,9 @@ defmodule CallsafeSignaling.CallSession do
       caller_pid: nil,
       callee_pid: nil,
       media_capabilities: Map.get(opts, :media_capabilities),
-      metadata: Map.get(opts, :metadata, %{})
+      metadata: Map.get(opts, :metadata, %{}),
+      ringing_timer: nil,
+      connecting_timer: nil
     }
 
     GenServer.start_link(__MODULE__, initial_state, name: via_tuple(call_id))
@@ -75,7 +83,10 @@ defmodule CallsafeSignaling.CallSession do
   """
   @spec set_ringing(call_id, device_id, pid()) :: {:ok, call_state} | {:error, atom()}
   def set_ringing(call_id, callee_id, callee_pid) do
-    call_genserver(call_id, {:transition, :ringing, %{callee_id: callee_id, callee_pid: callee_pid}})
+    call_genserver(
+      call_id,
+      {:transition, :ringing, %{callee_id: callee_id, callee_pid: callee_pid}}
+    )
   end
 
   @doc """
@@ -91,7 +102,10 @@ defmodule CallsafeSignaling.CallSession do
   """
   @spec set_connected(call_id) :: {:ok, call_state} | {:error, atom()}
   def set_connected(call_id) do
-    call_genserver(call_id, {:transition, :connected, %{connected_at: System.system_time(:millisecond)}})
+    call_genserver(
+      call_id,
+      {:transition, :connected, %{connected_at: System.system_time(:millisecond)}}
+    )
   end
 
   @doc """
@@ -99,7 +113,10 @@ defmodule CallsafeSignaling.CallSession do
   """
   @spec set_ended(call_id, Enums.call_end_reason()) :: {:ok, call_state} | {:error, atom()}
   def set_ended(call_id, reason) do
-    call_genserver(call_id, {:transition, :ended, %{ended_at: System.system_time(:millisecond), end_reason: reason}})
+    call_genserver(
+      call_id,
+      {:transition, :ended, %{ended_at: System.system_time(:millisecond), end_reason: reason}}
+    )
   end
 
   @doc """
@@ -107,7 +124,10 @@ defmodule CallsafeSignaling.CallSession do
   """
   @spec set_failed(call_id, String.t()) :: {:ok, call_state} | {:error, atom()}
   def set_failed(call_id, error_message) do
-    call_genserver(call_id, {:transition, :failed, %{ended_at: System.system_time(:millisecond), error: error_message}})
+    call_genserver(
+      call_id,
+      {:transition, :failed, %{ended_at: System.system_time(:millisecond), error: error_message}}
+    )
   end
 
   @doc """
@@ -115,7 +135,10 @@ defmodule CallsafeSignaling.CallSession do
   """
   @spec set_cancelled(call_id) :: {:ok, call_state} | {:error, atom()}
   def set_cancelled(call_id) do
-    call_genserver(call_id, {:transition, :cancelled, %{ended_at: System.system_time(:millisecond)}})
+    call_genserver(
+      call_id,
+      {:transition, :cancelled, %{ended_at: System.system_time(:millisecond)}}
+    )
   end
 
   @doc """
@@ -131,7 +154,10 @@ defmodule CallsafeSignaling.CallSession do
   """
   @spec set_unavailable(call_id) :: {:ok, call_state} | {:error, atom()}
   def set_unavailable(call_id) do
-    call_genserver(call_id, {:transition, :unavailable, %{ended_at: System.system_time(:millisecond)}})
+    call_genserver(
+      call_id,
+      {:transition, :unavailable, %{ended_at: System.system_time(:millisecond)}}
+    )
   end
 
   @doc """
@@ -139,7 +165,10 @@ defmodule CallsafeSignaling.CallSession do
   """
   @spec set_timeout(call_id) :: {:ok, call_state} | {:error, atom()}
   def set_timeout(call_id) do
-    call_genserver(call_id, {:transition, :timeout, %{ended_at: System.system_time(:millisecond)}})
+    call_genserver(
+      call_id,
+      {:transition, :timeout, %{ended_at: System.system_time(:millisecond)}}
+    )
   end
 
   @doc """
@@ -281,7 +310,13 @@ defmodule CallsafeSignaling.CallSession do
   @impl true
   def init(initial_state) do
     Logger.info("Call session started: #{initial_state.call_id} (#{initial_state.call_type})")
-    Telemetry.emit_call_started(initial_state.call_id, initial_state.business_id, initial_state.call_type)
+
+    Telemetry.emit_call_started(
+      initial_state.call_id,
+      initial_state.business_id,
+      initial_state.call_type
+    )
+
     {:ok, initial_state}
   end
 
@@ -294,7 +329,14 @@ defmodule CallsafeSignaling.CallSession do
   def handle_call({:transition, new_state, updates}, _from, state) do
     case StateMachine.transition(state.state, new_state) do
       {:ok, validated_state} ->
-        updated_state = Map.merge(state, updates) |> Map.put(:state, validated_state)
+        # Cancel existing timers before transitioning
+        updated_state =
+          state
+          |> cancel_timeout_timers()
+          |> Map.merge(updates)
+          |> Map.put(:state, validated_state)
+          |> schedule_timeout_for_state(validated_state)
+
         Logger.debug("Call #{state.call_id} transitioned: #{state.state} -> #{validated_state}")
 
         # Emit telemetry events for specific transitions
@@ -309,7 +351,10 @@ defmodule CallsafeSignaling.CallSession do
         {:reply, {:ok, updated_state}, updated_state}
 
       {:error, :invalid_transition} ->
-        Logger.warning("Invalid transition for call #{state.call_id}: #{state.state} -> #{new_state}")
+        Logger.warning(
+          "Invalid transition for call #{state.call_id}: #{state.state} -> #{new_state}"
+        )
+
         {:reply, {:error, :invalid_transition}, state}
     end
   end
@@ -342,6 +387,62 @@ defmodule CallsafeSignaling.CallSession do
   end
 
   @impl true
+  def handle_info(:ringing_timeout, state) do
+    Logger.warning("Call #{state.call_id} timed out while ringing (#{@ringing_timeout}ms)")
+
+    # Transition to timeout state
+    case StateMachine.transition(state.state, :timeout) do
+      {:ok, timeout_state} ->
+        updated_state =
+          state
+          |> Map.put(:state, timeout_state)
+          |> Map.put(:ended_at, System.system_time(:millisecond))
+          |> Map.put(:ringing_timer, nil)
+
+        # Notify both peers about timeout
+        notify_timeout(updated_state)
+
+        # Schedule auto-stop
+        Process.send_after(self(), :auto_stop, 5_000)
+
+        {:noreply, updated_state}
+
+      {:error, :invalid_transition} ->
+        Logger.debug("Cannot timeout from state: #{state.state}")
+        {:noreply, state}
+    end
+  end
+
+  @impl true
+  def handle_info(:connecting_timeout, state) do
+    Logger.warning(
+      "Call #{state.call_id} timed out while connecting WebRTC (#{@connecting_timeout}ms)"
+    )
+
+    # Transition to timeout state
+    case StateMachine.transition(state.state, :timeout) do
+      {:ok, timeout_state} ->
+        updated_state =
+          state
+          |> Map.put(:state, timeout_state)
+          |> Map.put(:ended_at, System.system_time(:millisecond))
+          |> Map.put(:connecting_timer, nil)
+
+        # Notify both peers about timeout
+        notify_timeout(updated_state)
+
+        # Schedule auto-stop
+        Process.send_after(self(), :auto_stop, 5_000)
+
+        {:noreply, updated_state}
+
+      {:error, :invalid_transition} ->
+        Logger.debug("Cannot timeout from state: #{state.state}")
+        {:noreply, state}
+    end
+  end
+
+  @impl true
   def terminate(reason, state) do
     Logger.info("Call session terminated: #{state.call_id}, reason: #{inspect(reason)}")
 
@@ -366,4 +467,57 @@ defmodule CallsafeSignaling.CallSession do
   end
 
   defp emit_transition_telemetry(_state, _updated_state, _old_state), do: :ok
+
+  # Timeout management helpers
+
+  defp cancel_timeout_timers(state) do
+    # Cancel ringing timer if exists
+    state =
+      if state.ringing_timer do
+        Process.cancel_timer(state.ringing_timer)
+        Map.put(state, :ringing_timer, nil)
+      else
+        state
+      end
+
+    # Cancel connecting timer if exists
+    if state.connecting_timer do
+      Process.cancel_timer(state.connecting_timer)
+      Map.put(state, :connecting_timer, nil)
+    else
+      state
+    end
+  end
+
+  defp schedule_timeout_for_state(state, :ringing) do
+    timer_ref = Process.send_after(self(), :ringing_timeout, @ringing_timeout)
+    Map.put(state, :ringing_timer, timer_ref)
+  end
+
+  defp schedule_timeout_for_state(state, :connecting) do
+    timer_ref = Process.send_after(self(), :connecting_timeout, @connecting_timeout)
+    Map.put(state, :connecting_timer, timer_ref)
+  end
+
+  defp schedule_timeout_for_state(state, _other_state), do: state
+
+  defp notify_timeout(state) do
+    message = %{
+      "type" => "call:timeout",
+      "callAttemptId" => state.call_id,
+      "timestamp" => System.system_time(:millisecond)
+    }
+
+    # Notify caller
+    if state.caller_pid do
+      send(state.caller_pid, {:send_message, message["type"], message})
+    end
+
+    # Notify callee
+    if state.callee_pid do
+      send(state.callee_pid, {:send_message, message["type"], message})
+    end
+
+    :ok
+  end
 end

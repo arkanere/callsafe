@@ -27,6 +27,9 @@ defmodule CallsafeSignaling.Application do
       # Dynamic supervisor for call sessions
       CallsafeSignaling.CallSessionSupervisor,
 
+      # Periodic cleanup for stale sessions
+      CallsafeSignaling.CleanupServer,
+
       # HTTP/WebSocket server
       {CallsafeSignaling.HTTP.Server, port: get_port()}
     ]

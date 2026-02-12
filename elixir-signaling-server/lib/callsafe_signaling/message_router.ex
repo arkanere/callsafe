@@ -7,7 +7,7 @@ defmodule CallsafeSignaling.MessageRouter do
 
   require Logger
   alias CallsafeSignaling.Protocol.{Validator, MessageTypes}
-  alias CallsafeSignaling.DeviceHandler
+  alias CallsafeSignaling.{DeviceHandler, CallHandler, WebRTCHandler, MediaHandler}
 
   @type message :: map()
   @type state :: map()
@@ -60,16 +60,13 @@ defmodule CallsafeSignaling.MessageRouter do
         DeviceHandler.handle(message_type, message, state)
 
       :call ->
-        # TODO: Implement in Phase 4
-        {:error, "not_implemented", "Call messages not yet implemented"}
+        CallHandler.handle(message_type, message, state)
 
       :webrtc ->
-        # TODO: Implement in Phase 4
-        {:error, "not_implemented", "WebRTC messages not yet implemented"}
+        WebRTCHandler.handle(message_type, message, state)
 
       :media ->
-        # TODO: Implement in Phase 4
-        {:error, "not_implemented", "Media messages not yet implemented"}
+        MediaHandler.handle(message_type, message, state)
 
       :unknown ->
         {:error, "unknown_message_type", "Unknown message type: #{message_type}"}
