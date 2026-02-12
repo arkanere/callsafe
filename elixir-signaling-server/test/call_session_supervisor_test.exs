@@ -18,7 +18,9 @@ defmodule CallsafeSignaling.CallSessionSupervisorTest do
       caller_id = "device_1"
       call_type = :voice
 
-      assert {:ok, pid} = CallSessionSupervisor.start_call(call_id, business_id, caller_id, call_type)
+      assert {:ok, pid} =
+               CallSessionSupervisor.start_call(call_id, business_id, caller_id, call_type)
+
       assert Process.alive?(pid)
 
       # Verify call session is accessible
@@ -32,8 +34,11 @@ defmodule CallsafeSignaling.CallSessionSupervisorTest do
       caller_id = "device_1"
       call_type = :voice
 
-      assert {:ok, pid1} = CallSessionSupervisor.start_call(call_id, business_id, caller_id, call_type)
-      assert {:ok, pid2} = CallSessionSupervisor.start_call(call_id, business_id, caller_id, call_type)
+      assert {:ok, pid1} =
+               CallSessionSupervisor.start_call(call_id, business_id, caller_id, call_type)
+
+      assert {:ok, pid2} =
+               CallSessionSupervisor.start_call(call_id, business_id, caller_id, call_type)
 
       # Should return the same PID
       assert pid1 == pid2
@@ -45,7 +50,9 @@ defmodule CallsafeSignaling.CallSessionSupervisorTest do
       caller_id = "device_1"
       call_type = :video
 
-      assert {:ok, _pid} = CallSessionSupervisor.start_call(call_id, business_id, caller_id, call_type)
+      assert {:ok, _pid} =
+               CallSessionSupervisor.start_call(call_id, business_id, caller_id, call_type)
+
       assert {:ok, state} = CallSession.get_state(call_id)
       assert state.call_type == :video
     end
@@ -85,7 +92,8 @@ defmodule CallsafeSignaling.CallSessionSupervisorTest do
       assert CallSessionSupervisor.count_calls() == initial_count + 2
 
       CallSessionSupervisor.terminate_call(call_id1)
-      Process.sleep(100) # Give time for termination
+      # Give time for termination
+      Process.sleep(100)
       assert CallSessionSupervisor.count_calls() == initial_count + 1
     end
   end
@@ -151,11 +159,15 @@ defmodule CallsafeSignaling.CallSessionSupervisorTest do
 
   describe "supervision tree integration" do
     test "multiple calls can be supervised simultaneously" do
-      call_ids = for i <- 1..10 do
-        call_id = "call_#{:rand.uniform(100000)}"
-        {:ok, _pid} = CallSessionSupervisor.start_call(call_id, "business_1", "device_#{i}", :voice)
-        call_id
-      end
+      call_ids =
+        for i <- 1..10 do
+          call_id = "call_#{:rand.uniform(100_000)}"
+
+          {:ok, _pid} =
+            CallSessionSupervisor.start_call(call_id, "business_1", "device_#{i}", :voice)
+
+          call_id
+        end
 
       # All calls should be active
       assert CallSessionSupervisor.count_calls() >= 10

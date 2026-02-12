@@ -6,11 +6,12 @@ defmodule CallsafeSignaling.FCM.PushServiceTest do
   describe "send_notification/2" do
     test "returns error when FCM is not configured" do
       # Test without FCM_SERVER_KEY set
-      result = PushService.send_notification("device_token_123", %{
-        call_id: "call_123",
-        caller_id: "device_456",
-        call_type: "voice"
-      })
+      result =
+        PushService.send_notification("device_token_123", %{
+          call_id: "call_123",
+          caller_id: "device_456",
+          call_type: "voice"
+        })
 
       assert result == {:error, :fcm_not_configured}
     end

@@ -19,7 +19,7 @@ defmodule CallsafeSignaling.Integration.SupervisionTest do
 
   describe "supervision tree resilience" do
     test "supervisor remains functional after child crash" do
-      call_id = "crash_test_#{:rand.uniform(100000)}"
+      call_id = "crash_test_#{:rand.uniform(100_000)}"
 
       # Start a call session
       {:ok, pid} = CallSessionSupervisor.start_call(call_id, "business_1", "device_1", :voice)
@@ -33,8 +33,11 @@ defmodule CallsafeSignaling.Integration.SupervisionTest do
       assert_receive {:DOWN, ^ref, :process, ^pid, :killed}, 1_000
 
       # Supervisor should still be alive and functional
-      new_call_id = "new_call_#{:rand.uniform(100000)}"
-      {:ok, new_pid} = CallSessionSupervisor.start_call(new_call_id, "business_1", "device_2", :voice)
+      new_call_id = "new_call_#{:rand.uniform(100_000)}"
+
+      {:ok, new_pid} =
+        CallSessionSupervisor.start_call(new_call_id, "business_1", "device_2", :voice)
+
       assert Process.alive?(new_pid)
     end
 
@@ -42,8 +45,11 @@ defmodule CallsafeSignaling.Integration.SupervisionTest do
       # Start multiple call sessions
       call_pids =
         for i <- 1..5 do
-          call_id = "concurrent_crash_#{i}_#{:rand.uniform(100000)}"
-          {:ok, pid} = CallSessionSupervisor.start_call(call_id, "business_1", "device_#{i}", :voice)
+          call_id = "concurrent_crash_#{i}_#{:rand.uniform(100_000)}"
+
+          {:ok, pid} =
+            CallSessionSupervisor.start_call(call_id, "business_1", "device_#{i}", :voice)
+
           {call_id, pid}
         end
 
@@ -61,12 +67,14 @@ defmodule CallsafeSignaling.Integration.SupervisionTest do
       end)
 
       # Supervisor should still be functional
-      {:ok, _new_pid} = CallSessionSupervisor.start_call("post_crash_call", "business_1", "device_x", :voice)
+      {:ok, _new_pid} =
+        CallSessionSupervisor.start_call("post_crash_call", "business_1", "device_x", :voice)
+
       assert CallSessionSupervisor.count_calls() >= 1
     end
 
     test "crashed call sessions are not restarted" do
-      call_id = "no_restart_#{:rand.uniform(100000)}"
+      call_id = "no_restart_#{:rand.uniform(100_000)}"
 
       {:ok, pid} = CallSessionSupervisor.start_call(call_id, "business_1", "device_1", :voice)
       ref = Process.monitor(pid)
@@ -85,7 +93,7 @@ defmodule CallsafeSignaling.Integration.SupervisionTest do
     end
 
     test "supervisor handles abnormal exits gracefully" do
-      call_id = "abnormal_exit_#{:rand.uniform(100000)}"
+      call_id = "abnormal_exit_#{:rand.uniform(100_000)}"
 
       {:ok, pid} = CallSessionSupervisor.start_call(call_id, "business_1", "device_1", :voice)
 
@@ -96,17 +104,19 @@ defmodule CallsafeSignaling.Integration.SupervisionTest do
       Process.sleep(100)
 
       # Supervisor should still be functional
-      new_call_id = "post_abnormal_#{:rand.uniform(100000)}"
-      assert {:ok, _new_pid} = CallSessionSupervisor.start_call(new_call_id, "business_1", "device_2", :voice)
+      new_call_id = "post_abnormal_#{:rand.uniform(100_000)}"
+
+      assert {:ok, _new_pid} =
+               CallSessionSupervisor.start_call(new_call_id, "business_1", "device_2", :voice)
     end
   end
 
   describe "fault isolation between call sessions" do
     test "crash of one call does not affect other calls" do
       # Start multiple independent calls
-      call_1_id = "isolated_1_#{:rand.uniform(100000)}"
-      call_2_id = "isolated_2_#{:rand.uniform(100000)}"
-      call_3_id = "isolated_3_#{:rand.uniform(100000)}"
+      call_1_id = "isolated_1_#{:rand.uniform(100_000)}"
+      call_2_id = "isolated_2_#{:rand.uniform(100_000)}"
+      call_3_id = "isolated_3_#{:rand.uniform(100_000)}"
 
       {:ok, pid1} = CallSessionSupervisor.start_call(call_1_id, "business_1", "device_1", :voice)
       {:ok, pid2} = CallSessionSupervisor.start_call(call_2_id, "business_1", "device_2", :voice)
@@ -136,8 +146,8 @@ defmodule CallsafeSignaling.Integration.SupervisionTest do
     end
 
     test "state transitions in one call do not affect others" do
-      call_1_id = "state_1_#{:rand.uniform(100000)}"
-      call_2_id = "state_2_#{:rand.uniform(100000)}"
+      call_1_id = "state_1_#{:rand.uniform(100_000)}"
+      call_2_id = "state_2_#{:rand.uniform(100_000)}"
 
       {:ok, _pid1} = CallSessionSupervisor.start_call(call_1_id, "business_1", "device_1", :voice)
       {:ok, _pid2} = CallSessionSupervisor.start_call(call_2_id, "business_1", "device_2", :voice)
@@ -155,7 +165,7 @@ defmodule CallsafeSignaling.Integration.SupervisionTest do
 
   describe "automatic cleanup on termination" do
     test "call session terminates after reaching terminal state" do
-      call_id = "auto_cleanup_#{:rand.uniform(100000)}"
+      call_id = "auto_cleanup_#{:rand.uniform(100_000)}"
 
       {:ok, pid} = CallSessionSupervisor.start_call(call_id, "business_1", "device_1", :voice)
       ref = Process.monitor(pid)
@@ -171,7 +181,7 @@ defmodule CallsafeSignaling.Integration.SupervisionTest do
     end
 
     test "cancelled call sessions are cleaned up" do
-      call_id = "cancelled_cleanup_#{:rand.uniform(100000)}"
+      call_id = "cancelled_cleanup_#{:rand.uniform(100_000)}"
 
       {:ok, pid} = CallSessionSupervisor.start_call(call_id, "business_1", "device_1", :voice)
       ref = Process.monitor(pid)
@@ -185,7 +195,7 @@ defmodule CallsafeSignaling.Integration.SupervisionTest do
     end
 
     test "failed call sessions are cleaned up" do
-      call_id = "failed_cleanup_#{:rand.uniform(100000)}"
+      call_id = "failed_cleanup_#{:rand.uniform(100_000)}"
 
       {:ok, pid} = CallSessionSupervisor.start_call(call_id, "business_1", "device_1", :voice)
       ref = Process.monitor(pid)
@@ -202,7 +212,7 @@ defmodule CallsafeSignaling.Integration.SupervisionTest do
 
   describe "registry integration" do
     test "call sessions are properly registered and deregistered" do
-      call_id = "registry_test_#{:rand.uniform(100000)}"
+      call_id = "registry_test_#{:rand.uniform(100_000)}"
 
       # Before starting, call should not be found
       assert {:error, :not_found} = CallSession.get_state(call_id)
@@ -224,7 +234,7 @@ defmodule CallsafeSignaling.Integration.SupervisionTest do
     end
 
     test "duplicate call IDs return existing process" do
-      call_id = "duplicate_#{:rand.uniform(100000)}"
+      call_id = "duplicate_#{:rand.uniform(100_000)}"
 
       {:ok, pid1} = CallSessionSupervisor.start_call(call_id, "business_1", "device_1", :voice)
       {:ok, pid2} = CallSessionSupervisor.start_call(call_id, "business_1", "device_1", :voice)
@@ -241,8 +251,11 @@ defmodule CallsafeSignaling.Integration.SupervisionTest do
       # Create many calls rapidly
       call_ids =
         for i <- 1..20 do
-          call_id = "rapid_#{i}_#{:rand.uniform(100000)}"
-          {:ok, _pid} = CallSessionSupervisor.start_call(call_id, "business_1", "device_#{i}", :voice)
+          call_id = "rapid_#{i}_#{:rand.uniform(100_000)}"
+
+          {:ok, _pid} =
+            CallSessionSupervisor.start_call(call_id, "business_1", "device_#{i}", :voice)
+
           call_id
         end
 
@@ -268,7 +281,7 @@ defmodule CallsafeSignaling.Integration.SupervisionTest do
     end
 
     test "memory is released after call termination" do
-      call_id = "memory_test_#{:rand.uniform(100000)}"
+      call_id = "memory_test_#{:rand.uniform(100_000)}"
 
       {:ok, pid} = CallSessionSupervisor.start_call(call_id, "business_1", "device_1", :voice)
 
@@ -294,8 +307,11 @@ defmodule CallsafeSignaling.Integration.SupervisionTest do
     test "supervisor recovers from multiple rapid child failures" do
       # Simulate stress scenario
       for i <- 1..10 do
-        call_id = "stress_#{i}_#{:rand.uniform(100000)}"
-        {:ok, pid} = CallSessionSupervisor.start_call(call_id, "business_1", "device_#{i}", :voice)
+        call_id = "stress_#{i}_#{:rand.uniform(100_000)}"
+
+        {:ok, pid} =
+          CallSessionSupervisor.start_call(call_id, "business_1", "device_#{i}", :voice)
+
         Process.exit(pid, :kill)
       end
 
@@ -303,7 +319,9 @@ defmodule CallsafeSignaling.Integration.SupervisionTest do
       Process.sleep(500)
 
       # Supervisor should still be functional
-      {:ok, _pid} = CallSessionSupervisor.start_call("post_stress", "business_1", "device_x", :voice)
+      {:ok, _pid} =
+        CallSessionSupervisor.start_call("post_stress", "business_1", "device_x", :voice)
+
       assert CallSessionSupervisor.count_calls() >= 1
     end
 
@@ -313,7 +331,7 @@ defmodule CallsafeSignaling.Integration.SupervisionTest do
       DeviceRegistry.register("device_2", "business_1", self(), :web)
 
       # Start and crash a call
-      call_id = "registry_crash_test_#{:rand.uniform(100000)}"
+      call_id = "registry_crash_test_#{:rand.uniform(100_000)}"
       {:ok, pid} = CallSessionSupervisor.start_call(call_id, "business_1", "device_1", :voice)
       Process.exit(pid, :kill)
 
@@ -333,8 +351,11 @@ defmodule CallsafeSignaling.Integration.SupervisionTest do
       tasks =
         for i <- 1..10 do
           Task.async(fn ->
-            call_id = "concurrent_#{i}_#{:rand.uniform(100000)}"
-            result = CallSessionSupervisor.start_call(call_id, "business_1", "device_#{i}", :voice)
+            call_id = "concurrent_#{i}_#{:rand.uniform(100_000)}"
+
+            result =
+              CallSessionSupervisor.start_call(call_id, "business_1", "device_#{i}", :voice)
+
             send(parent, {:created, call_id})
             result
           end)
@@ -351,7 +372,7 @@ defmodule CallsafeSignaling.Integration.SupervisionTest do
     end
 
     test "handles concurrent state transitions safely" do
-      call_id = "concurrent_transitions_#{:rand.uniform(100000)}"
+      call_id = "concurrent_transitions_#{:rand.uniform(100_000)}"
       {:ok, _pid} = CallSessionSupervisor.start_call(call_id, "business_1", "device_1", :voice)
 
       # Try multiple state transitions concurrently

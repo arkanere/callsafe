@@ -16,7 +16,7 @@ defmodule CallsafeSignaling.Integration.TelemetryTest do
     # Attach test handler to capture telemetry events
     test_pid = self()
 
-    handler_id = "test-handler-#{:rand.uniform(1000000)}"
+    handler_id = "test-handler-#{:rand.uniform(1_000_000)}"
 
     :telemetry.attach_many(
       handler_id,
@@ -44,21 +44,19 @@ defmodule CallsafeSignaling.Integration.TelemetryTest do
 
   describe "call lifecycle telemetry" do
     test "emits call started event on call creation" do
-      call_id = "telemetry_start_#{:rand.uniform(100000)}"
+      call_id = "telemetry_start_#{:rand.uniform(100_000)}"
       business_id = "business_1"
       call_type = :voice
 
       {:ok, _pid} = CallSessionSupervisor.start_call(call_id, business_id, "device_1", call_type)
 
-      assert_receive {:telemetry_event,
-                      [:callsafe_signaling, :call, :started],
-                      %{count: 1},
+      assert_receive {:telemetry_event, [:callsafe_signaling, :call, :started], %{count: 1},
                       %{call_id: ^call_id, business_id: ^business_id, call_type: ^call_type}},
                      1_000
     end
 
     test "emits call connected event with setup duration" do
-      call_id = "telemetry_connected_#{:rand.uniform(100000)}"
+      call_id = "telemetry_connected_#{:rand.uniform(100_000)}"
 
       {:ok, _pid} = CallSessionSupervisor.start_call(call_id, "business_1", "device_1", :voice)
 
@@ -74,10 +72,8 @@ defmodule CallsafeSignaling.Integration.TelemetryTest do
       CallSession.set_connected(call_id)
 
       # Should receive connected event with duration
-      assert_receive {:telemetry_event,
-                      [:callsafe_signaling, :call, :connected],
-                      %{count: 1, duration: duration},
-                      %{call_id: ^call_id}},
+      assert_receive {:telemetry_event, [:callsafe_signaling, :call, :connected],
+                      %{count: 1, duration: duration}, %{call_id: ^call_id}},
                      1_000
 
       # Duration should be non-negative (may be 0 on fast machines)
@@ -85,7 +81,7 @@ defmodule CallsafeSignaling.Integration.TelemetryTest do
     end
 
     test "emits call ended event with call duration" do
-      call_id = "telemetry_ended_#{:rand.uniform(100000)}"
+      call_id = "telemetry_ended_#{:rand.uniform(100_000)}"
 
       {:ok, pid} = CallSessionSupervisor.start_call(call_id, "business_1", "device_1", :voice)
       ref = Process.monitor(pid)
@@ -108,17 +104,15 @@ defmodule CallsafeSignaling.Integration.TelemetryTest do
       assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 6_000
 
       # Should receive ended event
-      assert_receive {:telemetry_event,
-                      [:callsafe_signaling, :call, :ended],
-                      %{count: 1, duration: duration},
-                      %{call_id: ^call_id, reason: :normal}},
+      assert_receive {:telemetry_event, [:callsafe_signaling, :call, :ended],
+                      %{count: 1, duration: duration}, %{call_id: ^call_id, reason: :normal}},
                      1_000
 
       assert duration > 0
     end
 
     test "emits call failed event for failed calls" do
-      call_id = "telemetry_failed_#{:rand.uniform(100000)}"
+      call_id = "telemetry_failed_#{:rand.uniform(100_000)}"
 
       {:ok, _pid} = CallSessionSupervisor.start_call(call_id, "business_1", "device_1", :voice)
 
@@ -129,9 +123,7 @@ defmodule CallsafeSignaling.Integration.TelemetryTest do
       CallSession.set_failed(call_id, "Connection error")
 
       # Should receive failed event
-      assert_receive {:telemetry_event,
-                      [:callsafe_signaling, :call, :failed],
-                      %{count: 1},
+      assert_receive {:telemetry_event, [:callsafe_signaling, :call, :failed], %{count: 1},
                       %{call_id: ^call_id, reason: _reason}},
                      1_000
     end
@@ -144,9 +136,7 @@ defmodule CallsafeSignaling.Integration.TelemetryTest do
 
       Telemetry.emit_message_received(message_type, device_id)
 
-      assert_receive {:telemetry_event,
-                      [:callsafe_signaling, :message, :received],
-                      %{count: 1},
+      assert_receive {:telemetry_event, [:callsafe_signaling, :message, :received], %{count: 1},
                       %{message_type: ^message_type, device_id: ^device_id}},
                      1_000
     end
@@ -157,9 +147,7 @@ defmodule CallsafeSignaling.Integration.TelemetryTest do
 
       Telemetry.emit_message_sent(message_type, device_id)
 
-      assert_receive {:telemetry_event,
-                      [:callsafe_signaling, :message, :sent],
-                      %{count: 1},
+      assert_receive {:telemetry_event, [:callsafe_signaling, :message, :sent], %{count: 1},
                       %{message_type: ^message_type, device_id: ^device_id}},
                      1_000
     end
@@ -167,20 +155,18 @@ defmodule CallsafeSignaling.Integration.TelemetryTest do
 
   describe "video call telemetry" do
     test "emits events for video call lifecycle" do
-      call_id = "video_telemetry_#{:rand.uniform(100000)}"
+      call_id = "video_telemetry_#{:rand.uniform(100_000)}"
 
       {:ok, _pid} = CallSessionSupervisor.start_call(call_id, "business_1", "device_1", :video)
 
       # Should receive started event with video call type
-      assert_receive {:telemetry_event,
-                      [:callsafe_signaling, :call, :started],
-                      %{count: 1},
+      assert_receive {:telemetry_event, [:callsafe_signaling, :call, :started], %{count: 1},
                       %{call_id: ^call_id, call_type: :video}},
                      1_000
     end
 
     test "tracks media capability changes through call lifecycle" do
-      call_id = "media_telemetry_#{:rand.uniform(100000)}"
+      call_id = "media_telemetry_#{:rand.uniform(100_000)}"
 
       {:ok, _pid} = CallSessionSupervisor.start_call(call_id, "business_1", "device_1", :voice)
 
@@ -202,31 +188,35 @@ defmodule CallsafeSignaling.Integration.TelemetryTest do
       # Start multiple calls
       call_ids =
         for i <- 1..5 do
-          call_id = "multi_telemetry_#{i}_#{:rand.uniform(100000)}"
-          {:ok, _pid} = CallSessionSupervisor.start_call(call_id, "business_#{i}", "device_#{i}", :voice)
+          call_id = "multi_telemetry_#{i}_#{:rand.uniform(100_000)}"
+
+          {:ok, _pid} =
+            CallSessionSupervisor.start_call(call_id, "business_#{i}", "device_#{i}", :voice)
+
           call_id
         end
 
       # Should receive 5 start events
       for call_id <- call_ids do
-        assert_receive {:telemetry_event,
-                        [:callsafe_signaling, :call, :started],
-                        %{count: 1},
+        assert_receive {:telemetry_event, [:callsafe_signaling, :call, :started], %{count: 1},
                         %{call_id: ^call_id}},
                        1_000
       end
     end
 
     test "telemetry events remain isolated per call" do
-      call_1 = "isolated_telemetry_1_#{:rand.uniform(100000)}"
-      call_2 = "isolated_telemetry_2_#{:rand.uniform(100000)}"
+      call_1 = "isolated_telemetry_1_#{:rand.uniform(100_000)}"
+      call_2 = "isolated_telemetry_2_#{:rand.uniform(100_000)}"
 
       {:ok, _pid1} = CallSessionSupervisor.start_call(call_1, "business_1", "device_1", :voice)
       {:ok, _pid2} = CallSessionSupervisor.start_call(call_2, "business_2", "device_2", :video)
 
       # Clear start events
-      assert_receive {:telemetry_event, [:callsafe_signaling, :call, :started], _, %{call_id: ^call_1}}
-      assert_receive {:telemetry_event, [:callsafe_signaling, :call, :started], _, %{call_id: ^call_2}}
+      assert_receive {:telemetry_event, [:callsafe_signaling, :call, :started], _,
+                      %{call_id: ^call_1}}
+
+      assert_receive {:telemetry_event, [:callsafe_signaling, :call, :started], _,
+                      %{call_id: ^call_2}}
 
       # Connect first call
       CallSession.set_ringing(call_1, "device_x", self())
@@ -234,16 +224,12 @@ defmodule CallsafeSignaling.Integration.TelemetryTest do
       CallSession.set_connected(call_1)
 
       # Should only receive connected event for call_1
-      assert_receive {:telemetry_event,
-                      [:callsafe_signaling, :call, :connected],
-                      _measurements,
+      assert_receive {:telemetry_event, [:callsafe_signaling, :call, :connected], _measurements,
                       %{call_id: ^call_1}},
                      1_000
 
       # Call_2 should not have connected event
-      refute_receive {:telemetry_event,
-                      [:callsafe_signaling, :call, :connected],
-                      _measurements,
+      refute_receive {:telemetry_event, [:callsafe_signaling, :call, :connected], _measurements,
                       %{call_id: ^call_2}},
                      100
     end
@@ -267,10 +253,8 @@ defmodule CallsafeSignaling.Integration.TelemetryTest do
         %{call_id: "test_call", call_type: "voice"}
       )
 
-      assert_receive {:telemetry_event,
-                      [:callsafe_signaling, :fcm, :notification, :sent],
-                      %{duration: 150},
-                      %{call_id: "test_call", call_type: "voice"}},
+      assert_receive {:telemetry_event, [:callsafe_signaling, :fcm, :notification, :sent],
+                      %{duration: 150}, %{call_id: "test_call", call_type: "voice"}},
                      1_000
     end
   end

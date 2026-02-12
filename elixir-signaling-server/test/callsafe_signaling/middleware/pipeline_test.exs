@@ -57,7 +57,8 @@ defmodule CallsafeSignaling.Middleware.PipelineTest do
 
       context = %{}
 
-      assert {:error, :failed} = Pipeline.execute([middleware1, middleware2, middleware3], context)
+      assert {:error, :failed} =
+               Pipeline.execute([middleware1, middleware2, middleware3], context)
     end
   end
 

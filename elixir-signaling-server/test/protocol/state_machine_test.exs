@@ -29,7 +29,9 @@ defmodule CallsafeSignaling.Protocol.StateMachineTest do
     end
 
     test "allows video pause transitions" do
-      assert {:ok, :video_paused_by_user} = StateMachine.transition(:connected, :video_paused_by_user)
+      assert {:ok, :video_paused_by_user} =
+               StateMachine.transition(:connected, :video_paused_by_user)
+
       assert {:ok, :connected} = StateMachine.transition(:video_paused_by_user, :connected)
     end
   end

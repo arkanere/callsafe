@@ -186,7 +186,8 @@ defmodule CallsafeSignaling.CallSessionTest do
       call_id2 = "call_#{:rand.uniform(1000)}"
       {:ok, _} = CallSession.start_link(call_id2, "business_1", "device_1", :voice)
 
-      assert {:error, :caller_not_connected} = CallSession.send_to_caller(call_id2, "test:message", %{})
+      assert {:error, :caller_not_connected} =
+               CallSession.send_to_caller(call_id2, "test:message", %{})
     end
   end
 

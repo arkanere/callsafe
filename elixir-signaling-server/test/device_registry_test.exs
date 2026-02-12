@@ -15,7 +15,9 @@ defmodule CallsafeSignaling.DeviceRegistryTest do
       business_id = "business_1"
       connection_pid = self()
 
-      assert {:ok, entry} = DeviceRegistry.register(device_id, business_id, connection_pid, :web, :available)
+      assert {:ok, entry} =
+               DeviceRegistry.register(device_id, business_id, connection_pid, :web, :available)
+
       assert entry.device_id == device_id
       assert entry.business_id == business_id
       assert entry.connection_pid == connection_pid
@@ -29,8 +31,11 @@ defmodule CallsafeSignaling.DeviceRegistryTest do
       business_id = "business_1"
       connection_pid = self()
 
-      assert {:ok, _entry} = DeviceRegistry.register(device_id, business_id, connection_pid, :web, :available)
-      assert {:error, :already_registered} = DeviceRegistry.register(device_id, business_id, connection_pid, :web, :available)
+      assert {:ok, _entry} =
+               DeviceRegistry.register(device_id, business_id, connection_pid, :web, :available)
+
+      assert {:error, :already_registered} =
+               DeviceRegistry.register(device_id, business_id, connection_pid, :web, :available)
     end
   end
 
