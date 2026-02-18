@@ -42,9 +42,9 @@ defmodule CallsafeSignaling.Protocol.MessageTypes do
   @escalation_accepted "escalation:accepted"
   @escalation_rejected "escalation:rejected"
 
-  # Connection messages
-  @connect "connect"
-  @disconnect "disconnect"
+  # WebSocket lifecycle messages
+  @open "open"
+  @close "close"
   @error "error"
   @server_shutdown "server:shutdown"
 
@@ -86,9 +86,9 @@ defmodule CallsafeSignaling.Protocol.MessageTypes do
   def escalation_accepted, do: @escalation_accepted
   def escalation_rejected, do: @escalation_rejected
 
-  # Connection
-  def connect, do: @connect
-  def disconnect, do: @disconnect
+  # WebSocket lifecycle
+  def open, do: @open
+  def close, do: @close
   def error, do: @error
   def server_shutdown, do: @server_shutdown
 
@@ -123,8 +123,8 @@ defmodule CallsafeSignaling.Protocol.MessageTypes do
       @call_downgrade,
       @escalation_accepted,
       @escalation_rejected,
-      @connect,
-      @disconnect,
+      @open,
+      @close,
       @error,
       @server_shutdown
     ]

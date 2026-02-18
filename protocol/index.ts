@@ -76,11 +76,11 @@ export const MediaMessages = {
 
 /**
  * System Messages
- * Socket.IO system events and server notifications.
+ * WebSocket lifecycle events and server notifications.
  */
 export const SystemMessages = {
-  CONNECT: 'connect',                    // Socket.IO connection established
-  DISCONNECT: 'disconnect',              // Socket.IO disconnected
+  OPEN: 'open',                          // WebSocket connection established
+  CLOSE: 'close',                        // WebSocket connection closed
   ERROR: 'error',                        // Error notification
   SERVER_SHUTDOWN: 'server:shutdown',    // Server shutting down
 } as const;

@@ -27,8 +27,8 @@
     "CALL_DOWNGRADE": "call:downgrade",
     "ESCALATION_ACCEPTED": "escalation:accepted",
     "ESCALATION_REJECTED": "escalation:rejected",
-    "CONNECT": "connect",
-    "DISCONNECT": "disconnect",
+    "OPEN": "open",
+    "CLOSE": "close",
     "ERROR": "error",
     "SERVER_SHUTDOWN": "server:shutdown"
   },

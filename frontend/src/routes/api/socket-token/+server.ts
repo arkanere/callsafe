@@ -7,8 +7,8 @@ if (!JWT_SECRET) {
   throw new Error('FATAL: JWT_SECRET environment variable is not set. Application cannot start.');
 }
 
-// Provides a short-lived token for Socket.IO authentication
-// This is necessary because Socket.IO cannot read httpOnly cookies
+// Provides a short-lived token for WebSocket authentication
+// This is necessary because WebSocket cannot read httpOnly cookies directly
 export async function GET({ cookies }) {
   console.log('[SOCKET TOKEN API] GET request received');
 
@@ -26,7 +26,7 @@ export async function GET({ cookies }) {
       const decoded = jwt.verify(token, JWT_SECRET) as any;
       console.log('[SOCKET TOKEN API] Token verified:', { email: decoded.email });
 
-      // Create a short-lived token for Socket.IO (5 minutes)
+      // Create a short-lived token for WebSocket (5 minutes)
       const socketTokenPayload = {
         userId: decoded.userId,
         email: decoded.email,

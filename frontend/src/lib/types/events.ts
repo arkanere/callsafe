@@ -1,4 +1,4 @@
-// Event types for Socket.IO communication with signaling server
+// Event types for WebSocket communication with signaling server
 
 export interface CallIncomingEvent {
   callAttemptId: string;
