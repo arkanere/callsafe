@@ -46,7 +46,7 @@ const isStateMutating = (method: string): boolean => {
 const generateCSP = (pathname: string): string => {
 	const baseDirectives = [
 		"default-src 'self'",
-		"script-src 'self' 'unsafe-inline' https://cdn.socket.io",
+		"script-src 'self' 'unsafe-inline'",
 		"style-src 'self' 'unsafe-inline'",
 		"img-src 'self' data: https:",
 		"font-src 'self' data:",

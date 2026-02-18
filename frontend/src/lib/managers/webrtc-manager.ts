@@ -1,12 +1,12 @@
-import { Socket } from 'socket.io-client';
+import { WsTransport } from '$lib/transport/ws-transport';
 import { MessageTypes } from '@callsafe/protocol';
 
 export class WebRTCManager {
   private peerConnection: RTCPeerConnection | null = null;
   private localStream: MediaStream | null = null;
-  private socket: Socket;
+  private socket: WsTransport;
 
-  constructor(socket: Socket) {
+  constructor(socket: WsTransport) {
     console.log('[WEBRTC MANAGER] constructor(): Constructor called');
     this.socket = socket;
     console.log('[WEBRTC MANAGER] constructor(): Socket assigned');
@@ -18,7 +18,7 @@ export class WebRTCManager {
     // Add STUN servers from environment variables or use defaults
     const stunServer1 = import.meta.env.VITE_STUN_SERVER_1 || 'stun:stun.l.google.com:19302';
     const stunServer2 = import.meta.env.VITE_STUN_SERVER_2 || 'stun:stun1.l.google.com:19302';
-    
+
     iceServers.push({ urls: stunServer1 });
     iceServers.push({ urls: stunServer2 });
 
@@ -43,7 +43,7 @@ export class WebRTCManager {
 
   async initialize(callAttemptId: string) {
     console.log('[WEBRTC MANAGER] initialize(): Initializing WebRTC for call:', callAttemptId);
-    
+
     console.log('[WEBRTC MANAGER] initialize(): Requesting user media');
     // Get user media
     this.localStream = await navigator.mediaDevices.getUserMedia({
@@ -60,7 +60,7 @@ export class WebRTCManager {
     // Create peer connection with dynamic ICE servers
     const iceServers = this.getIceServers();
     console.log('[WEBRTC MANAGER] initialize(): Using ICE servers:', iceServers);
-    
+
     this.peerConnection = new RTCPeerConnection({
       iceServers: iceServers,
       iceTransportPolicy: 'all', // Allow both STUN and TURN, with STUN preferred
@@ -81,7 +81,7 @@ export class WebRTCManager {
       console.log('[WEBRTC MANAGER] initialize(): Remote track received:', event.track.kind);
       const remoteStream = event.streams[0];
       this.playRemoteAudio(remoteStream);
-      
+
       console.log('[WEBRTC MANAGER] initialize(): Remote stream established successfully');
       // Remote stream received - connection established successfully
       // Server timeout will be cleared automatically when answer is processed
@@ -94,7 +94,7 @@ export class WebRTCManager {
         console.log('[WEBRTC MANAGER] initialize(): Sending ICE candidate');
         this.socket.emit(MessageTypes.WEBRTC_ICE_CANDIDATE, {
           callAttemptId: callAttemptId,
-          candidate: event.candidate,
+          candidate: event.candidate as unknown as Record<string, unknown>,
           timestamp: Date.now()
         });
       } else {
@@ -107,20 +107,20 @@ export class WebRTCManager {
     this.peerConnection.oniceconnectionstatechange = () => {
       const state = this.peerConnection!.iceConnectionState;
       console.log('[WEBRTC MANAGER] initialize(): ICE connection state changed:', state);
-      
+
       if (state === 'failed') {
         console.error('[WEBRTC MANAGER] initialize(): ICE connection failed');
         this.handleConnectionFailure(callAttemptId);
       }
       // Connection success is handled by server timeout management
     };
-    
+
     console.log('[WEBRTC MANAGER] initialize(): WebRTC initialization complete');
   }
 
   async createAnswer(offer: RTCSessionDescription, callAttemptId: string) {
     console.log('[WEBRTC MANAGER] createAnswer(): Creating answer for call:', callAttemptId);
-    
+
     if (!this.peerConnection) {
       console.error('[WEBRTC MANAGER] createAnswer(): Peer connection not initialized');
       throw new Error('Peer connection not initialized');
@@ -128,17 +128,17 @@ export class WebRTCManager {
 
     console.log('[WEBRTC MANAGER] createAnswer(): Setting remote description from offer');
     await this.peerConnection.setRemoteDescription(offer);
-    
+
     console.log('[WEBRTC MANAGER] createAnswer(): Creating answer');
     const answer = await this.peerConnection.createAnswer();
-    
+
     console.log('[WEBRTC MANAGER] createAnswer(): Setting local description with answer');
     await this.peerConnection.setLocalDescription(answer);
 
     console.log('[WEBRTC MANAGER] createAnswer(): Sending answer to signaling server');
     this.socket.emit(MessageTypes.WEBRTC_ANSWER, {
       callAttemptId: callAttemptId,
-      answer: answer,
+      answer: answer as unknown as Record<string, unknown>,
       timestamp: Date.now()
     });
 
@@ -148,7 +148,7 @@ export class WebRTCManager {
 
   async createOffer(callAttemptId: string): Promise<RTCSessionDescription> {
     console.log('[WEBRTC MANAGER] createOffer(): Creating offer for call:', callAttemptId);
-    
+
     if (!this.peerConnection) {
       console.error('[WEBRTC MANAGER] createOffer(): Peer connection not initialized');
       throw new Error('Peer connection not initialized');
@@ -156,14 +156,14 @@ export class WebRTCManager {
 
     console.log('[WEBRTC MANAGER] createOffer(): Creating WebRTC offer');
     const offer = await this.peerConnection.createOffer();
-    
+
     console.log('[WEBRTC MANAGER] createOffer(): Setting local description with offer');
     await this.peerConnection.setLocalDescription(offer);
 
     console.log('[WEBRTC MANAGER] createOffer(): Sending offer to signaling server');
     this.socket.emit(MessageTypes.WEBRTC_OFFER, {
       callAttemptId: callAttemptId,
-      offer: offer,
+      offer: offer as unknown as Record<string, unknown>,
       timestamp: Date.now()
     });
 
@@ -173,7 +173,7 @@ export class WebRTCManager {
 
   async setRemoteDescription(answer: RTCSessionDescription) {
     console.log('[WEBRTC MANAGER] setRemoteDescription(): Setting remote description with answer');
-    
+
     if (!this.peerConnection) {
       console.error('[WEBRTC MANAGER] setRemoteDescription(): Peer connection not initialized');
       throw new Error('Peer connection not initialized');
@@ -186,7 +186,7 @@ export class WebRTCManager {
 
   async addIceCandidate(candidate: RTCIceCandidate) {
     console.log('[WEBRTC MANAGER] addIceCandidate(): Adding ICE candidate');
-    
+
     if (!this.peerConnection) {
       console.error('[WEBRTC MANAGER] addIceCandidate(): Peer connection not initialized');
       throw new Error('Peer connection not initialized');
@@ -199,7 +199,7 @@ export class WebRTCManager {
 
   toggleMute(): boolean {
     console.log('[WEBRTC MANAGER] toggleMute(): Toggling mute');
-    
+
     if (!this.localStream) {
       console.log('[WEBRTC MANAGER] toggleMute(): No local stream available for mute toggle');
       return false;
@@ -207,7 +207,7 @@ export class WebRTCManager {
 
     const audioTracks = this.localStream.getAudioTracks();
     console.log('[WEBRTC MANAGER] toggleMute(): Found', audioTracks.length, 'audio tracks');
-    
+
     audioTracks.forEach(track => {
       const wasEnabled = track.enabled;
       track.enabled = !track.enabled;
@@ -221,7 +221,7 @@ export class WebRTCManager {
 
   private playRemoteAudio(remoteStream: MediaStream) {
     console.log('[WEBRTC MANAGER] playRemoteAudio(): Setting up remote audio playback');
-    
+
     const audioElement = document.querySelector('audio[autoplay]') as HTMLAudioElement;
     if (audioElement) {
       console.log('[WEBRTC MANAGER] playRemoteAudio(): Audio element found, setting remote stream');
@@ -255,7 +255,7 @@ export class WebRTCManager {
 
   cleanup(): void {
     console.log('[WEBRTC MANAGER] cleanup(): Starting cleanup');
-    
+
     // Stop local media stream
     if (this.localStream) {
       console.log('[WEBRTC MANAGER] cleanup(): Stopping local media tracks');
@@ -274,7 +274,7 @@ export class WebRTCManager {
       this.peerConnection = null;
       console.log('[WEBRTC MANAGER] cleanup(): Peer connection cleaned up');
     }
-    
+
     console.log('[WEBRTC MANAGER] cleanup(): Cleanup complete');
   }
 

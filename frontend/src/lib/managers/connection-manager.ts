@@ -1,122 +1,58 @@
-import { io, Socket } from 'socket.io-client';
+import { WsTransport } from '$lib/transport/ws-transport';
 import { MessageTypes } from '@callsafe/protocol';
 import { AuthManager } from './auth-manager';
 import { env } from '$env/dynamic/public';
 
 export class ConnectionManager {
-  private socket: Socket | null = null;
-  private reconnectAttempts = 0;
-  private maxReconnectAttempts = 5;
-  private reconnectDelay = 1000;
+  private transport: WsTransport | null = null;
 
-  async connect(): Promise<Socket> {
+  async connect(): Promise<WsTransport> {
     console.log('[CONNECTION MANAGER] connect(): Initiating connection');
 
-    // Get short-lived token for Socket.IO authentication
-    const tokenResponse = await fetch('/api/socket-token', {
-      credentials: 'include'
-    });
+    const serverUrl = env.VITE_SIGNALING_SERVER_URL || 'https://tunnel.callsafe.tech';
+    const wsUrl = serverUrl.replace(/^https:\/\//, 'wss://').replace(/^http:\/\//, 'ws://') + '/ws';
+    console.log('[CONNECTION MANAGER] connect(): Connecting to', wsUrl);
 
-    if (!tokenResponse.ok) {
-      console.error('[CONNECTION MANAGER] connect(): Failed to get socket token');
-      throw new Error('Authentication required');
-    }
-
-    const { token } = await tokenResponse.json();
-    console.log('[CONNECTION MANAGER] connect(): Socket token retrieved');
-
-    const socketUrl = env.VITE_SIGNALING_SERVER_URL || 'https://tunnel.callsafe.tech';
-    console.log('[CONNECTION MANAGER] connect(): Creating socket.io connection to', socketUrl);
-    this.socket = io(socketUrl, {
-      auth: { token },
-      transports: ['websocket', 'polling'],
-      timeout: 30000, // 30-second timeout for consistency
-      forceNew: true
-    });
-    console.log('[CONNECTION MANAGER] connect(): Socket.io instance created');
-
-    console.log('[CONNECTION MANAGER] connect(): Setting up event handlers');
+    this.transport = new WsTransport(wsUrl);
     this.setupEventHandlers();
+    await this.transport.connect();
 
-    return new Promise((resolve, reject) => {
-      this.socket!.on(MessageTypes.CONNECT, () => {
-        console.log('[CONNECTION MANAGER] connect(): Socket connected successfully');
-        this.reconnectAttempts = 0;
-        resolve(this.socket!);
-      });
-
-      this.socket!.on('connect_error', (error) => {
-        console.error('[CONNECTION MANAGER] connect(): Socket connection error:', error);
-        reject(error);
-      });
-    });
+    console.log('[CONNECTION MANAGER] connect(): Connected successfully');
+    return this.transport;
   }
 
-  getSocket(): Socket | null {
-    console.log('[CONNECTION MANAGER] getSocket(): Getting socket instance:', this.socket ? 'socket available' : 'no socket');
-    return this.socket;
+  getTransport(): WsTransport | null {
+    console.log('[CONNECTION MANAGER] getTransport(): Getting transport instance:', this.transport ? 'available' : 'null');
+    return this.transport;
   }
 
   disconnect(): void {
-    console.log('[CONNECTION MANAGER] disconnect(): Disconnecting socket');
-    if (this.socket) {
-      console.log('[CONNECTION MANAGER] disconnect(): Socket found, disconnecting');
-      this.socket.disconnect();
-      this.socket = null;
-      console.log('[CONNECTION MANAGER] disconnect(): Socket disconnected and cleared');
+    console.log('[CONNECTION MANAGER] disconnect(): Disconnecting');
+    if (this.transport) {
+      this.transport.disconnect();
+      this.transport = null;
+      console.log('[CONNECTION MANAGER] disconnect(): Transport disconnected and cleared');
     } else {
-      console.log('[CONNECTION MANAGER] disconnect(): No socket to disconnect');
+      console.log('[CONNECTION MANAGER] disconnect(): No transport to disconnect');
     }
   }
 
   private setupEventHandlers(): void {
-    console.log('[CONNECTION MANAGER] setupEventHandlers(): Setting up socket event handlers');
-    
-    this.socket!.on(MessageTypes.DISCONNECT, (reason) => {
-      console.warn('[CONNECTION MANAGER] setupEventHandlers(): Socket disconnected:', reason);
+    console.log('[CONNECTION MANAGER] setupEventHandlers(): Setting up event handlers');
 
-      if (reason === 'io server disconnect') {
-        console.log('[CONNECTION MANAGER] setupEventHandlers(): Server initiated disconnect - no reconnect');
-        // Server initiated disconnect - don't reconnect automatically
-        return;
-      }
-
-      console.log('[CONNECTION MANAGER] setupEventHandlers(): Client disconnect detected, attempting reconnection');
-      // Attempt reconnection
-      this.attemptReconnection();
+    this.transport!.on('close', (data) => {
+      console.warn('[CONNECTION MANAGER] setupEventHandlers(): Connection closed:', data);
+      // WsTransport handles reconnection internally
     });
 
-    this.socket!.on(MessageTypes.ERROR, (error) => {
-      console.error('[CONNECTION MANAGER] setupEventHandlers(): Socket error:', error);
-
-      if (error.code === 'AUTHENTICATION_REQUIRED') {
+    this.transport!.on(MessageTypes.ERROR, (error) => {
+      console.error('[CONNECTION MANAGER] setupEventHandlers(): Error received:', error);
+      if ((error as Record<string, unknown>).code === 'AUTHENTICATION_REQUIRED') {
         console.log('[CONNECTION MANAGER] setupEventHandlers(): Authentication required, logging out');
-        // Token expired - redirect to login
         AuthManager.logout();
       }
     });
-    
+
     console.log('[CONNECTION MANAGER] setupEventHandlers(): Event handlers setup complete');
-  }
-
-  private async attemptReconnection(): Promise<void> {
-    console.log('[CONNECTION MANAGER] attemptReconnection(): Attempting reconnection, current attempts:', this.reconnectAttempts);
-    
-    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.error('[CONNECTION MANAGER] attemptReconnection(): Max reconnection attempts reached:', this.maxReconnectAttempts);
-      return;
-    }
-
-    this.reconnectAttempts++;
-    const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
-    console.log('[CONNECTION MANAGER] attemptReconnection(): Scheduling reconnection attempt', this.reconnectAttempts, 'in', delay, 'ms');
-
-    setTimeout(() => {
-      console.log(`[CONNECTION MANAGER] attemptReconnection(): Executing reconnection attempt ${this.reconnectAttempts}`);
-      this.connect().catch((error) => {
-        console.error('[CONNECTION MANAGER] attemptReconnection(): Reconnection attempt failed:', error);
-        this.attemptReconnection();
-      });
-    }, delay);
   }
 }

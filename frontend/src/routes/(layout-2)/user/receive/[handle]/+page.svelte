@@ -6,19 +6,9 @@
   import { AuthManager } from '$lib/managers/auth-manager';
   import { ConnectionManager } from '$lib/managers/connection-manager';
   import { WebRTCManager } from '$lib/managers/webrtc-manager';
+  import { WsTransport } from '$lib/transport/ws-transport';
   import { callState } from '$lib/stores/call-state';
   import { generateDeviceId } from '$lib/utils/uuid';
-  import type { Socket } from 'socket.io-client';
-  import type {
-    CallIncomingEvent,
-    CallAcceptedEvent,
-    CallEndedEvent,
-    CallFailedEvent,
-    CallCancelledEvent,
-    WebRTCOfferEvent,
-    WebRTCAnswerEvent,
-    WebRTCIceCandidateEvent
-  } from '$lib/types/events';
 
   // Extract parameters
   let handle = $page.params.handle || '';
@@ -27,7 +17,7 @@
   // Connection management
   let connectionManager: ConnectionManager;
   let webrtcManager: WebRTCManager | null = null;
-  let socket: Socket | null = null;
+  let socket: WsTransport | null = null;
   let socketConnected = false;
   let errorMessage = '';
   let connectionStatus = 'Disconnected';
@@ -55,9 +45,6 @@
     // Load call history from localStorage
     loadCallHistory();
 
-    // Initialize WebRTC manager before connection
-    webrtcManager = new WebRTCManager();
-
     // Initialize connection
     await initializeConnection();
   });
@@ -70,25 +57,25 @@
     try {
       connectionManager = new ConnectionManager();
       socket = await connectionManager.connect();
-      
+
       socketConnected = true;
       connectionStatus = 'Connected';
       errorMessage = '';
 
       // Request microphone permission directly (enables audio autoplay)
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-          audio: { 
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
             echoCancellation: true,
             noiseSuppression: true,
-            autoGainControl: true 
-          }, 
-          video: false 
+            autoGainControl: true
+          },
+          video: false
         });
-        
+
         // Stop the stream immediately - we just needed permission
         stream.getTracks().forEach(track => track.stop());
-        
+
         console.log('[CONNECTION] initializeConnection(): Microphone permission granted - audio autoplay enabled');
       } catch (micError) {
         console.warn('[CONNECTION] initializeConnection(): Microphone permission denied:', micError);
@@ -96,7 +83,7 @@
       }
 
       setupSocketEventHandlers();
-      registerDevice();
+      await registerDevice();
 
     } catch (error) {
       console.error('[CONNECTION] initializeConnection(): Connection failed:', error);
@@ -110,7 +97,8 @@
     if (!socket) return;
 
     // Incoming call handler
-    socket.on(MessageTypes.CALL_INCOMING, (data: CallIncomingEvent) => {
+    socket.on(MessageTypes.CALL_INCOMING, (raw) => {
+      const data = raw as { callAttemptId: string; sourceId: string; timestamp: number };
       console.log('[CONNECTION] setupSocketEventHandlers(): === INCOMING CALL DATA FORMAT ===');
       console.log('[CONNECTION] setupSocketEventHandlers(): Raw data received:', data);
       console.log('[CONNECTION] setupSocketEventHandlers(): Data type:', typeof data);
@@ -119,7 +107,7 @@
       console.log('[CONNECTION] setupSocketEventHandlers(): JSON stringified:', JSON.stringify(data, null, 2));
       console.log('[CONNECTION] setupSocketEventHandlers(): === END INCOMING CALL DATA ===');
       console.log('[CONNECTION] setupSocketEventHandlers(): Incoming call:', data);
-      
+
       incomingCalls = [...incomingCalls, {
         callId: data.callAttemptId,
         sourceId: data.sourceId,
@@ -146,25 +134,26 @@
     });
 
     // Call accepted handler (confirmation from server)
-    socket.on(MessageTypes.CALL_ACCEPTED, async (data: CallAcceptedEvent) => {
-      console.log('[CONNECTION] setupSocketEventHandlers(): Call accepted:', data);
+    socket.on(MessageTypes.CALL_ACCEPTED, async (_raw) => {
+      console.log('[CONNECTION] setupSocketEventHandlers(): Call accepted');
       // WebRTC is already initialized when accepting the call
       // This event confirms the call was accepted on the server side
       currentPhase = 'connecting';
     });
 
     // WebRTC offer handler (business receives offer from customer)
-    socket.on(MessageTypes.WEBRTC_OFFER, async (data: WebRTCOfferEvent) => {
+    socket.on(MessageTypes.WEBRTC_OFFER, async (raw) => {
+      const data = raw as { offer: RTCSessionDescription; callAttemptId: string };
       console.log('[CONNECTION] setupSocketEventHandlers(): Received WebRTC offer');
-      
+
       if (webrtcManager) {
         try {
           await webrtcManager.createAnswer(data.offer, data.callAttemptId);
-          
+
           // Update call state to active once answer is sent
           currentPhase = 'active';
           startCallTimer();
-          
+
           callState.update(state => ({
             ...state,
             currentCall: state.currentCall ? {
@@ -183,9 +172,10 @@
     });
 
     // WebRTC answer handler
-    socket.on(MessageTypes.WEBRTC_ANSWER, async (data: WebRTCAnswerEvent) => {
+    socket.on(MessageTypes.WEBRTC_ANSWER, async (raw) => {
+      const data = raw as { answer: RTCSessionDescription; callAttemptId: string };
       console.log('[CONNECTION] setupSocketEventHandlers(): Received WebRTC answer');
-      
+
       if (webrtcManager) {
         try {
           await webrtcManager.setRemoteDescription(data.answer);
@@ -199,7 +189,8 @@
     });
 
     // ICE candidate handler
-    socket.on(MessageTypes.WEBRTC_ICE_CANDIDATE, async (data: WebRTCIceCandidateEvent) => {
+    socket.on(MessageTypes.WEBRTC_ICE_CANDIDATE, async (raw) => {
+      const data = raw as { candidate: RTCIceCandidate; callAttemptId: string };
       if (webrtcManager) {
         try {
           await webrtcManager.addIceCandidate(data.candidate);
@@ -210,9 +201,10 @@
     });
 
     // Call ended handler
-    socket.on(MessageTypes.CALL_ENDED, (data: CallEndedEvent) => {
+    socket.on(MessageTypes.CALL_ENDED, (raw) => {
+      const data = raw as { callAttemptId: string; timestamp: number; duration: number };
       console.log('[CONNECTION] setupSocketEventHandlers(): Call ended:', data);
-      
+
       // Save to call history
       saveCallToHistory({
         callAttemptId: data.callAttemptId,
@@ -228,26 +220,28 @@
     });
 
     // Call failed handler
-    socket.on(MessageTypes.CALL_FAILED, (data: CallFailedEvent) => {
+    socket.on(MessageTypes.CALL_FAILED, (raw) => {
+      const data = raw as { reason?: string };
       console.log('[CONNECTION] setupSocketEventHandlers(): Call failed:', data);
-      
-      const errorMessage = data.reason === 'connection_timeout'
+
+      const msg = data.reason === 'connection_timeout'
         ? 'Call connection timed out. Please try again.'
         : 'Call connection failed. Please try again.';
-      
-      handleCallFailure(errorMessage);
+
+      handleCallFailure(msg);
     });
 
     // Call cancelled handler
-    socket.on(MessageTypes.CALL_CANCELLED, (data: CallCancelledEvent) => {
+    socket.on(MessageTypes.CALL_CANCELLED, (raw) => {
+      const data = raw as { callAttemptId: string; reason: string };
       console.log('[CONNECTION] setupSocketEventHandlers(): Call cancelled:', data);
-      
+
       // Stop any playing ringtone
       stopIncomingCallSound();
-      
+
       // Remove from incoming calls UI
       incomingCalls = incomingCalls.filter(call => call.callId !== data.callAttemptId);
-      
+
       // Update UI to show cancellation reason
       let statusMessage = '';
       switch (data.reason) {
@@ -263,13 +257,13 @@
         default:
           statusMessage = 'Call was cancelled';
       }
-      
+
       // Clean up any WebRTC resources if they were initialized
       if (webrtcManager) {
         webrtcManager.cleanup();
         webrtcManager = null;
       }
-      
+
       // Update call state
       callState.update(state => ({
         ...state,
@@ -281,7 +275,7 @@
           status: isOnline ? 'available' : 'unavailable'
         }
       }));
-      
+
       // Show brief notification if this was an incoming call that got cancelled
       if (data.reason !== 'other_device_accepted') {
         errorMessage = statusMessage;
@@ -289,14 +283,14 @@
           errorMessage = '';
         }, 3000);
       }
-      
+
       // Reset call state after brief delay
       setTimeout(() => {
         currentPhase = 'terminated';
         currentCallStartTime = null;
         callDuration = 0;
         isMuted = false;
-        
+
         // Stop call timer if running
         if (durationInterval) {
           clearInterval(durationInterval);
@@ -305,28 +299,38 @@
       }, 1000);
     });
 
-    // Connection events
-    socket.on(MessageTypes.CONNECT, () => {
+    // Connection lifecycle events
+    socket.on('open', () => {
       socketConnected = true;
       connectionStatus = 'Connected';
       errorMessage = '';
     });
 
-    socket.on(MessageTypes.DISCONNECT, () => {
+    socket.on('close', () => {
       socketConnected = false;
       connectionStatus = 'Disconnected';
       isOnline = false;
     });
   }
 
-  function registerDevice() {
+  async function registerDevice() {
     if (!socket) return;
+
+    // Fetch JWT for server-side authentication
+    const tokenResponse = await fetch('/api/socket-token', { credentials: 'include' });
+    if (!tokenResponse.ok) {
+      console.error('[CONNECTION] registerDevice(): Failed to get auth token');
+      errorMessage = 'Authentication failed. Please refresh the page.';
+      return;
+    }
+    const { token } = await tokenResponse.json();
 
     socket.emit(MessageTypes.DEVICE_CONNECT, {
       deviceType: 'web',
       deviceId: generateDeviceId(),
       pushToken: null,
       protocolVersion: PROTOCOL_VERSION,
+      token,
       timestamp: Date.now()
     });
 
@@ -348,7 +352,7 @@
     }
 
     const newStatus = !isOnline;
-    
+
     socket.emit(MessageTypes.DEVICE_STATUS, {
       deviceId: generateDeviceId(),
       status: newStatus ? 'available' : 'unavailable',
@@ -375,7 +379,7 @@
 
     // Initialize WebRTC immediately when accepting the call (before sending call:accept)
     try {
-      webrtcManager = new WebRTCManager(socket!);
+      webrtcManager = new WebRTCManager(socket);
       await webrtcManager.initialize(callId);
     } catch (error) {
       console.error('[CONNECTION] acceptCall(): WebRTC initialization failed:', error);
@@ -479,7 +483,7 @@
     if (!webrtcManager) return;
 
     isMuted = webrtcManager.toggleMute();
-    
+
     callState.update(state => ({
       ...state,
       ui: {
@@ -496,7 +500,7 @@
 
   function handleCallFailure(message: string) {
     errorMessage = message;
-    
+
     // Clean up WebRTC
     if (webrtcManager) {
       webrtcManager.cleanup();
@@ -522,7 +526,7 @@
 
   function playIncomingCallSound() {
     if (typeof document === 'undefined') return; // Skip on server-side
-    
+
     const audioElement = document.querySelector('audio[src="/ringtone.mp3"]') as HTMLAudioElement;
     if (audioElement) {
       audioElement.loop = true;
@@ -546,7 +550,7 @@
 
   function stopIncomingCallSound() {
     if (typeof document === 'undefined') return; // Skip on server-side
-    
+
     const audioElement = document.querySelector('audio[src="/ringtone.mp3"]') as HTMLAudioElement;
     if (audioElement) {
       audioElement.pause();
@@ -594,15 +598,15 @@
     if (durationInterval) {
       clearInterval(durationInterval);
     }
-    
+
     if (webrtcManager) {
       webrtcManager.cleanup();
     }
-    
+
     if (connectionManager) {
       connectionManager.disconnect();
     }
-    
+
     // Stop any playing ringtone
     stopIncomingCallSound();
   }
@@ -643,7 +647,7 @@
           <h1 class="text-3xl font-bold text-gray-800">Agent Dashboard</h1>
           <p class="text-gray-600">CallSafe Business Portal</p>
         </div>
-        
+
         <button
           on:click={toggleOnlineStatus}
           disabled={!socketConnected || !handle}
@@ -652,7 +656,7 @@
           {isOnline ? 'Go Offline' : 'Go Online'}
         </button>
       </div>
-      
+
       <!-- Middle Section: Handle and Source ID -->
       {#if handle || sourceId}
         <div class="flex items-center space-x-4 mb-4">
@@ -670,7 +674,7 @@
           {/if}
         </div>
       {/if}
-      
+
       <!-- Bottom Section: Unified Status Bar -->
       <div class="pt-4 border-t border-gray-200">
         <div class="flex items-center justify-between space-x-6">
@@ -681,7 +685,7 @@
               {connectionStatus}
             </span>
           </div>
-          
+
           <!-- Device Status -->
           <div class="flex items-center">
             <div class="w-3 h-3 rounded-full mr-2 {socketConnected ? 'bg-green-500' : 'bg-red-500'}"></div>
@@ -689,7 +693,7 @@
               💻 Web Dashboard ({socketConnected ? 'Online' : 'Offline'})
             </span>
           </div>
-          
+
           <!-- Handle Status -->
           <div class="flex items-center">
             <span class="text-sm font-medium text-gray-600 mr-2">Handle:</span>
@@ -732,7 +736,7 @@
       <!-- Current Call Panel -->
       <div class="bg-white rounded-2xl shadow-xl p-6">
         <h2 class="text-xl font-semibold text-gray-800 mb-4">Current Call</h2>
-        
+
         {#if currentPhase === 'terminated'}
           <div class="text-center py-8">
             <div class="w-16 h-16 bg-gray-100 rounded-full mx-auto mb-4 flex items-center justify-center">
@@ -802,7 +806,7 @@
       <!-- Incoming Calls Panel -->
       <div class="bg-white rounded-2xl shadow-xl p-6">
         <h2 class="text-xl font-semibold text-gray-800 mb-4">Incoming Calls</h2>
-        
+
         {#if incomingCalls.length === 0}
           <div class="text-center py-8">
             <div class="w-16 h-16 bg-blue-100 rounded-full mx-auto mb-4 flex items-center justify-center">
@@ -853,7 +857,7 @@
     <!-- Call History Section -->
     <div class="bg-white rounded-2xl shadow-xl p-6 mt-6">
       <h2 class="text-xl font-semibold text-gray-800 mb-4">Recent Calls</h2>
-      
+
       {#if callHistory.length === 0}
         <div class="text-center py-8">
           <div class="w-16 h-16 bg-gray-100 rounded-full mx-auto mb-4 flex items-center justify-center">
@@ -900,14 +904,14 @@
     </div>
 
     <!-- Hidden audio elements -->
-    <audio 
-      autoplay 
-      hidden 
+    <audio
+      autoplay
+      hidden
       playsinline
       muted={false}
     ></audio>
-    
-    <audio 
+
+    <audio
       src="/ringtone.mp3"
       preload="auto"
       hidden

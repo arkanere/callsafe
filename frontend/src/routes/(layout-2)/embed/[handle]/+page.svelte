@@ -1,30 +1,19 @@
 <script lang="ts">
   import { page } from '$app/stores';
   import { onMount, onDestroy } from 'svelte';
-  import { io, type Socket } from 'socket.io-client';
   import { MessageTypes } from '@callsafe/protocol';
   import { env } from '$env/dynamic/public';
+  import { WsTransport } from '$lib/transport/ws-transport';
   import { WebRTCManager } from '$lib/managers/webrtc-manager';
   import { customerCallState } from '$lib/stores/call-state';
   import { generateUUID } from '$lib/utils/uuid';
-  import type {
-    CallAcceptedEvent,
-    CallEndedEvent,
-    CallFailedEvent,
-    CallBusyEvent,
-    CallUnavailableEvent,
-    CallTimeoutEvent,
-    WebRTCOfferEvent,
-    WebRTCAnswerEvent,
-    WebRTCIceCandidateEvent
-  } from '$lib/types/events';
 
   // Extract parameters - handle comes from URL path parameter for customer calls
   let handle = $page.params.handle || '';
   let sourceId = $page.url.searchParams.get('sourceId') || 'website';
 
   // Connection management
-  let socket: Socket | null = null;
+  let socket: WsTransport | null = null;
   let webrtcManager: WebRTCManager | null = null;
 
   // Call state
@@ -40,14 +29,14 @@
     console.log('[EMBED PAGE] onMount(): Component mounted');
     console.log('[EMBED PAGE] onMount(): Handle:', handle);
     console.log('[EMBED PAGE] onMount(): Source ID:', sourceId);
-    
+
     // Initialize customer call state
     customerCallState.update(state => ({
       ...state,
       handle,
       sourceId
     }));
-    
+
     console.log('[EMBED PAGE] onMount(): Customer call state initialized');
   });
 
@@ -67,7 +56,7 @@
     try {
       callAttemptId = generateUUID();
       console.log('[EMBED PAGE] initiateCall(): Generated call attempt ID:', callAttemptId);
-      
+
       console.log('[EMBED PAGE] initiateCall(): Requesting user media access');
       // Get user media first
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -125,31 +114,23 @@
 
     } catch (error) {
       console.error('[EMBED PAGE] initiateCall(): Error during call initiation:', error);
-      handleMediaAccessError(error);
+      handleMediaAccessError(error as Error);
     }
   }
 
   async function connectToSignalingServer(): Promise<void> {
     console.log('[EMBED PAGE] connectToSignalingServer(): Attempting to connect to signaling server');
-    return new Promise((resolve, reject) => {
-      const socketUrl = env.VITE_SIGNALING_SERVER_URL || 'https://tunnel.callsafe.tech';
-      socket = io(socketUrl, {
-        transports: ['websocket', 'polling'],
-        timeout: 30000 // 30-second timeout for consistency
-      });
-      console.log('[EMBED PAGE] connectToSignalingServer(): Socket.io instance created');
+    const serverUrl = env.VITE_SIGNALING_SERVER_URL || 'https://tunnel.callsafe.tech';
+    const wsUrl = serverUrl.replace(/^https:\/\//, 'wss://').replace(/^http:\/\//, 'ws://') + '/ws';
 
-      socket.on(MessageTypes.CONNECT, () => {
-        console.log('[EMBED PAGE] connectToSignalingServer(): Socket connected successfully');
-        setupSocketEventHandlers();
-        resolve();
-      });
+    socket = new WsTransport(wsUrl);
+    console.log('[EMBED PAGE] connectToSignalingServer(): WsTransport instance created');
 
-      socket.on('connect_error', (error) => {
-        console.error('[EMBED PAGE] connectToSignalingServer(): Socket connection error:', error);
-        reject(error);
-      });
-    });
+    // Register event handlers before connecting so no messages are missed
+    setupSocketEventHandlers();
+
+    await socket.connect();
+    console.log('[EMBED PAGE] connectToSignalingServer(): Connected successfully');
   }
 
   function setupSocketEventHandlers() {
@@ -160,7 +141,8 @@
     }
 
     // Call accepted
-    socket.on(MessageTypes.CALL_ACCEPTED, async (data: CallAcceptedEvent) => {
+    socket.on(MessageTypes.CALL_ACCEPTED, async (raw) => {
+      const data = raw as { callAttemptId: string; timestamp: number };
       console.log('[EMBED PAGE] setupSocketEventHandlers(): Call accepted event received:', data);
       callState = 'ringing';
       statusMessage = 'Agent accepted, connecting...';
@@ -190,7 +172,8 @@
     });
 
     // WebRTC answer
-    socket.on(MessageTypes.WEBRTC_ANSWER, async (data: WebRTCAnswerEvent) => {
+    socket.on(MessageTypes.WEBRTC_ANSWER, async (raw) => {
+      const data = raw as { answer: RTCSessionDescription; callAttemptId: string };
       console.log('[EMBED PAGE] setupSocketEventHandlers(): WebRTC answer received:', data);
       if (webrtcManager) {
         try {
@@ -207,7 +190,8 @@
     });
 
     // ICE candidate
-    socket.on(MessageTypes.WEBRTC_ICE_CANDIDATE, async (data: WebRTCIceCandidateEvent) => {
+    socket.on(MessageTypes.WEBRTC_ICE_CANDIDATE, async (raw) => {
+      const data = raw as { candidate: RTCIceCandidate; callAttemptId: string };
       console.log('[EMBED PAGE] setupSocketEventHandlers(): ICE candidate received:', data);
       if (webrtcManager) {
         try {
@@ -222,23 +206,24 @@
     });
 
     // Call failures
-    socket.on(MessageTypes.CALL_BUSY, (data: CallBusyEvent) => {
-      console.log('[EMBED PAGE] setupSocketEventHandlers(): Call busy event received:', data);
+    socket.on(MessageTypes.CALL_BUSY, (_data) => {
+      console.log('[EMBED PAGE] setupSocketEventHandlers(): Call busy event received');
       handleCallFailure('All agents are busy. Please try again later.');
     });
 
-    socket.on(MessageTypes.CALL_UNAVAILABLE, (data: CallUnavailableEvent) => {
-      console.log('[EMBED PAGE] setupSocketEventHandlers(): Call unavailable event received:', data);
+    socket.on(MessageTypes.CALL_UNAVAILABLE, (_data) => {
+      console.log('[EMBED PAGE] setupSocketEventHandlers(): Call unavailable event received');
       handleCallFailure('No agents available right now.');
     });
 
-    socket.on(MessageTypes.CALL_TIMEOUT, (data: CallTimeoutEvent) => {
-      console.log('[EMBED PAGE] setupSocketEventHandlers(): Call timeout event received:', data);
+    socket.on(MessageTypes.CALL_TIMEOUT, (_data) => {
+      console.log('[EMBED PAGE] setupSocketEventHandlers(): Call timeout event received');
       handleCallFailure('No response from agents. Please try again.');
     });
 
     // Call failed (WebRTC connection failures and timeouts)
-    socket.on(MessageTypes.CALL_FAILED, (data: CallFailedEvent) => {
+    socket.on(MessageTypes.CALL_FAILED, (raw) => {
+      const data = raw as { reason?: string };
       console.log('[EMBED PAGE] setupSocketEventHandlers(): Call failed event received:', data);
       const message = data?.reason === 'connection_timeout'
         ? 'Connection timeout. Please try again.'
@@ -247,24 +232,24 @@
     });
 
     // Call ended
-    socket.on(MessageTypes.CALL_ENDED, (data: CallEndedEvent) => {
-      console.log('[EMBED PAGE] setupSocketEventHandlers(): Call ended event received:', data);
-      
+    socket.on(MessageTypes.CALL_ENDED, (_data) => {
+      console.log('[EMBED PAGE] setupSocketEventHandlers(): Call ended event received');
+
       // Clear any pending cleanup timeout since server responded
       if (cleanupTimeout) {
         clearTimeout(cleanupTimeout);
         cleanupTimeout = null;
       }
-      
+
       cleanup(); // Call cleanup directly - server already confirmed call end
     });
-    
+
     console.log('[EMBED PAGE] setupSocketEventHandlers(): All socket event handlers setup complete');
   }
 
   async function initializeCustomerWebRTC(callId: string, localStream: MediaStream) {
     webrtcManager = new WebRTCManager(socket!);
-    
+
     // Initialize with local stream
     await webrtcManager.initialize(callId);
 
@@ -274,7 +259,7 @@
       if (connectionState === 'connected') {
         callState = 'connected';
         statusMessage = 'Connected to agent';
-        
+
         customerCallState.update(state => ({
           ...state,
           state: 'connected',
@@ -310,7 +295,7 @@
     if (socket && callAttemptId) {
       socket.emit(MessageTypes.CALL_FAILED, {
         callAttemptId: callAttemptId,
-        reason: 'connection_failed',  
+        reason: 'connection_failed',
         timestamp: Date.now()
       });
     }
@@ -366,7 +351,7 @@
         timestamp: Date.now()
       });
       // Don't cleanup here - wait for server's call:ended response to confirm
-      
+
       // Failsafe: cleanup after 5 seconds if server doesn't respond
       cleanupTimeout = setTimeout(() => {
         console.log('[EMBED PAGE] endCall(): Server didn\'t respond to call:end, forcing cleanup');
@@ -603,9 +588,9 @@
     </div>
 
     <!-- Hidden audio element for remote stream -->
-    <audio 
-      autoplay 
-      hidden 
+    <audio
+      autoplay
+      hidden
       playsinline
       muted={false}
     ></audio>
