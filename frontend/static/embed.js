@@ -8,7 +8,12 @@
     CLEANUP_DELAY: 5000,
     AUTO_RESET_DELAY: 3000,
     CONNECTION_CHECK_INTERVAL: 1000,
-    SOCKET_IO_CDN: 'https://cdn.socket.io/4.7.4/socket.io.min.js',
+
+    // WebSocket transport
+    WS_RECONNECT_BASE_MS: 1000,
+    WS_RECONNECT_MAX_ATTEMPTS: 5,
+    WS_HEARTBEAT_INTERVAL_MS: 30000,
+    WS_HEARTBEAT_TIMEOUT_MS: 5000,
 
     // WebRTC ICE Servers
     STUN_SERVER_1: 'stun:stun.l.google.com:19302',
@@ -69,7 +74,7 @@
   // WebRTC Manager Class
   class WebRTCManager {
     constructor(socket, sendMessageFn) {
-      debugLog('webrtc', 'WebRTCManager constructor called', { socketConnected: !!socket });
+      debugLog('webrtc', 'WebRTCManager constructor called');
       this.socket = socket;
       this.sendMessage = sendMessageFn;
       this.peerConnection = null;
@@ -352,7 +357,14 @@
       this.config = config;
       this.scriptElement = scriptElement;
       this.widgetElement = null;
-      this.socket = null;
+      this.ws = null;
+      this.wsHandlers = new Map();
+      this.wsConnected = false;
+      this.wsHeartbeatTimer = null;
+      this.wsPongTimer = null;
+      this.wsIntentionallyClosed = false;
+      this.wsReconnectAttempts = 0;
+      this.wsHandlersSetup = false;
       this.webrtcManager = null;
       this.currentCall = null;
       this.eventListeners = new Map();
@@ -364,9 +376,8 @@
       this.isEnabled = true;
       this.isMuted = false;
 
-      // Message queuing for socket connection race condition
+      // Message queuing for ws connection race condition
       this.messageQueue = [];
-      this.socketConnected = false;
 
       // TURN credentials (fetched dynamically)
       this.turnCredentials = null;
@@ -1023,227 +1034,215 @@
       debugLog('modal', 'Modal event listeners attached successfully');
     }
     
-    // Message queuing system to handle socket connection race conditions
+    // Message queuing system to handle ws connection race conditions
     sendSocketMessage(eventName, data) {
-      if (this.socket && this.socketConnected) {
+      if (this.wsConnected) {
         debugLog('socket', 'Sending message immediately', { eventName, data });
-        this.socket.emit(eventName, data);
+        this.wsEmit(eventName, data);
       } else {
-        debugLog('socket', 'Queueing message - socket not connected', { eventName, data });
+        debugLog('socket', 'Queueing message - ws not connected', { eventName, data });
         this.messageQueue.push({ eventName, data, timestamp: Date.now() });
       }
     }
-    
+
     flushMessageQueue() {
       if (this.messageQueue.length === 0) return;
-      
       debugLog('socket', 'Flushing queued messages', { queueLength: this.messageQueue.length });
-      
       while (this.messageQueue.length > 0) {
         const message = this.messageQueue.shift();
-        debugLog('socket', 'Sending queued message', { 
-          eventName: message.eventName, 
-          data: message.data,
-          queuedFor: Date.now() - message.timestamp 
-        });
-        this.socket.emit(message.eventName, message.data);
+        debugLog('socket', 'Sending queued message', { eventName: message.eventName, data: message.data });
+        this.wsEmit(message.eventName, message.data);
       }
-      
       debugLog('socket', 'Message queue flushed successfully');
     }
-    
-    async initializeSocket() {
-      debugLog('socket', 'Initializing socket connection');
-      
-      // Load Socket.IO client if not already available
-      if (!window.io) {
-        debugLog('socket', 'Socket.IO not loaded, loading from CDN');
-        await this.loadSocketIO();
-      } else {
-        debugLog('socket', 'Socket.IO already available');
-      }
-      
-      await this.connectSocket();
-    }
-    
-    loadSocketIO() {
-      return new Promise((resolve, reject) => {
-        debugLog('socket', 'Loading Socket.IO from CDN', { url: CONFIG.SOCKET_IO_CDN });
-        const script = document.createElement('script');
-        script.src = CONFIG.SOCKET_IO_CDN;
-        script.onload = () => {
-          debugLog('socket', 'Socket.IO loaded successfully');
-          resolve();
-        };
-        script.onerror = () => {
-          debugLog('socket', 'Failed to load Socket.IO');
-          reject(new Error('Failed to load Socket.IO'));
-        };
-        document.head.appendChild(script);
-      });
-    }
-    
-    async connectSocket() {
-      return new Promise((resolve, reject) => {
-        try {
-          debugLog('socket', 'Starting socket connection');
-          
-          // Ensure Socket.IO is loaded
-          if (!window.io) {
-            debugLog('socket', 'Socket.IO library not loaded');
-            reject(new Error('Socket.IO library not loaded'));
-            return;
-          }
 
-          // Get signaling server URL with environment variable support
-          const signalingServerUrl = this.getSignalingServerUrl();
-          debugLog('socket', 'Connecting to signaling server', { 
-            url: signalingServerUrl,
-            transports: ['websocket', 'polling'],
-            timeout: CONFIG.CONNECTION_TIMEOUT,
-            forceNew: true
-          });
-          
-          this.socket = window.io(signalingServerUrl, {
-            transports: ['websocket', 'polling'],
-            timeout: CONFIG.CONNECTION_TIMEOUT,
-            forceNew: true
-          });
-          
-          this.socket.on('connect', () => {
-            debugLog('socket', 'Connected to server successfully', { 
-              socketId: this.socket.id,
-              transport: this.socket.io.engine.transport.name 
-            });
-            this.socketConnected = true;
-            this.setupSocketEventHandlers();
-            this.flushMessageQueue();
-            resolve();
-          });
-          
-          this.socket.on('connect_error', (error) => {
-            debugLog('socket', 'Connection error occurred', { 
-              error: error.message,
-              type: error.type 
-            });
-            reject(error);
-          });
-          
-          this.socket.on('disconnect', (reason) => {
-            debugLog('socket', 'Socket disconnected', { 
-              reason,
-              socketId: this.socket?.id 
-            });
-            this.socketConnected = false;
-          });
-          
-        } catch (error) {
-          debugLog('socket', 'Socket connection setup failed', { 
-            error: error.message 
-          });
-          reject(error);
-        }
-      });
-    }
-    
+    // --- Inline WebSocket transport ---
+
     getSignalingServerUrl() {
-      // Check for environment variables (for development/testing)
       if (typeof window !== 'undefined' && window.VITE_SIGNALING_SERVER_URL) {
         return window.VITE_SIGNALING_SERVER_URL;
       }
-      
-      // Check for data attribute on script
       const serverUrl = this.scriptElement?.getAttribute('data-server-url');
-      if (serverUrl) {
-        return serverUrl;
-      }
-      
-      // Default fallback
+      if (serverUrl) return serverUrl;
       return CONFIG.DEFAULT_SIGNALING_SERVER;
     }
-    
-    setupSocketEventHandlers() {
-      if (!this.socket) {
-        debugLog('socket', 'Cannot setup handlers - socket is null');
+
+    getWebSocketUrl() {
+      const httpUrl = this.getSignalingServerUrl();
+      return httpUrl.replace(/^https:\/\//, 'wss://').replace(/^http:\/\//, 'ws://') + '/ws';
+    }
+
+    wsEmit(type, data = {}) {
+      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+        debugLog('socket', 'wsEmit dropped — not connected', { type });
         return;
       }
-      
-      debugLog('socket', 'Setting up socket event handlers');
-      
-      // Call accepted
-      this.socket.on('call:accepted', async (data) => {
-        debugLog('socket-event', 'call:accepted received', { 
+      this.ws.send(JSON.stringify({ type, ...data }));
+    }
+
+    wsOn(type, handler) {
+      if (!this.wsHandlers.has(type)) {
+        this.wsHandlers.set(type, new Set());
+      }
+      this.wsHandlers.get(type).add(handler);
+    }
+
+    wsDispatch(type, data) {
+      const handlers = this.wsHandlers.get(type);
+      if (handlers) {
+        for (const handler of handlers) {
+          try { handler(data); } catch (e) { console.error('[WS] handler error', e); }
+        }
+      }
+    }
+
+    wsStartHeartbeat() {
+      this.wsHeartbeatTimer = setInterval(() => {
+        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+        this.ws.send(JSON.stringify({ type: 'ping' }));
+        this.wsPongTimer = setTimeout(() => {
+          debugLog('socket', 'Heartbeat timeout — closing stale connection');
+          this.ws?.close();
+        }, CONFIG.WS_HEARTBEAT_TIMEOUT_MS);
+      }, CONFIG.WS_HEARTBEAT_INTERVAL_MS);
+    }
+
+    wsStopHeartbeat() {
+      if (this.wsHeartbeatTimer) { clearInterval(this.wsHeartbeatTimer); this.wsHeartbeatTimer = null; }
+      if (this.wsPongTimer) { clearTimeout(this.wsPongTimer); this.wsPongTimer = null; }
+    }
+
+    wsOnPong() {
+      if (this.wsPongTimer) { clearTimeout(this.wsPongTimer); this.wsPongTimer = null; }
+    }
+
+    wsScheduleReconnect() {
+      if (this.wsReconnectAttempts >= CONFIG.WS_RECONNECT_MAX_ATTEMPTS) {
+        debugLog('socket', 'Max reconnect attempts reached');
+        return;
+      }
+      const delay = CONFIG.WS_RECONNECT_BASE_MS * Math.pow(2, this.wsReconnectAttempts);
+      this.wsReconnectAttempts++;
+      debugLog('socket', `Reconnecting in ${delay}ms (attempt ${this.wsReconnectAttempts}/${CONFIG.WS_RECONNECT_MAX_ATTEMPTS})`);
+      setTimeout(() => {
+        this.connectWebSocket().catch(err => debugLog('socket', 'Reconnect failed', { error: err.message }));
+      }, delay);
+    }
+
+    connectWebSocket() {
+      return new Promise((resolve, reject) => {
+        const wsUrl = this.getWebSocketUrl();
+        debugLog('socket', 'Connecting to WebSocket server', { url: wsUrl });
+
+        this.wsIntentionallyClosed = false;
+        this.ws = new WebSocket(wsUrl);
+
+        this.ws.onopen = () => {
+          debugLog('socket', 'WebSocket connected successfully');
+          this.wsConnected = true;
+          this.wsReconnectAttempts = 0;
+          this.wsStartHeartbeat();
+          if (!this.wsHandlersSetup) {
+            this.setupWsEventHandlers();
+            this.wsHandlersSetup = true;
+          }
+          this.flushMessageQueue();
+          resolve();
+        };
+
+        this.ws.onclose = (event) => {
+          debugLog('socket', 'WebSocket disconnected', { code: event.code, reason: event.reason });
+          this.wsConnected = false;
+          this.wsStopHeartbeat();
+          if (!this.wsIntentionallyClosed) {
+            this.wsScheduleReconnect();
+          }
+          // Reject only on initial connect failure
+          if (this.wsReconnectAttempts === 0 && !this.wsConnected) {
+            reject(new Error(`WebSocket closed: ${event.reason || event.code}`));
+          }
+        };
+
+        this.ws.onmessage = (event) => {
+          let msg;
+          try { msg = JSON.parse(event.data); } catch { return; }
+          const { type, ...data } = msg;
+          if (typeof type !== 'string') return;
+          if (type === 'pong') { this.wsOnPong(); return; }
+          this.wsDispatch(type, data);
+        };
+
+        this.ws.onerror = (event) => {
+          debugLog('socket', 'WebSocket error', { event });
+        };
+      });
+    }
+
+    wsDisconnect() {
+      this.wsIntentionallyClosed = true;
+      this.wsStopHeartbeat();
+      this.wsHandlersSetup = false;
+      this.wsHandlers.clear();
+      if (this.ws) { this.ws.close(); this.ws = null; }
+      this.wsConnected = false;
+    }
+
+    setupWsEventHandlers() {
+      debugLog('socket', 'Setting up WebSocket event handlers');
+
+      this.wsOn('call:accepted', async (data) => {
+        debugLog('socket-event', 'call:accepted received', {
           callAttemptId: data.callAttemptId,
-          currentCallId: this.currentCall?.id,
-          matches: data.callAttemptId === this.currentCall?.id
+          currentCallId: this.currentCall?.id
         });
         if (data.callAttemptId === this.currentCall?.id) {
           await this.handleCallAccepted(data);
         }
       });
-      
-      // WebRTC answer
-      this.socket.on('webrtc:answer', async (data) => {
-        debugLog('socket-event', 'webrtc:answer received', { 
+
+      this.wsOn('webrtc:answer', async (data) => {
+        debugLog('socket-event', 'webrtc:answer received', {
           callAttemptId: data.callAttemptId,
-          currentCallId: this.currentCall?.id,
-          matches: data.callAttemptId === this.currentCall?.id
+          currentCallId: this.currentCall?.id
         });
         if (data.callAttemptId === this.currentCall?.id) {
           await this.handleWebRTCAnswer(data.answer);
         }
       });
-      
-      // ICE candidate
-      this.socket.on('webrtc:ice-candidate', async (data) => {
-        debugLog('socket-event', 'webrtc:ice-candidate received', { 
+
+      this.wsOn('webrtc:ice-candidate', async (data) => {
+        debugLog('socket-event', 'webrtc:ice-candidate received', {
           callAttemptId: data.callAttemptId,
-          currentCallId: this.currentCall?.id,
           candidateType: data.candidate?.type
         });
         if (data.callAttemptId === this.currentCall?.id) {
           await this.handleICECandidate(data.candidate);
         }
       });
-      
-      // Call failures
-      this.socket.on('call:busy', (data) => {
-        debugLog('socket-event', 'call:busy received', { 
-          callAttemptId: data.callAttemptId,
-          currentCallId: this.currentCall?.id
-        });
+
+      this.wsOn('call:busy', (data) => {
+        debugLog('socket-event', 'call:busy received', { callAttemptId: data.callAttemptId });
         if (data.callAttemptId === this.currentCall?.id) {
           this.handleCallFailure('All agents are busy. Please try again later.');
         }
       });
-      
-      this.socket.on('call:unavailable', (data) => {
-        debugLog('socket-event', 'call:unavailable received', { 
-          callAttemptId: data.callAttemptId,
-          currentCallId: this.currentCall?.id
-        });
+
+      this.wsOn('call:unavailable', (data) => {
+        debugLog('socket-event', 'call:unavailable received', { callAttemptId: data.callAttemptId });
         if (data.callAttemptId === this.currentCall?.id) {
           this.handleCallFailure(this.config.offlineMessage);
         }
       });
-      
-      this.socket.on('call:timeout', (data) => {
-        debugLog('socket-event', 'call:timeout received', { 
-          callAttemptId: data.callAttemptId,
-          currentCallId: this.currentCall?.id,
-          timeoutDuration: data.timeoutDuration
-        });
+
+      this.wsOn('call:timeout', (data) => {
+        debugLog('socket-event', 'call:timeout received', { callAttemptId: data.callAttemptId });
         if (data.callAttemptId === this.currentCall?.id) {
           this.handleCallFailure('No response from agents. Please try again.');
         }
       });
-      
-      this.socket.on('call:failed', (data) => {
-        debugLog('socket-event', 'call:failed received', { 
-          callAttemptId: data.callAttemptId,
-          currentCallId: this.currentCall?.id,
-          reason: data.reason
-        });
+
+      this.wsOn('call:failed', (data) => {
+        debugLog('socket-event', 'call:failed received', { callAttemptId: data.callAttemptId, reason: data.reason });
         if (data.callAttemptId === this.currentCall?.id) {
           const message = data?.reason === 'connection_timeout'
             ? 'Connection timeout. Please try again.'
@@ -1251,19 +1250,15 @@
           this.handleCallFailure(message);
         }
       });
-      
-      // Call ended
-      this.socket.on('call:ended', (data) => {
-        debugLog('socket-event', 'call:ended received', { 
-          callAttemptId: data.callAttemptId,
-          currentCallId: this.currentCall?.id
-        });
+
+      this.wsOn('call:ended', (data) => {
+        debugLog('socket-event', 'call:ended received', { callAttemptId: data.callAttemptId });
         if (data.callAttemptId === this.currentCall?.id) {
           this.handleCallEnded();
         }
       });
-      
-      debugLog('socket', 'Socket event handlers setup complete');
+
+      debugLog('socket', 'WebSocket event handlers setup complete');
     }
     
     async handleButtonClick() {
@@ -1374,13 +1369,13 @@
         this.showModal();
         this.updateStatusMessage('Finding agent... (takes ~10 seconds)');
 
-        // Load Socket.IO and connect to signaling server
-        debugLog('call', 'Initializing socket connection');
-        await this.initializeSocket();
+        // Connect to signaling server via WebSocket
+        debugLog('call', 'Connecting to WebSocket signaling server');
+        await this.connectWebSocket();
 
         // Initialize WebRTC with TURN credentials
         debugLog('call', 'Initializing WebRTC with credentials');
-        this.webrtcManager = new WebRTCManager(this.socket, this.sendSocketMessage.bind(this));
+        this.webrtcManager = new WebRTCManager(null, this.sendSocketMessage.bind(this));
 
         // Set TURN credentials if available
         if (turnCredentials) {
@@ -1553,7 +1548,7 @@
     handleConnectionFailure() {
       console.error('CallSafe: Connection failed');
       
-      if (this.socket && this.currentCall) {
+      if (this.wsConnected && this.currentCall) {
         this.sendSocketMessage('call:failed', {
           callAttemptId: this.currentCall.id,
           reason: 'connection_failed',
@@ -1717,9 +1712,9 @@
         debugLog('call', 'End call ignored - no current call');
         return;
       }
-      
+
       // Emit end call event
-      if (this.socket) {
+      if (this.ws) {
         const endData = {
           callAttemptId: this.currentCall.id,
           initiator: 'customer',
@@ -1728,13 +1723,13 @@
         };
         debugLog('call', 'Sending call:end to server', endData);
         this.sendSocketMessage('call:end', endData);
-        
+
         // Don't cleanup here - wait for server's call:ended response
         debugLog('call', 'Setting failsafe cleanup timeout');
         this.setFailsafeCleanup();
       } else {
-        // If no socket, cleanup immediately
-        debugLog('call', 'No socket available - cleaning up immediately');
+        // If no ws, cleanup immediately
+        debugLog('call', 'No WebSocket available - cleaning up immediately');
         this.cleanup();
       }
       
@@ -1744,7 +1739,7 @@
     cleanup() {
       debugLog('cleanup', 'Starting cleanup process', {
         hasCurrentCall: !!this.currentCall,
-        hasSocket: !!this.socket,
+        hasWs: !!this.ws,
         hasWebRTC: !!this.webrtcManager,
         hasCleanupTimeout: !!this.cleanupTimeout
       });
@@ -1766,15 +1761,13 @@
         this.webrtcManager = null;
       }
       
-      // Disconnect socket
-      if (this.socket) {
-        debugLog('cleanup', 'Disconnecting socket', { socketId: this.socket.id });
-        this.socket.disconnect();
-        this.socket = null;
+      // Disconnect WebSocket
+      if (this.ws) {
+        debugLog('cleanup', 'Disconnecting WebSocket');
+        this.wsDisconnect();
       }
-      
-      // Reset socket state and clear message queue
-      this.socketConnected = false;
+
+      // Clear message queue
       if (this.messageQueue.length > 0) {
         debugLog('cleanup', 'Clearing message queue', { queuedMessages: this.messageQueue.length });
         this.messageQueue = [];
@@ -1966,9 +1959,9 @@
         this.endCall();
       }
       
-      // Disconnect socket
-      if (this.socket) {
-        this.socket.disconnect();
+      // Disconnect WebSocket
+      if (this.ws) {
+        this.wsDisconnect();
       }
       
       // Remove widget from DOM
