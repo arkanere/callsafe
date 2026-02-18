@@ -1,6 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:fpdart/fpdart.dart';
-import 'package:socket_io_client/socket_io_client.dart' as io;
+import 'package:web_socket_channel/web_socket_channel.dart';
 import '../protocol/protocol.dart';
 
 /// Signaling connection state
@@ -22,35 +23,40 @@ class SignalingError {
   String toString() => 'SignalingError: $message${code != null ? ' (code: $code)' : ''}';
 }
 
+const _heartbeatInterval = Duration(seconds: 30);
+const _heartbeatTimeout = Duration(seconds: 5);
+const _maxReconnectAttempts = 5;
+const _baseReconnectDelay = Duration(seconds: 1);
+
 /// Thin WebSocket wrapper for protocol message serialization
-/// Pure data transformation - no business logic
+/// Pure data transformation — no business logic
 class SignalingClient {
   final String serverUrl;
-  io.Socket? _socket;
 
-  final StreamController<SignalingState> _stateController =
-      StreamController<SignalingState>.broadcast();
+  WebSocketChannel? _channel;
+  StreamSubscription? _channelSubscription;
 
-  final StreamController<Map<String, dynamic>> _messageController =
-      StreamController<Map<String, dynamic>>.broadcast();
-
-  final StreamController<SignalingError> _errorController =
-      StreamController<SignalingError>.broadcast();
+  final _stateController = StreamController<SignalingState>.broadcast();
+  final _messageController = StreamController<Map<String, dynamic>>.broadcast();
+  final _errorController = StreamController<SignalingError>.broadcast();
 
   SignalingState _currentState = SignalingState.disconnected;
+  bool _intentionallyClosed = false;
+  int _reconnectAttempts = 0;
+
+  Timer? _heartbeatTimer;
+  Timer? _pongTimer;
+
+  // Stored for reconnection
+  DeviceType? _deviceType;
+  String? _deviceId;
+  String? _pushToken;
 
   SignalingClient(this.serverUrl);
 
-  /// Current connection state
   SignalingState get state => _currentState;
-
-  /// State change stream
   Stream<SignalingState> get stateStream => _stateController.stream;
-
-  /// Incoming message stream
   Stream<Map<String, dynamic>> get messageStream => _messageController.stream;
-
-  /// Error stream
   Stream<SignalingError> get errorStream => _errorController.stream;
 
   /// Connect to signaling server
@@ -60,158 +66,174 @@ class SignalingClient {
     String? pushToken,
   }) {
     return Task(() async {
-      if (_currentState == SignalingState.connected) {
-        return unit;
-      }
+      if (_currentState == SignalingState.connected) return unit;
 
-      _updateState(SignalingState.connecting);
+      _deviceType = deviceType;
+      _deviceId = deviceId;
+      _pushToken = pushToken;
+      _intentionallyClosed = false;
 
-      try {
-        _socket = io.io(
-          serverUrl,
-          io.OptionBuilder()
-              .setTransports(['websocket'])
-              .enableAutoConnect()
-              .setReconnectionAttempts(5)
-              .setReconnectionDelay(1000)
-              .build(),
-        );
-
-        _setupEventHandlers();
-
-        // Connect socket (non-async)
-        _socket!.connect();
-
-        // Wait briefly for connection to establish
-        await Future.delayed(const Duration(milliseconds: 500));
-
-        // Send device:connect message
-        final connectPayload = DeviceConnectPayload(
-          deviceType: deviceType,
-          deviceId: deviceId,
-          pushToken: pushToken,
-          protocolVersion: protocolVersion,
-          timestamp: DateTime.now().millisecondsSinceEpoch,
-        );
-
-        emit(MessageTypes.deviceConnect, connectPayload.toJson());
-
-        return unit;
-      } catch (e) {
-        _updateState(SignalingState.error);
-        _errorController.add(SignalingError(e.toString()));
-        throw SignalingError(e.toString());
-      }
+      await _connect();
+      return unit;
     });
+  }
+
+  Future<void> _connect() async {
+    _updateState(SignalingState.connecting);
+
+    try {
+      _channel = WebSocketChannel.connect(Uri.parse(serverUrl));
+      await _channel!.ready;
+
+      _channelSubscription = _channel!.stream.listen(
+        _onMessage,
+        onError: _onError,
+        onDone: _onDone,
+      );
+
+      _reconnectAttempts = 0;
+      _updateState(SignalingState.connected);
+      _startHeartbeat();
+      _sendDeviceConnect();
+    } catch (e) {
+      _updateState(SignalingState.error);
+      _errorController.add(SignalingError(e.toString()));
+      _scheduleReconnect();
+    }
+  }
+
+  void _sendDeviceConnect() {
+    if (_deviceType == null || _deviceId == null) return;
+    final payload = DeviceConnectPayload(
+      deviceType: _deviceType!,
+      deviceId: _deviceId!,
+      pushToken: _pushToken,
+      protocolVersion: protocolVersion,
+      timestamp: DateTime.now().millisecondsSinceEpoch,
+    );
+    emit(MessageTypes.deviceConnect, payload.toJson());
   }
 
   /// Disconnect from signaling server
   Task<Unit> disconnect({String? deviceId}) {
     return Task(() async {
-      try {
-        if (deviceId != null && _socket?.connected == true) {
-          final disconnectPayload = DeviceDisconnectPayload(
-            deviceId: deviceId,
-            timestamp: DateTime.now().millisecondsSinceEpoch,
-          );
-          emit(MessageTypes.deviceDisconnect, disconnectPayload.toJson());
-        }
+      _intentionallyClosed = true;
 
-        _socket?.disconnect();
-        _socket?.dispose();
-        _socket = null;
-        _updateState(SignalingState.disconnected);
-
-        return unit;
-      } catch (e) {
-        _errorController.add(SignalingError(e.toString()));
-        throw SignalingError(e.toString());
+      if (deviceId != null && _currentState == SignalingState.connected) {
+        final payload = DeviceDisconnectPayload(
+          deviceId: deviceId,
+          timestamp: DateTime.now().millisecondsSinceEpoch,
+        );
+        emit(MessageTypes.deviceDisconnect, payload.toJson());
       }
+
+      _close();
+      return unit;
     });
   }
 
-  /// Emit protocol message
+  /// Emit protocol message — sends JSON: {"type": messageType, ...payload}
   void emit(String messageType, Map<String, dynamic> payload) {
     if (_currentState != SignalingState.connected) {
-      _errorController.add(
-        const SignalingError('Cannot emit: not connected'),
-      );
+      _errorController.add(const SignalingError('Cannot emit: not connected'));
+      return;
+    }
+    _channel?.sink.add(jsonEncode({'type': messageType, ...payload}));
+  }
+
+  void _onMessage(dynamic raw) {
+    Map<String, dynamic> msg;
+    try {
+      msg = jsonDecode(raw as String) as Map<String, dynamic>;
+    } catch (_) {
       return;
     }
 
-    _socket?.emit(messageType, payload);
+    final type = msg['type'];
+    if (type is! String) return;
+
+    if (type == 'pong') {
+      _onPong();
+      return;
+    }
+
+    final payload = Map<String, dynamic>.from(msg)..remove('type');
+    _messageController.add({'type': type, 'payload': payload});
   }
 
-  /// Setup socket event handlers
-  void _setupEventHandlers() {
-    _socket?.on('connect', (_) {
-      _updateState(SignalingState.connected);
-    });
-
-    _socket?.on('disconnect', (_) {
-      _updateState(SignalingState.disconnected);
-    });
-
-    _socket?.on('error', (data) {
-      _updateState(SignalingState.error);
-      _errorController.add(SignalingError(data.toString()));
-    });
-
-    // Forward all protocol messages to message stream
-    _registerMessageHandler(MessageTypes.callIncoming);
-    _registerMessageHandler(MessageTypes.callAccepted);
-    _registerMessageHandler(MessageTypes.callCancelled);
-    _registerMessageHandler(MessageTypes.callEnded);
-    _registerMessageHandler(MessageTypes.callBusy);
-    _registerMessageHandler(MessageTypes.callUnavailable);
-    _registerMessageHandler(MessageTypes.callTimeout);
-    _registerMessageHandler(MessageTypes.webrtcOffer);
-    _registerMessageHandler(MessageTypes.webrtcAnswer);
-    _registerMessageHandler(MessageTypes.webrtcIceCandidate);
-    _registerMessageHandler(MessageTypes.deviceConnected);
-    _registerMessageHandler(MessageTypes.deviceDisconnected);
-    _registerMessageHandler(MessageTypes.deviceStatusUpdated);
-    _registerMessageHandler(MessageTypes.mediaToggle);
-    _registerMessageHandler(MessageTypes.escalationAccepted);
-    _registerMessageHandler(MessageTypes.escalationRejected);
-    _registerMessageHandler(MessageTypes.serverShutdown);
+  void _onError(Object error) {
+    _updateState(SignalingState.error);
+    _errorController.add(SignalingError(error.toString()));
   }
 
-  /// Register handler for specific message type
-  void _registerMessageHandler(String messageType) {
-    _socket?.on(messageType, (data) {
-      if (data is Map<String, dynamic>) {
-        _messageController.add({
-          'type': messageType,
-          'payload': data,
-        });
+  void _onDone() {
+    _stopHeartbeat();
+    _updateState(SignalingState.disconnected);
+    if (!_intentionallyClosed) {
+      _scheduleReconnect();
+    }
+  }
+
+  void _startHeartbeat() {
+    _heartbeatTimer = Timer.periodic(_heartbeatInterval, (_) {
+      if (_currentState != SignalingState.connected) return;
+      _channel?.sink.add(jsonEncode({'type': 'ping'}));
+      _pongTimer = Timer(_heartbeatTimeout, () {
+        _channel?.sink.close();
+      });
+    });
+  }
+
+  void _stopHeartbeat() {
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
+    _pongTimer?.cancel();
+    _pongTimer = null;
+  }
+
+  void _onPong() {
+    _pongTimer?.cancel();
+    _pongTimer = null;
+  }
+
+  void _scheduleReconnect() {
+    if (_intentionallyClosed || _reconnectAttempts >= _maxReconnectAttempts) return;
+    final delay = _baseReconnectDelay * (1 << _reconnectAttempts);
+    _reconnectAttempts++;
+    Timer(delay, () {
+      if (!_intentionallyClosed) {
+        _connect();
       }
     });
   }
 
-  /// Update state and notify listeners
+  void _close() {
+    _stopHeartbeat();
+    _channelSubscription?.cancel();
+    _channelSubscription = null;
+    _channel?.sink.close();
+    _channel = null;
+    _updateState(SignalingState.disconnected);
+  }
+
   void _updateState(SignalingState newState) {
     _currentState = newState;
     _stateController.add(newState);
   }
 
-  /// Dispose resources
   void dispose() {
-    _socket?.disconnect();
-    _socket?.dispose();
+    _intentionallyClosed = true;
+    _close();
     _stateController.close();
     _messageController.close();
     _errorController.close();
   }
 }
 
-/// Mock implementation for testing and Phase 1 UI development
+/// Mock implementation for testing
 class MockSignalingClient extends SignalingClient {
-  final StreamController<SignalingState> _mockStateController =
-      StreamController<SignalingState>.broadcast();
-
-  final StreamController<Map<String, dynamic>> _mockMessageController =
-      StreamController<Map<String, dynamic>>.broadcast();
+  final _mockStateController = StreamController<SignalingState>.broadcast();
+  final _mockMessageController = StreamController<Map<String, dynamic>>.broadcast();
 
   SignalingState _mockState = SignalingState.disconnected;
 
@@ -224,8 +246,7 @@ class MockSignalingClient extends SignalingClient {
   Stream<SignalingState> get stateStream => _mockStateController.stream;
 
   @override
-  Stream<Map<String, dynamic>> get messageStream =>
-      _mockMessageController.stream;
+  Stream<Map<String, dynamic>> get messageStream => _mockMessageController.stream;
 
   @override
   Task<Unit> connect({
@@ -257,15 +278,12 @@ class MockSignalingClient extends SignalingClient {
 
   @override
   void emit(String messageType, Map<String, dynamic> payload) {
-    // Mock emit - does nothing
+    // Mock emit — no-op
   }
 
-  /// Test helper to simulate incoming message
+  /// Simulate an incoming server message in tests
   void simulateMessage(String type, Map<String, dynamic> payload) {
-    _mockMessageController.add({
-      'type': type,
-      'payload': payload,
-    });
+    _mockMessageController.add({'type': type, 'payload': payload});
   }
 
   @override
