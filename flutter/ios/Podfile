@@ -36,9 +36,6 @@ target 'Runner' do
   # WebRTC
   pod 'GoogleWebRTC', '~> 1.1'
 
-  # Socket.IO
-  pod 'Socket.IO-Client-Swift', '~> 16.0'
-
   # Firebase for push notifications
   pod 'Firebase/Messaging', '~> 10.18'
 

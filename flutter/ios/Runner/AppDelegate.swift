@@ -5,7 +5,6 @@ import UserNotifications
 @UIApplicationMain
 @objc class AppDelegate: FlutterAppDelegate {
     private var webrtcHandler: WebRTCChannelHandler?
-    private var socketHandler: SocketChannelHandler?
     private var pushHandler: PushChannelHandler?
     private var audioHandler: AudioChannelHandler?
     private var callHandler: CallChannelHandler?
@@ -19,7 +18,6 @@ import UserNotifications
 
         // Register platform channel handlers
         webrtcHandler = WebRTCChannelHandler(messenger: messenger)
-        socketHandler = SocketChannelHandler(messenger: messenger)
         pushHandler = PushChannelHandler(messenger: messenger)
         audioHandler = AudioChannelHandler(messenger: messenger)
         callHandler = CallChannelHandler(messenger: messenger)
@@ -61,7 +59,6 @@ import UserNotifications
 
     override func applicationWillTerminate(_ application: UIApplication) {
         webrtcHandler?.dispose()
-        socketHandler?.dispose()
         pushHandler?.dispose()
         audioHandler?.dispose()
         callHandler?.dispose()
