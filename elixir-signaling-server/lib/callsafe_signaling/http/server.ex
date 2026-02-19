@@ -21,7 +21,7 @@ defmodule CallsafeSignaling.HTTP.Server do
 
     dispatch = build_dispatch()
 
-    cowboy_opts = [port: port]
+    cowboy_opts = [port: port, reuseaddr: true]
 
     Logger.info("Starting HTTP server on port #{port}")
 
