@@ -12,7 +12,9 @@ defmodule CallsafeSignaling.E2E.TestClient do
     authenticate/4      – send device:connect + assert device:connected
     send_message/2      – encode and send a JSON map
     receive_next/2      – pop next queued message (blocks up to timeout)
-    assert_receive_type/3 – receive_next + assert on "type" field
+    assert_receive_type/3 – receive_next + assert on "type" field; failure
+                            includes full message history for diagnostics
+    all_received/1      – full history of every message received (never drained)
     drain/1             – flush queue non-blocking, return list
     disconnect/1        – close connection
   """
@@ -74,17 +76,29 @@ defmodule CallsafeSignaling.E2E.TestClient do
         msg
 
       {:ok, msg} ->
+        types = all_received(client) |> Enum.map(& &1["type"])
+
         raise ExUnit.AssertionError,
-          message: "Expected message type \"#{expected_type}\", got: #{inspect(msg)}"
+          message:
+            "Expected message type \"#{expected_type}\", got: #{inspect(msg)}\n" <>
+              "Messages received: #{inspect(types)}"
 
       {:error, :timeout} ->
+        types = all_received(client) |> Enum.map(& &1["type"])
+
         raise ExUnit.AssertionError,
-          message: "Timeout (#{timeout}ms) waiting for message type \"#{expected_type}\""
+          message:
+            "Timeout (#{timeout}ms) waiting for \"#{expected_type}\".\n" <>
+              "Messages received: #{inspect(types)}"
     end
   end
 
   def drain(client) do
     GenServer.call(client, :drain)
+  end
+
+  def all_received(client) do
+    GenServer.call(client, :all_received)
   end
 
   def disconnect(client) do
@@ -104,7 +118,8 @@ defmodule CallsafeSignaling.E2E.TestClient do
            socket: socket,
            buffer: <<>>,
            queue: :queue.new(),
-           waiters: []
+           waiters: [],
+           history: []
          }}
 
       {:error, reason} ->
@@ -132,6 +147,10 @@ defmodule CallsafeSignaling.E2E.TestClient do
 
   def handle_call(:drain, _from, state) do
     {:reply, :queue.to_list(state.queue), %{state | queue: :queue.new()}}
+  end
+
+  def handle_call(:all_received, _from, state) do
+    {:reply, Enum.reverse(state.history), state}
   end
 
   @impl GenServer
@@ -336,6 +355,8 @@ defmodule CallsafeSignaling.E2E.TestClient do
   # ---------------------------------------------------------------------------
 
   defp deliver(msg, state) do
+    state = %{state | history: [msg | state.history]}
+
     case state.waiters do
       [{from, timer} | rest] ->
         Process.cancel_timer(timer)
