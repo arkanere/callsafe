@@ -25,7 +25,7 @@ defmodule CallsafeSignaling.WebSocket.Handler do
     Logger.debug("WebSocket connection request received")
 
     # Extract IP address from request
-    {{ip_addr, _port}, _req} = :cowboy_req.peer(req)
+    {ip_addr, _port} = :cowboy_req.peer(req)
     ip_address = ip_addr |> :inet.ntoa() |> to_string()
 
     state = %{
@@ -34,7 +34,7 @@ defmodule CallsafeSignaling.WebSocket.Handler do
       device_type: nil,
       business_id: nil,
       authenticated: false,
-      connection_pid: self(),
+      connection_pid: nil,
       ip_address: ip_address,
       connected_at: DateTime.utc_now()
     }
@@ -46,6 +46,14 @@ defmodule CallsafeSignaling.WebSocket.Handler do
     Stats.increment_connections_active()
 
     {:cowboy_websocket, req, state}
+  end
+
+  # Called in the WebSocket process after the HTTP→WS upgrade completes.
+  # self() here is the real WebSocket process — update connection_pid so
+  # DeviceRegistry monitors the correct process.
+  @impl :cowboy_websocket
+  def websocket_init(state) do
+    {:ok, %{state | connection_pid: self()}}
   end
 
   # Handle incoming WebSocket frames
@@ -83,11 +91,12 @@ defmodule CallsafeSignaling.WebSocket.Handler do
 
   # Handle Erlang messages sent to this process
   @impl :cowboy_websocket
-  def websocket_info({:send_message, message}, state) when is_map(message) do
-    # Send message to WebSocket client
+  def websocket_info({:send_message, message_type, payload}, state) when is_map(payload) do
+    # Merge type into payload (relay payloads may omit it; notification payloads already include it)
+    message = Map.put(payload, "type", message_type)
+
     case Jason.encode(message) do
       {:ok, json} ->
-        # Track sent message
         Stats.increment_messages_sent()
         {:reply, {:text, json}, state}
 
