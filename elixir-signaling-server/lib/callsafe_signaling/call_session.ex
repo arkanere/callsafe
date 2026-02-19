@@ -34,9 +34,9 @@ defmodule CallsafeSignaling.CallSession do
           connecting_timer: reference() | nil
         }
 
-  # Timeout constants (in milliseconds)
-  @ringing_timeout 30_000
-  @connecting_timeout 30_000
+  # Timeout values read from application config at runtime so tests can override them.
+  defp ringing_timeout, do: Application.get_env(:callsafe_signaling, :timeout_ringing, 30_000)
+  defp connecting_timeout, do: Application.get_env(:callsafe_signaling, :timeout_connecting, 30_000)
 
   # Client API
 
@@ -235,8 +235,7 @@ defmodule CallsafeSignaling.CallSession do
   def send_to_caller(call_id, message_type, payload) do
     case get_state(call_id) do
       {:ok, state} when not is_nil(state.caller_pid) ->
-        send(state.caller_pid, {:send_message, message_type, payload})
-        :ok
+        notifier().notify(state.caller_pid, message_type, payload)
 
       {:ok, _state} ->
         {:error, :caller_not_connected}
@@ -253,8 +252,7 @@ defmodule CallsafeSignaling.CallSession do
   def send_to_callee(call_id, message_type, payload) do
     case get_state(call_id) do
       {:ok, state} when not is_nil(state.callee_pid) ->
-        send(state.callee_pid, {:send_message, message_type, payload})
-        :ok
+        notifier().notify(state.callee_pid, message_type, payload)
 
       {:ok, _state} ->
         {:error, :callee_not_connected}
@@ -287,6 +285,9 @@ defmodule CallsafeSignaling.CallSession do
   end
 
   # Private helpers
+
+  defp notifier,
+    do: Application.get_env(:callsafe_signaling, :notifier, CallsafeSignaling.Notifier.Default)
 
   defp via_tuple(call_id) do
     {:via, Registry, {CallsafeSignaling.CallRegistry, call_id}}
@@ -411,14 +412,14 @@ defmodule CallsafeSignaling.CallSession do
 
   @impl true
   def handle_info(:ringing_timeout, state) do
-    Logger.warning("Call #{state.call_id} timed out while ringing (#{@ringing_timeout}ms)")
+    Logger.warning("Call #{state.call_id} timed out while ringing (#{ringing_timeout()}ms)")
 
     # Capture timeout triggered decision
     DecisionCapture.emit_timeout_triggered(
       state.call_id,
       :ringing,
       state.state,
-      %{timeout_duration: @ringing_timeout}
+      %{timeout_duration: ringing_timeout()}
     )
 
     # Transition to timeout state
@@ -447,7 +448,7 @@ defmodule CallsafeSignaling.CallSession do
   @impl true
   def handle_info(:connecting_timeout, state) do
     Logger.warning(
-      "Call #{state.call_id} timed out while connecting WebRTC (#{@connecting_timeout}ms)"
+      "Call #{state.call_id} timed out while connecting WebRTC (#{connecting_timeout()}ms)"
     )
 
     # Capture timeout triggered decision
@@ -455,7 +456,7 @@ defmodule CallsafeSignaling.CallSession do
       state.call_id,
       :connecting,
       state.state,
-      %{timeout_duration: @connecting_timeout}
+      %{timeout_duration: connecting_timeout()}
     )
 
     # Transition to timeout state
@@ -529,30 +530,32 @@ defmodule CallsafeSignaling.CallSession do
   end
 
   defp schedule_timeout_for_state(state, :ringing) do
-    # Capture timeout set decision
+    timeout = ringing_timeout()
+
     DecisionCapture.emit_timeout_set(
       state.call_id,
       nil,
       :ringing,
-      @ringing_timeout,
+      timeout,
       %{state: :ringing}
     )
 
-    timer_ref = Process.send_after(self(), :ringing_timeout, @ringing_timeout)
+    timer_ref = Process.send_after(self(), :ringing_timeout, timeout)
     Map.put(state, :ringing_timer, timer_ref)
   end
 
   defp schedule_timeout_for_state(state, :connecting) do
-    # Capture timeout set decision
+    timeout = connecting_timeout()
+
     DecisionCapture.emit_timeout_set(
       state.call_id,
       nil,
       :connecting,
-      @connecting_timeout,
+      timeout,
       %{state: :connecting}
     )
 
-    timer_ref = Process.send_after(self(), :connecting_timeout, @connecting_timeout)
+    timer_ref = Process.send_after(self(), :connecting_timeout, timeout)
     Map.put(state, :connecting_timer, timer_ref)
   end
 
@@ -565,14 +568,12 @@ defmodule CallsafeSignaling.CallSession do
       "timestamp" => System.system_time(:millisecond)
     }
 
-    # Notify caller
     if state.caller_pid do
-      send(state.caller_pid, {:send_message, message["type"], message})
+      notifier().notify(state.caller_pid, message["type"], message)
     end
 
-    # Notify callee
     if state.callee_pid do
-      send(state.callee_pid, {:send_message, message["type"], message})
+      notifier().notify(state.callee_pid, message["type"], message)
     end
 
     :ok
