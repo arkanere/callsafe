@@ -103,6 +103,121 @@ defmodule CallsafeSignaling.E2E.CallConcurrencyTest do
   end
 
   # ---------------------------------------------------------------------------
+  # Same-business concurrent calls
+  # ---------------------------------------------------------------------------
+
+  describe "same-business concurrent calls" do
+    test "two sequential calls on one business — WebRTC exchanges don't cross-contaminate, calls end independently" do
+      biz = uid("biz")
+      call1_id = call_uuid()
+      call2_id = call_uuid()
+      customer1_id = uid("customer1")
+      customer2_id = uid("customer2")
+      agent1_id = uid("agent1")
+      agent2_id = uid("agent2")
+
+      {:ok, customer1} = TestClient.connect()
+      {:ok, customer2} = TestClient.connect()
+      {:ok, agent1} = TestClient.connect()
+      {:ok, agent2} = TestClient.connect()
+
+      TestClient.authenticate(customer1, customer1_id, biz)
+      TestClient.authenticate(customer2, customer2_id, biz)
+      TestClient.authenticate(agent1, agent1_id, biz)
+      TestClient.authenticate(agent2, agent2_id, biz)
+
+      # --- Call 1: customer1 calls, all three others notified, agent1 accepts ---
+
+      :ok = TestClient.send_message(customer1, call_initiate(call1_id))
+
+      inc1 = TestClient.assert_receive_type(customer1, "call:incoming")
+      assert inc1["callAttemptId"] == call1_id
+      assert inc1["devicesNotified"] == 3
+
+      TestClient.assert_receive_type(customer2, "call:incoming")
+      TestClient.assert_receive_type(agent1, "call:incoming")
+      TestClient.assert_receive_type(agent2, "call:incoming")
+
+      :ok = TestClient.send_message(agent1, call_accept(call1_id, agent1_id))
+      TestClient.assert_receive_type(agent1, "call:accepted")
+      TestClient.assert_receive_type(customer1, "call:accepted")
+      # customer2 and agent2 cancelled — agent1 accepted
+      TestClient.assert_receive_type(customer2, "call:cancelled")
+      TestClient.assert_receive_type(agent2, "call:cancelled")
+
+      # WebRTC exchange on call1
+      :ok = TestClient.send_message(customer1, webrtc_offer(call1_id))
+      offer1 = TestClient.assert_receive_type(agent1, "webrtc:offer")
+      assert offer1["callAttemptId"] == call1_id
+
+      :ok = TestClient.send_message(agent1, webrtc_answer(call1_id))
+      answer1 = TestClient.assert_receive_type(customer1, "webrtc:answer")
+      assert answer1["callAttemptId"] == call1_id
+
+      # Drain before call2 to keep assertions clean
+      Process.sleep(50)
+      TestClient.drain(customer1)
+      TestClient.drain(customer2)
+      TestClient.drain(agent1)
+      TestClient.drain(agent2)
+
+      # --- Call 2: customer2 calls, status not tracked so all three notified, agent2 accepts ---
+
+      :ok = TestClient.send_message(customer2, call_initiate(call2_id))
+
+      # devicesNotified = 3: agent1, agent2, customer1 (status never set to :busy)
+      inc2 = TestClient.assert_receive_type(customer2, "call:incoming")
+      assert inc2["callAttemptId"] == call2_id
+      assert inc2["devicesNotified"] == 3
+
+      TestClient.assert_receive_type(agent2, "call:incoming")
+      TestClient.assert_receive_type(agent1, "call:incoming")
+      TestClient.assert_receive_type(customer1, "call:incoming")
+
+      :ok = TestClient.send_message(agent2, call_accept(call2_id, agent2_id))
+      TestClient.assert_receive_type(agent2, "call:accepted")
+      TestClient.assert_receive_type(customer2, "call:accepted")
+      # agent1 and customer1 cancelled — agent2 accepted
+      TestClient.assert_receive_type(agent1, "call:cancelled")
+      TestClient.assert_receive_type(customer1, "call:cancelled")
+
+      # (a) WebRTC exchange on call2 — offer/answer carry call2_id, not call1_id
+      :ok = TestClient.send_message(customer2, webrtc_offer(call2_id))
+      offer2 = TestClient.assert_receive_type(agent2, "webrtc:offer")
+      assert offer2["callAttemptId"] == call2_id
+
+      :ok = TestClient.send_message(agent2, webrtc_answer(call2_id))
+      answer2 = TestClient.assert_receive_type(customer2, "webrtc:answer")
+      assert answer2["callAttemptId"] == call2_id
+
+      # (b) Both calls end independently
+      :ok = TestClient.send_message(customer1, call_end(call1_id))
+      ended1_caller = TestClient.assert_receive_type(customer1, "call:ended")
+      assert ended1_caller["callAttemptId"] == call1_id
+      ended1_callee = TestClient.assert_receive_type(agent1, "call:ended")
+      assert ended1_callee["callAttemptId"] == call1_id
+
+      :ok = TestClient.send_message(customer2, call_end(call2_id))
+      ended2_caller = TestClient.assert_receive_type(customer2, "call:ended")
+      assert ended2_caller["callAttemptId"] == call2_id
+      ended2_callee = TestClient.assert_receive_type(agent2, "call:ended")
+      assert ended2_callee["callAttemptId"] == call2_id
+
+      # (c) No cross-contamination — queues empty after both calls end
+      Process.sleep(50)
+      assert [] = TestClient.drain(customer1)
+      assert [] = TestClient.drain(customer2)
+      assert [] = TestClient.drain(agent1)
+      assert [] = TestClient.drain(agent2)
+
+      TestClient.disconnect(customer1)
+      TestClient.disconnect(customer2)
+      TestClient.disconnect(agent1)
+      TestClient.disconnect(agent2)
+    end
+  end
+
+  # ---------------------------------------------------------------------------
   # Concurrent calls on separate businesses
   # ---------------------------------------------------------------------------
 
