@@ -2,7 +2,9 @@ import Config
 
 config :callsafe_signaling,
   port: 4001,
+  http_port: 4001,
   env: :test,
+  jwt_secret: "test_secret_for_e2e",
 
   # Protocol validation
   log_validation_failures: true,
@@ -31,4 +33,4 @@ config :callsafe_signaling,
 
 # Logger configuration
 config :logger,
-  level: :warn
+  level: :warning
