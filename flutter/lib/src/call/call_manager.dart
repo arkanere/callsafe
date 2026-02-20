@@ -74,10 +74,12 @@ class CallManager extends StateNotifier<CallManagerState> {
       final callAttemptId = _uuid.v4();
       final capabilities = mediaCapabilities ??
           MediaCapabilities(
-            canSendAudio: true,
-            canSendVideo: callType == CallType.video,
-            canReceiveAudio: true,
-            canReceiveVideo: callType == CallType.video,
+            canSend: callType == CallType.video
+                ? ['audio', 'video']
+                : ['audio'],
+            canReceive: callType == CallType.video
+                ? ['audio', 'video']
+                : ['audio'],
           );
 
       // Create call session

@@ -6,7 +6,7 @@ config :callsafe_signaling,
 
   # Protocol validation
   log_validation_failures: true,
-  reject_invalid_messages: false,
+  reject_invalid_messages: true,
 
   # Rate limiting
   max_requests_per_device: 200,

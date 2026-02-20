@@ -10,13 +10,12 @@ part 'protocol_messages.g.dart';
 
 /// Media Capabilities
 /// Describes what media tracks a peer can send/receive
+/// Format: { canSend: ["audio"] | ["audio", "video"], canReceive: [...] }
 @freezed
 class MediaCapabilities with _$MediaCapabilities {
   const factory MediaCapabilities({
-    required bool canSendAudio,
-    required bool canSendVideo,
-    required bool canReceiveAudio,
-    required bool canReceiveVideo,
+    required List<String> canSend,
+    required List<String> canReceive,
   }) = _MediaCapabilities;
 
   factory MediaCapabilities.fromJson(Map<String, dynamic> json) =>

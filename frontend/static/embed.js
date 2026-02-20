@@ -1536,10 +1536,8 @@
           sourceId: sanitizeInput(this.config.sourceId),
           callType: type,
           mediaCapabilities: {
-            canSendAudio: true,
-            canSendVideo: type === 'video',
-            canReceiveAudio: true,
-            canReceiveVideo: type === 'video'
+            canSend: type === 'video' ? ['audio', 'video'] : ['audio'],
+            canReceive: type === 'video' ? ['audio', 'video'] : ['audio']
           },
           timestamp: Date.now()
         };

@@ -385,10 +385,8 @@
       deviceType: 'web',
       deviceId: generateDeviceId(),
       mediaCapabilities: {
-        canSendAudio: true,
-        canSendVideo: callType === 'video',
-        canReceiveAudio: true,
-        canReceiveVideo: callType === 'video'
+        canSend: callType === 'video' ? ['audio', 'video'] : ['audio'],
+        canReceive: callType === 'video' ? ['audio', 'video'] : ['audio']
       },
       timestamp: Date.now()
     });

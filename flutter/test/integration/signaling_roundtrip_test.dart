@@ -68,8 +68,8 @@ void main() {
       expect(msg['callType'], 'voice');
       expect(msg['mediaCapabilities'], isA<Map>());
       final caps = msg['mediaCapabilities'] as Map;
-      expect(caps['canSendAudio'], true);
-      expect(caps['canSendVideo'], false); // voice call
+      expect(caps['canSend'], ['audio']); // voice call
+      expect(caps['canReceive'], ['audio']);
     });
 
     test('call:accept is flat with callAttemptId and deviceType at root',

@@ -111,10 +111,8 @@ void main() {
         'handle': 'test-handle',
         'callType': 'voice',
         'mediaCapabilities': {
-          'canSendAudio': true,
-          'canSendVideo': false,
-          'canReceiveAudio': true,
-          'canReceiveVideo': false,
+          'canSend': ['audio'],
+          'canReceive': ['audio'],
         },
       };
 
