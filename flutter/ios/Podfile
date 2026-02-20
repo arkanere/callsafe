@@ -33,9 +33,6 @@ target 'Runner' do
 
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
 
-  # WebRTC
-  pod 'GoogleWebRTC', '~> 1.1'
-
   # Firebase for push notifications
   pod 'Firebase/Messaging', '~> 10.18'
 
