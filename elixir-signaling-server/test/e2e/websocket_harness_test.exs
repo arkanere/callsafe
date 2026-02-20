@@ -20,11 +20,9 @@ defmodule CallsafeSignaling.E2E.WebsocketHarnessTest do
     Application.put_env(:callsafe_signaling, :jwt_secret, "test_secret_for_e2e")
     Application.put_env(:callsafe_signaling, :http_port, 4001)
 
-    {:ok, _apps} = Application.ensure_all_started(:callsafe_signaling)
-    # Give cowboy a moment to bind the port.
-    Process.sleep(50)
+    :ok = CallsafeSignaling.E2E.AppLifecycle.start()
 
-    on_exit(fn -> Application.stop(:callsafe_signaling) end)
+    on_exit(fn -> CallsafeSignaling.E2E.AppLifecycle.stop() end)
     :ok
   end
 

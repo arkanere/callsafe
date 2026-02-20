@@ -13,7 +13,7 @@ defmodule CallsafeSignaling.Protocol.StateMachine do
   @transitions %{
     initiated: [:ringing, :busy, :unavailable, :cancelled, :failed],
     ringing: [:connecting, :timeout, :cancelled, :failed],
-    connecting: [:connected, :camera_permission_denied, :failed, :cancelled],
+    connecting: [:connected, :timeout, :camera_permission_denied, :failed, :cancelled],
     connected: [
       :ended,
       :failed,
