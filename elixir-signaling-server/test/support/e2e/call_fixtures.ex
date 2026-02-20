@@ -20,6 +20,28 @@ defmodule CallsafeSignaling.E2E.CallFixtures do
     }
   end
 
+  def call_initiate_video(call_id) do
+    %{
+      "type" => "call:initiate",
+      "callAttemptId" => call_id,
+      "handle" => "test_business",
+      "callType" => "video",
+      "mediaCapabilities" => %{
+        "canSend" => ["audio", "video"],
+        "canReceive" => ["audio", "video"]
+      }
+    }
+  end
+
+  def media_toggle(call_id, action) do
+    %{
+      "type" => "media:toggle",
+      "callAttemptId" => call_id,
+      "action" => action,
+      "success" => true
+    }
+  end
+
   def call_accept(call_id, callee_id) do
     %{
       "type" => "call:accept",

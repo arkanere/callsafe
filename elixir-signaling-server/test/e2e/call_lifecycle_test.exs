@@ -126,6 +126,156 @@ defmodule CallsafeSignaling.E2E.CallLifecycleTest do
   end
 
   # ---------------------------------------------------------------------------
+  # Video call lifecycle
+  # ---------------------------------------------------------------------------
+
+  describe "video call lifecycle" do
+    test "initiate video call → call:incoming includes callType: video" do
+      biz = uid("biz")
+      call_id = call_uuid()
+      caller_id = uid("caller")
+      callee_id = uid("callee")
+
+      {:ok, caller} = TestClient.connect()
+      {:ok, callee} = TestClient.connect()
+
+      TestClient.authenticate(caller, caller_id, biz)
+      TestClient.authenticate(callee, callee_id, biz)
+
+      :ok = TestClient.send_message(caller, call_initiate_video(call_id))
+
+      TestClient.assert_receive_type(caller, "call:incoming")
+
+      callee_inc = TestClient.assert_receive_type(callee, "call:incoming")
+      assert callee_inc["callAttemptId"] == call_id
+      assert callee_inc["callType"] == "video"
+
+      TestClient.disconnect(caller)
+      TestClient.disconnect(callee)
+    end
+
+    test "voice call callType is voice on call:incoming" do
+      biz = uid("biz")
+      call_id = call_uuid()
+      caller_id = uid("caller")
+      callee_id = uid("callee")
+
+      {:ok, caller} = TestClient.connect()
+      {:ok, callee} = TestClient.connect()
+
+      TestClient.authenticate(caller, caller_id, biz)
+      TestClient.authenticate(callee, callee_id, biz)
+
+      :ok = TestClient.send_message(caller, call_initiate(call_id))
+
+      TestClient.assert_receive_type(caller, "call:incoming")
+
+      callee_inc = TestClient.assert_receive_type(callee, "call:incoming")
+      assert callee_inc["callType"] == "voice"
+
+      TestClient.disconnect(caller)
+      TestClient.disconnect(callee)
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # Camera toggle
+  # ---------------------------------------------------------------------------
+
+  describe "camera toggle" do
+    test "disable_camera relayed to peer" do
+      biz = uid("biz")
+      call_id = call_uuid()
+      caller_id = uid("caller")
+      callee_id = uid("callee")
+
+      {:ok, caller} = TestClient.connect()
+      {:ok, callee} = TestClient.connect()
+
+      TestClient.authenticate(caller, caller_id, biz)
+      TestClient.authenticate(callee, callee_id, biz)
+
+      :ok = TestClient.send_message(caller, call_initiate_video(call_id))
+      TestClient.assert_receive_type(caller, "call:incoming")
+      TestClient.assert_receive_type(callee, "call:incoming")
+
+      :ok = TestClient.send_message(callee, call_accept(call_id, callee_id))
+      TestClient.assert_receive_type(callee, "call:accepted")
+      TestClient.assert_receive_type(caller, "call:accepted")
+
+      :ok = TestClient.send_message(caller, media_toggle(call_id, "disable_camera"))
+
+      callee_toggle = TestClient.assert_receive_type(callee, "media:toggle")
+      assert callee_toggle["callAttemptId"] == call_id
+      assert callee_toggle["action"] == "disable_camera"
+      assert callee_toggle["success"] == true
+
+      TestClient.disconnect(caller)
+      TestClient.disconnect(callee)
+    end
+
+    test "enable_camera relayed to peer" do
+      biz = uid("biz")
+      call_id = call_uuid()
+      caller_id = uid("caller")
+      callee_id = uid("callee")
+
+      {:ok, caller} = TestClient.connect()
+      {:ok, callee} = TestClient.connect()
+
+      TestClient.authenticate(caller, caller_id, biz)
+      TestClient.authenticate(callee, callee_id, biz)
+
+      :ok = TestClient.send_message(caller, call_initiate_video(call_id))
+      TestClient.assert_receive_type(caller, "call:incoming")
+      TestClient.assert_receive_type(callee, "call:incoming")
+
+      :ok = TestClient.send_message(callee, call_accept(call_id, callee_id))
+      TestClient.assert_receive_type(callee, "call:accepted")
+      TestClient.assert_receive_type(caller, "call:accepted")
+
+      :ok = TestClient.send_message(caller, media_toggle(call_id, "enable_camera"))
+
+      callee_toggle = TestClient.assert_receive_type(callee, "media:toggle")
+      assert callee_toggle["callAttemptId"] == call_id
+      assert callee_toggle["action"] == "enable_camera"
+
+      TestClient.disconnect(caller)
+      TestClient.disconnect(callee)
+    end
+
+    test "callee can toggle camera and caller receives it" do
+      biz = uid("biz")
+      call_id = call_uuid()
+      caller_id = uid("caller")
+      callee_id = uid("callee")
+
+      {:ok, caller} = TestClient.connect()
+      {:ok, callee} = TestClient.connect()
+
+      TestClient.authenticate(caller, caller_id, biz)
+      TestClient.authenticate(callee, callee_id, biz)
+
+      :ok = TestClient.send_message(caller, call_initiate_video(call_id))
+      TestClient.assert_receive_type(caller, "call:incoming")
+      TestClient.assert_receive_type(callee, "call:incoming")
+
+      :ok = TestClient.send_message(callee, call_accept(call_id, callee_id))
+      TestClient.assert_receive_type(callee, "call:accepted")
+      TestClient.assert_receive_type(caller, "call:accepted")
+
+      :ok = TestClient.send_message(callee, media_toggle(call_id, "disable_camera"))
+
+      caller_toggle = TestClient.assert_receive_type(caller, "media:toggle")
+      assert caller_toggle["callAttemptId"] == call_id
+      assert caller_toggle["action"] == "disable_camera"
+
+      TestClient.disconnect(caller)
+      TestClient.disconnect(callee)
+    end
+  end
+
+  # ---------------------------------------------------------------------------
   # No available devices
   # ---------------------------------------------------------------------------
 
