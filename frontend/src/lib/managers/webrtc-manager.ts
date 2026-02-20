@@ -14,13 +14,25 @@ export class WebRTCManager {
   private _isOfferer = false;
   private _disconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private _iceRestartAttempted = false;
+  private turnCredentials: { urls: string | string[]; username: string; credential: string } | null = null;
 
   onAutoplayBlocked: (() => void) | null = null;
+  // Called when remote stream arrives and media connection is established
+  onConnected: (() => void) | null = null;
+  // Called when ICE permanently fails (after restart attempt)
+  onConnectionFailed: (() => void) | null = null;
+  // Override remote stream handling — receives (stream, callType). If null, uses default DOM queries.
+  onRemoteStream: ((stream: MediaStream, callType: 'voice' | 'video') => void) | null = null;
 
   constructor(socket: WsTransport) {
     dbg('[WEBRTC MANAGER] constructor(): Constructor called');
     this.socket = socket;
     dbg('[WEBRTC MANAGER] constructor(): Socket assigned');
+  }
+
+  setTurnCredentials(creds: { urls: string | string[]; username: string; credential: string }): void {
+    this.turnCredentials = creds;
+    dbg('[WEBRTC MANAGER] setTurnCredentials(): dynamic TURN credentials set');
   }
 
   private getIceServers(): RTCIceServer[] {
@@ -33,40 +45,56 @@ export class WebRTCManager {
     iceServers.push({ urls: stunServer1 });
     iceServers.push({ urls: stunServer2 });
 
-    // Add TURN server from environment variables if available
-    const turnServerUrl = import.meta.env.VITE_TURN_SERVER_URL;
-    const turnUsername = import.meta.env.VITE_TURN_USERNAME;
-    const turnCredential = import.meta.env.VITE_TURN_CREDENTIAL;
-
-    if (turnServerUrl && turnUsername && turnCredential) {
+    // Prefer dynamic TURN credentials (embed pattern); fall back to env vars (SvelteKit pattern)
+    if (this.turnCredentials) {
       iceServers.push({
-        urls: turnServerUrl,
-        username: turnUsername,
-        credential: turnCredential
+        urls: this.turnCredentials.urls,
+        username: this.turnCredentials.username,
+        credential: this.turnCredentials.credential
       });
-      dbg('[WEBRTC MANAGER] getIceServers(): TURN server configured');
+      dbg('[WEBRTC MANAGER] getIceServers(): using dynamic TURN credentials');
     } else {
-      dbg('[WEBRTC MANAGER] getIceServers(): TURN server not configured - using STUN only');
+      const turnServerUrl = import.meta.env.VITE_TURN_SERVER_URL;
+      const turnUsername = import.meta.env.VITE_TURN_USERNAME;
+      const turnCredential = import.meta.env.VITE_TURN_CREDENTIAL;
+
+      if (turnServerUrl && turnUsername && turnCredential) {
+        iceServers.push({
+          urls: turnServerUrl,
+          username: turnUsername,
+          credential: turnCredential
+        });
+        dbg('[WEBRTC MANAGER] getIceServers(): TURN server configured from env');
+      } else {
+        dbg('[WEBRTC MANAGER] getIceServers(): TURN server not configured - using STUN only');
+      }
     }
 
     return iceServers;
   }
 
-  async initialize(callAttemptId: string, callType: 'voice' | 'video' = 'voice') {
+  // localStream is optional: if provided, use it directly (embed pattern where media is
+  // captured before WebRTC init); if omitted, capture internally (SvelteKit pattern).
+  async initialize(callAttemptId: string, callType: 'voice' | 'video' = 'voice', localStream?: MediaStream) {
     dbg('[WEBRTC MANAGER] initialize(): Initializing WebRTC for call:', callAttemptId, 'type:', callType);
     this.callType = callType;
 
-    dbg('[WEBRTC MANAGER] initialize(): Requesting user media');
-    // Get user media — request video track only for video calls
-    this.localStream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true
-      },
-      video: callType === 'video'
-    });
-    dbg('[WEBRTC MANAGER] initialize(): User media obtained successfully');
+    if (localStream) {
+      dbg('[WEBRTC MANAGER] initialize(): Using provided local stream');
+      this.localStream = localStream;
+    } else {
+      dbg('[WEBRTC MANAGER] initialize(): Requesting user media');
+      // Get user media — request video track only for video calls
+      this.localStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        },
+        video: callType === 'video'
+      });
+      dbg('[WEBRTC MANAGER] initialize(): User media obtained successfully');
+    }
 
     dbg('[WEBRTC MANAGER] initialize(): Creating peer connection');
     // Create peer connection with dynamic ICE servers
@@ -88,19 +116,21 @@ export class WebRTCManager {
     });
 
     dbg('[WEBRTC MANAGER] initialize(): Setting up remote stream handler');
-    // Handle remote stream — route to video element for video calls, audio element otherwise
+    // Handle remote stream — route to video element for video calls, audio element otherwise.
+    // onRemoteStream overrides default DOM queries (used by embed which manages its own DOM).
     this.peerConnection.ontrack = (event) => {
       dbg('[WEBRTC MANAGER] initialize(): Remote track received:', event.track.kind);
       const remoteStream = event.streams[0];
-      if (this.callType === 'video') {
+      if (this.onRemoteStream) {
+        this.onRemoteStream(remoteStream, this.callType);
+      } else if (this.callType === 'video') {
         this.playRemoteVideo(remoteStream);
       } else {
         this.playRemoteAudio(remoteStream);
       }
 
       dbg('[WEBRTC MANAGER] initialize(): Remote stream established successfully');
-      // Remote stream received - connection established successfully
-      // Server timeout will be cleared automatically when answer is processed
+      this.onConnected?.();
     };
 
     dbg('[WEBRTC MANAGER] initialize(): Setting up ICE candidate handler');
@@ -347,6 +377,9 @@ export class WebRTCManager {
       timestamp: Date.now()
     });
 
+    // Notify consumer (e.g. embed widget) to set a failsafe cleanup timer
+    this.onConnectionFailed?.();
+
     dbg('[WEBRTC MANAGER] handleConnectionFailure(): Cleaning up WebRTC resources');
     // UI cleanup will be handled by call:failed event from server
     // Clean up WebRTC resources immediately
@@ -354,11 +387,12 @@ export class WebRTCManager {
   }
 
   resumePlayback(): void {
-    const audioEl = document.querySelector('audio[autoplay]') as HTMLAudioElement | null;
+    // Check both SvelteKit selectors and embed selectors (data-callsafe-remote)
+    const audioEl = document.querySelector('audio[autoplay], audio[data-callsafe-remote]') as HTMLAudioElement | null;
     if (audioEl?.srcObject) {
       audioEl.play().catch((e) => console.error('[WEBRTC MANAGER] resumePlayback(): audio play failed:', e));
     }
-    const videoEl = document.querySelector('video[data-remote]') as HTMLVideoElement | null;
+    const videoEl = document.querySelector('video[data-remote], video[data-callsafe-remote]') as HTMLVideoElement | null;
     if (videoEl?.srcObject) {
       videoEl.play().catch((e) => console.error('[WEBRTC MANAGER] resumePlayback(): video play failed:', e));
     }
