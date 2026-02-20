@@ -30,7 +30,6 @@ dependencies:
   go_router: ^13.2.0
 
   # WebSocket & Networking
-  socket_io_client: ^2.0.3+1
   web_socket_channel: ^2.4.0
 
   # WebRTC
