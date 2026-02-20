@@ -155,7 +155,10 @@ defmodule CallsafeSignaling.DeviceRegistry do
     ])
 
     Logger.info("DeviceRegistry started")
-    {:ok, %{}}
+    # monitors: %{reference() => device_id} — used to identify which device a :DOWN belongs to.
+    # Keying on the monitor ref (not the PID) avoids false matches when PIDs are reused by
+    # the BEAM after short-lived test connections exhaust the 15-bit PID counter range.
+    {:ok, %{monitors: %{}}}
   end
 
   @impl true
@@ -181,13 +184,18 @@ defmodule CallsafeSignaling.DeviceRegistry do
         :ets.insert(:device_registry, {{:device, device_id}, entry})
         :ets.insert(:device_registry, {{:business, business_id, device_id}, entry})
 
-        # Monitor the connection process for automatic cleanup if connection_pid is not nil
-        if connection_pid != nil do
-          Process.monitor(connection_pid)
-        end
+        # Monitor the connection process and remember the ref so the :DOWN handler
+        # can identify the device without a PID scan.
+        new_monitors =
+          if connection_pid != nil do
+            ref = Process.monitor(connection_pid)
+            Map.put(state.monitors, ref, device_id)
+          else
+            state.monitors
+          end
 
         Logger.debug("Device registered: #{device_id} for business: #{business_id}")
-        {:reply, {:ok, entry}, state}
+        {:reply, {:ok, entry}, %{state | monitors: new_monitors}}
 
       [{_key, _existing_entry}] ->
         {:reply, {:error, :already_registered}, state}
@@ -201,8 +209,12 @@ defmodule CallsafeSignaling.DeviceRegistry do
         business_id = entry.business_id
         :ets.delete(:device_registry, {:device, device_id})
         :ets.delete(:device_registry, {:business, business_id, device_id})
+
+        # Cancel outstanding monitor so no stale :DOWN arrives later.
+        new_monitors = cancel_monitor_for_device(device_id, state.monitors)
+
         Logger.debug("Device unregistered: #{device_id}")
-        {:reply, :ok, state}
+        {:reply, :ok, %{state | monitors: new_monitors}}
 
       [] ->
         {:reply, :ok, state}
@@ -255,13 +267,19 @@ defmodule CallsafeSignaling.DeviceRegistry do
         :ets.insert(:device_registry, {{:device, device_id}, updated_entry})
         :ets.insert(:device_registry, {{:business, business_id, device_id}, updated_entry})
 
-        # Monitor new connection process if not nil
-        if connection_pid != nil do
-          Process.monitor(connection_pid)
-        end
+        # Cancel old monitor, set up new one.
+        monitors = cancel_monitor_for_device(device_id, state.monitors)
+
+        new_monitors =
+          if connection_pid != nil do
+            ref = Process.monitor(connection_pid)
+            Map.put(monitors, ref, device_id)
+          else
+            monitors
+          end
 
         Logger.debug("Device connection_pid updated: #{device_id}")
-        {:reply, {:ok, updated_entry}, state}
+        {:reply, {:ok, updated_entry}, %{state | monitors: new_monitors}}
 
       [] ->
         {:reply, {:error, :not_found}, state}
@@ -269,35 +287,52 @@ defmodule CallsafeSignaling.DeviceRegistry do
   end
 
   @impl true
-  def handle_info({:DOWN, _ref, :process, pid, _reason}, state) do
-    # Find device by connection_pid by scanning all device entries
-    # This is not optimal but ETS map matching with variables is complex
-    all_devices = :ets.match_object(:device_registry, {{:device, :_}, :_})
+  def handle_info({:DOWN, ref, :process, _pid, _reason}, state) do
+    # Use the monitor ref (not the PID) to identify the device.  Keying on the
+    # ref prevents false matches when the BEAM reuses a PID for a new connection
+    # before the stale :DOWN message is processed.
+    case Map.pop(state.monitors, ref) do
+      {nil, _monitors} ->
+        # Unknown monitor — already cancelled or from a reconnect race; ignore.
+        {:noreply, state}
 
-    case Enum.find(all_devices, fn {_key, entry} -> entry.connection_pid == pid end) do
-      {{:device, device_id}, entry} ->
-        business_id = entry.business_id
-        device_type = entry.device_type
+      {device_id, new_monitors} ->
+        case :ets.lookup(:device_registry, {:device, device_id}) do
+          [{_key, entry}] ->
+            business_id = entry.business_id
 
-        case device_type do
-          :mobile ->
-            # Mobile devices persist - just clear connection_pid
-            updated_entry = %{entry | connection_pid: nil}
-            :ets.insert(:device_registry, {{:device, device_id}, updated_entry})
-            :ets.insert(:device_registry, {{:business, business_id, device_id}, updated_entry})
-            Logger.debug("Mobile device connection DOWN, persisting device: #{device_id}")
+            case entry.device_type do
+              :mobile ->
+                # Mobile devices persist — just clear connection_pid.
+                updated_entry = %{entry | connection_pid: nil}
+                :ets.insert(:device_registry, {{:device, device_id}, updated_entry})
+                :ets.insert(:device_registry, {{:business, business_id, device_id}, updated_entry})
+                Logger.debug("Mobile device connection DOWN, persisting device: #{device_id}")
 
-          :web ->
-            # Web devices are removed completely
-            :ets.delete(:device_registry, {:device, device_id})
-            :ets.delete(:device_registry, {:business, business_id, device_id})
-            Logger.debug("Web device connection DOWN, auto-unregistered: #{device_id}")
+              :web ->
+                # Web devices are removed completely.
+                :ets.delete(:device_registry, {:device, device_id})
+                :ets.delete(:device_registry, {:business, business_id, device_id})
+                Logger.debug("Web device connection DOWN, auto-unregistered: #{device_id}")
+            end
+
+          [] ->
+            :ok
         end
 
-      nil ->
-        :ok
+        {:noreply, %{state | monitors: new_monitors}}
     end
+  end
 
-    {:noreply, state}
+  # Cancel the monitor associated with device_id (if any) and return the updated map.
+  defp cancel_monitor_for_device(device_id, monitors) do
+    case Enum.find(monitors, fn {_ref, id} -> id == device_id end) do
+      {ref, _id} ->
+        Process.demonitor(ref, [:flush])
+        Map.delete(monitors, ref)
+
+      nil ->
+        monitors
+    end
   end
 end
