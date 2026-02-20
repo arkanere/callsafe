@@ -1,11 +1,21 @@
+import 'package:flutter_webrtc/flutter_webrtc.dart' as fwrtc;
 import 'package:fpdart/fpdart.dart';
 import '../protocol/protocol.dart';
 
 /// Platform channel contract for WebRTC operations
 /// Defines interface between Flutter business logic and native implementations
 abstract class WebRTCPlatform {
+  /// Local video renderer (non-null only during active video calls)
+  fwrtc.RTCVideoRenderer? get localRenderer;
+
+  /// Remote video renderer (non-null only during active video calls)
+  fwrtc.RTCVideoRenderer? get remoteRenderer;
+
   /// Initialize peer connection for call
-  Task<Unit> initializePeerConnection(String callAttemptId);
+  Task<Unit> initializePeerConnection(
+    String callAttemptId, {
+    CallType callType = CallType.voice,
+  });
 
   /// Create WebRTC offer
   Task<RTCSessionDescriptionInit> createOffer(String callAttemptId);
@@ -66,7 +76,16 @@ class MockWebRTCPlatform implements WebRTCPlatform {
   void Function(String, String)? _connectionStateCallback;
 
   @override
-  Task<Unit> initializePeerConnection(String callAttemptId) {
+  fwrtc.RTCVideoRenderer? get localRenderer => null;
+
+  @override
+  fwrtc.RTCVideoRenderer? get remoteRenderer => null;
+
+  @override
+  Task<Unit> initializePeerConnection(
+    String callAttemptId, {
+    CallType callType = CallType.voice,
+  }) {
     return Task(() async {
       _connections[callAttemptId] = true;
       Future.delayed(const Duration(milliseconds: 100), () {

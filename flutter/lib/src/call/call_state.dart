@@ -24,6 +24,7 @@ class CallSession with _$CallSession {
     RTCSessionDescriptionInit? remoteAnswer,
     @Default([]) List<RTCIceCandidate> localCandidates,
     @Default([]) List<RTCIceCandidate> remoteCandidates,
+    @Default(true) bool isVideoEnabled,
   }) = _CallSession;
 
   const CallSession._();

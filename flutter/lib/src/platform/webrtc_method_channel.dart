@@ -1,23 +1,102 @@
-import 'package:flutter/services.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart' as fwrtc;
 import 'package:fpdart/fpdart.dart';
 import '../protocol/protocol.dart';
 import 'webrtc_platform.dart';
 
-/// MethodChannel implementation of WebRTCPlatform
-/// Phase 1: Pure channel plumbing - routes calls to native Android/iOS
-/// Phase 2: Native side will integrate actual WebRTC implementation
+const _iceConfig = {
+  'iceServers': [
+    {'urls': 'stun:stun.l.google.com:19302'},
+  ],
+};
+
+/// WebRTC platform implementation using flutter_webrtc directly.
+/// Manages peer connections, local/remote media streams, and video renderers.
 class WebRTCMethodChannel implements WebRTCPlatform {
-  static const MethodChannel _channel = MethodChannel('com.callsafe.webrtc');
+  final Map<String, fwrtc.RTCPeerConnection> _connections = {};
+  fwrtc.MediaStream? _localStream;
+  fwrtc.MediaStream? _remoteStream;
+
+  final fwrtc.RTCVideoRenderer _localRenderer = fwrtc.RTCVideoRenderer();
+  final fwrtc.RTCVideoRenderer _remoteRenderer = fwrtc.RTCVideoRenderer();
+  bool _renderersInitialized = false;
 
   void Function(String, RTCIceCandidate)? _iceCandidateCallback;
   void Function(String, String)? _connectionStateCallback;
 
   @override
-  Task<Unit> initializePeerConnection(String callAttemptId) {
+  fwrtc.RTCVideoRenderer? get localRenderer =>
+      _renderersInitialized ? _localRenderer : null;
+
+  @override
+  fwrtc.RTCVideoRenderer? get remoteRenderer =>
+      _renderersInitialized ? _remoteRenderer : null;
+
+  @override
+  Task<Unit> initializePeerConnection(
+    String callAttemptId, {
+    CallType callType = CallType.voice,
+  }) {
     return Task(() async {
-      await _channel.invokeMethod('initializePeerConnection', {
-        'callAttemptId': callAttemptId,
-      });
+      // Initialize video renderers for video calls
+      if (callType == CallType.video && !_renderersInitialized) {
+        await _localRenderer.initialize();
+        await _remoteRenderer.initialize();
+        _renderersInitialized = true;
+      }
+
+      // Acquire local media
+      final constraints = callType == CallType.video
+          ? {
+              'audio': true,
+              'video': {'facingMode': 'user'},
+            }
+          : {'audio': true, 'video': false};
+
+      _localStream =
+          await fwrtc.navigator.mediaDevices.getUserMedia(constraints);
+
+      if (_renderersInitialized) {
+        _localRenderer.srcObject = _localStream;
+      }
+
+      // Create peer connection
+      final pc = await fwrtc.createPeerConnection(_iceConfig);
+      _connections[callAttemptId] = pc;
+
+      // Add local tracks
+      for (final track in _localStream!.getTracks()) {
+        await pc.addTrack(track, _localStream!);
+      }
+
+      // ICE candidates → relay to CallManager
+      pc.onIceCandidate = (candidate) {
+        if (candidate.candidate != null) {
+          _iceCandidateCallback?.call(
+            callAttemptId,
+            RTCIceCandidate(
+              candidate: candidate.candidate!,
+              sdpMLineIndex: candidate.sdpMLineIndex,
+              sdpMid: candidate.sdpMid,
+            ),
+          );
+        }
+      };
+
+      // Connection state changes
+      pc.onConnectionState = (state) {
+        _connectionStateCallback?.call(callAttemptId, state.name);
+      };
+
+      // Remote tracks → attach to renderer
+      pc.onTrack = (event) {
+        if (event.streams.isNotEmpty) {
+          _remoteStream = event.streams[0];
+          if (_renderersInitialized) {
+            _remoteRenderer.srcObject = _remoteStream;
+          }
+        }
+      };
+
       return unit;
     });
   }
@@ -25,30 +104,20 @@ class WebRTCMethodChannel implements WebRTCPlatform {
   @override
   Task<RTCSessionDescriptionInit> createOffer(String callAttemptId) {
     return Task(() async {
-      final result = await _channel.invokeMethod<Map<Object?, Object?>>(
-        'createOffer',
-        {'callAttemptId': callAttemptId},
-      );
-
-      return RTCSessionDescriptionInit(
-        type: result!['type'] as String,
-        sdp: result['sdp'] as String,
-      );
+      final pc = _connections[callAttemptId]!;
+      final offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      return RTCSessionDescriptionInit(type: offer.type!, sdp: offer.sdp);
     });
   }
 
   @override
   Task<RTCSessionDescriptionInit> createAnswer(String callAttemptId) {
     return Task(() async {
-      final result = await _channel.invokeMethod<Map<Object?, Object?>>(
-        'createAnswer',
-        {'callAttemptId': callAttemptId},
-      );
-
-      return RTCSessionDescriptionInit(
-        type: result!['type'] as String,
-        sdp: result['sdp'] as String,
-      );
+      final pc = _connections[callAttemptId]!;
+      final answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      return RTCSessionDescriptionInit(type: answer.type!, sdp: answer.sdp);
     });
   }
 
@@ -58,13 +127,10 @@ class WebRTCMethodChannel implements WebRTCPlatform {
     RTCSessionDescriptionInit description,
   ) {
     return Task(() async {
-      await _channel.invokeMethod('setLocalDescription', {
-        'callAttemptId': callAttemptId,
-        'description': {
-          'type': description.type,
-          'sdp': description.sdp,
-        },
-      });
+      final pc = _connections[callAttemptId]!;
+      await pc.setLocalDescription(
+        fwrtc.RTCSessionDescription(description.sdp, description.type),
+      );
       return unit;
     });
   }
@@ -75,13 +141,10 @@ class WebRTCMethodChannel implements WebRTCPlatform {
     RTCSessionDescriptionInit description,
   ) {
     return Task(() async {
-      await _channel.invokeMethod('setRemoteDescription', {
-        'callAttemptId': callAttemptId,
-        'description': {
-          'type': description.type,
-          'sdp': description.sdp,
-        },
-      });
+      final pc = _connections[callAttemptId]!;
+      await pc.setRemoteDescription(
+        fwrtc.RTCSessionDescription(description.sdp, description.type),
+      );
       return unit;
     });
   }
@@ -92,14 +155,12 @@ class WebRTCMethodChannel implements WebRTCPlatform {
     RTCIceCandidate candidate,
   ) {
     return Task(() async {
-      await _channel.invokeMethod('addIceCandidate', {
-        'callAttemptId': callAttemptId,
-        'candidate': {
-          'candidate': candidate.candidate,
-          'sdpMLineIndex': candidate.sdpMLineIndex,
-          'sdpMid': candidate.sdpMid,
-        },
-      });
+      final pc = _connections[callAttemptId]!;
+      await pc.addCandidate(fwrtc.RTCIceCandidate(
+        candidate.candidate,
+        candidate.sdpMid,
+        candidate.sdpMLineIndex,
+      ));
       return unit;
     });
   }
@@ -107,9 +168,24 @@ class WebRTCMethodChannel implements WebRTCPlatform {
   @override
   Task<Unit> closePeerConnection(String callAttemptId) {
     return Task(() async {
-      await _channel.invokeMethod('closePeerConnection', {
-        'callAttemptId': callAttemptId,
-      });
+      final pc = _connections.remove(callAttemptId);
+      await pc?.close();
+
+      for (final track in _localStream?.getTracks() ?? []) {
+        await track.stop();
+      }
+      await _localStream?.dispose();
+      _localStream = null;
+
+      await _remoteStream?.dispose();
+      _remoteStream = null;
+
+      if (_renderersInitialized) {
+        _localRenderer.srcObject = null;
+        _remoteRenderer.srcObject = null;
+        _renderersInitialized = false;
+      }
+
       return unit;
     });
   }
@@ -117,10 +193,9 @@ class WebRTCMethodChannel implements WebRTCPlatform {
   @override
   Task<Unit> setAudioEnabled(String callAttemptId, bool enabled) {
     return Task(() async {
-      await _channel.invokeMethod('setAudioEnabled', {
-        'callAttemptId': callAttemptId,
-        'enabled': enabled,
-      });
+      for (final track in _localStream?.getAudioTracks() ?? []) {
+        track.enabled = enabled;
+      }
       return unit;
     });
   }
@@ -128,10 +203,9 @@ class WebRTCMethodChannel implements WebRTCPlatform {
   @override
   Task<Unit> setVideoEnabled(String callAttemptId, bool enabled) {
     return Task(() async {
-      await _channel.invokeMethod('setVideoEnabled', {
-        'callAttemptId': callAttemptId,
-        'enabled': enabled,
-      });
+      for (final track in _localStream?.getVideoTracks() ?? []) {
+        track.enabled = enabled;
+      }
       return unit;
     });
   }
@@ -139,9 +213,10 @@ class WebRTCMethodChannel implements WebRTCPlatform {
   @override
   Task<Unit> flipCamera(String callAttemptId) {
     return Task(() async {
-      await _channel.invokeMethod('flipCamera', {
-        'callAttemptId': callAttemptId,
-      });
+      final videoTrack = _localStream?.getVideoTracks().firstOrNull;
+      if (videoTrack != null) {
+        await fwrtc.Helper.switchCamera(videoTrack);
+      }
       return unit;
     });
   }
@@ -149,15 +224,11 @@ class WebRTCMethodChannel implements WebRTCPlatform {
   @override
   Task<MediaCapabilities> getMediaCapabilities() {
     return Task(() async {
-      final result = await _channel.invokeMethod<Map<Object?, Object?>>(
-        'getMediaCapabilities',
-      );
-
-      return MediaCapabilities(
-        canSendAudio: result!['canSendAudio'] as bool,
-        canSendVideo: result['canSendVideo'] as bool,
-        canReceiveAudio: result['canReceiveAudio'] as bool,
-        canReceiveVideo: result['canReceiveVideo'] as bool,
+      return const MediaCapabilities(
+        canSendAudio: true,
+        canSendVideo: true,
+        canReceiveAudio: true,
+        canReceiveVideo: true,
       );
     });
   }
@@ -167,7 +238,6 @@ class WebRTCMethodChannel implements WebRTCPlatform {
     void Function(String callAttemptId, RTCIceCandidate) callback,
   ) {
     _iceCandidateCallback = callback;
-    // Event channel integration will come in Phase 2
   }
 
   @override
@@ -175,11 +245,23 @@ class WebRTCMethodChannel implements WebRTCPlatform {
     void Function(String callAttemptId, String state) callback,
   ) {
     _connectionStateCallback = callback;
-    // Event channel integration will come in Phase 2
   }
 
   @override
   void dispose() {
+    for (final pc in _connections.values) {
+      pc.close();
+    }
+    _connections.clear();
+    for (final track in _localStream?.getTracks() ?? []) {
+      track.stop();
+    }
+    _localStream?.dispose();
+    _remoteStream?.dispose();
+    if (_renderersInitialized) {
+      _localRenderer.dispose();
+      _remoteRenderer.dispose();
+    }
     _iceCandidateCallback = null;
     _connectionStateCallback = null;
   }

@@ -106,8 +106,10 @@ class CallManager extends StateNotifier<CallManagerState> {
 
       _signaling.emit(MessageTypes.callInitiate, payload.toJson());
 
-      // Initialize WebRTC
-      await _webrtc.initializePeerConnection(callAttemptId).run();
+      // Initialize WebRTC with call type for video track setup
+      await _webrtc
+          .initializePeerConnection(callAttemptId, callType: callType)
+          .run();
 
       return callAttemptId;
     });
@@ -138,8 +140,13 @@ class CallManager extends StateNotifier<CallManagerState> {
 
       _signaling.emit(MessageTypes.callAccept, payload.toJson());
 
-      // Initialize WebRTC
-      await _webrtc.initializePeerConnection(session.callAttemptId).run();
+      // Initialize WebRTC with call type for video track setup
+      await _webrtc
+          .initializePeerConnection(
+            session.callAttemptId,
+            callType: session.callType,
+          )
+          .run();
 
       return unit;
     });
@@ -198,6 +205,54 @@ class CallManager extends StateNotifier<CallManagerState> {
         session.copyWith(endReason: reason),
         CallState.ended,
       );
+
+      return unit;
+    });
+  }
+
+  /// Toggle camera on/off during a video call
+  Task<Unit> toggleCamera() {
+    return Task(() async {
+      final session = state.currentCall;
+      if (session == null || !session.isActive) return unit;
+
+      final newEnabled = !session.isVideoEnabled;
+
+      await _webrtc.setVideoEnabled(session.callAttemptId, newEnabled).run();
+
+      state = state.copyWith(
+        currentCall: session.copyWith(isVideoEnabled: newEnabled),
+      );
+
+      final action = newEnabled
+          ? MediaToggleAction.enableCamera
+          : MediaToggleAction.disableCamera;
+
+      _signaling.emit(MessageTypes.mediaToggle, MediaTogglePayload(
+        callAttemptId: session.callAttemptId,
+        action: action,
+        success: true,
+        timestamp: DateTime.now().millisecondsSinceEpoch,
+      ).toJson());
+
+      return unit;
+    });
+  }
+
+  /// Flip camera between front and back
+  Task<Unit> flipCamera() {
+    return Task(() async {
+      final session = state.currentCall;
+      if (session == null || !session.isActive) return unit;
+
+      await _webrtc.flipCamera(session.callAttemptId).run();
+
+      _signaling.emit(MessageTypes.mediaToggle, MediaTogglePayload(
+        callAttemptId: session.callAttemptId,
+        action: MediaToggleAction.flipCamera,
+        success: true,
+        timestamp: DateTime.now().millisecondsSinceEpoch,
+      ).toJson());
 
       return unit;
     });
@@ -342,6 +397,9 @@ class CallManager extends StateNotifier<CallManagerState> {
           _handleWebRTCIceCandidate(
               WebRTCIceCandidatePayload.fromJson(payload));
           break;
+        case MessageTypes.mediaToggle:
+          _handleMediaToggle(MediaTogglePayload.fromJson(payload));
+          break;
       }
     });
 
@@ -377,6 +435,21 @@ class CallManager extends StateNotifier<CallManagerState> {
 
     state = state.copyWith(
       currentCall: session!.copyWith(state: CallState.connecting),
+    );
+
+    // Caller creates and sends WebRTC offer now that callee has accepted
+    _createAndSendOffer(session.callAttemptId);
+  }
+
+  Future<void> _createAndSendOffer(String callAttemptId) async {
+    final offer = await _webrtc.createOffer(callAttemptId).run();
+    _signaling.emit(
+      MessageTypes.webrtcOffer,
+      WebRTCOfferPayload(
+        callAttemptId: callAttemptId,
+        offer: offer,
+        timestamp: DateTime.now().millisecondsSinceEpoch,
+      ).toJson(),
     );
   }
 
@@ -445,6 +518,23 @@ class CallManager extends StateNotifier<CallManagerState> {
     if (session?.callAttemptId != payload.callAttemptId) return;
 
     handleIceCandidate(payload.candidate).run();
+  }
+
+  /// Handle media:toggle from peer (camera on/off notification)
+  void _handleMediaToggle(MediaTogglePayload payload) {
+    final session = state.currentCall;
+    if (session?.callAttemptId != payload.callAttemptId) return;
+
+    // Reflect peer's camera state in our local state when it affects video
+    if (payload.action == MediaToggleAction.disableCamera) {
+      state = state.copyWith(
+        currentCall: session!.copyWith(isVideoEnabled: false),
+      );
+    } else if (payload.action == MediaToggleAction.enableCamera) {
+      state = state.copyWith(
+        currentCall: session!.copyWith(isVideoEnabled: true),
+      );
+    }
   }
 
   /// End call and move to history (pure transformation)
