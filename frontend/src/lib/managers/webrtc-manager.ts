@@ -323,6 +323,10 @@ export class WebRTCManager {
     console.log('[WEBRTC MANAGER] cleanup(): Cleanup complete');
   }
 
+  getLocalStream(): MediaStream | null {
+    return this.localStream;
+  }
+
   getConnectionState(): RTCPeerConnectionState | null {
     const state = this.peerConnection?.connectionState || null;
     console.log('[WEBRTC MANAGER] getConnectionState(): Getting connection state:', state);

@@ -5,6 +5,7 @@ export interface CallState {
     state: 'incoming' | 'connected' | 'ended';
     startTime: number;
     duration: number;
+    callType: 'voice' | 'video';
   } | null;
   webrtc: {
     peerConnection: RTCPeerConnection | null;
@@ -24,6 +25,7 @@ export interface CallState {
 export interface CustomerCallState {
   callAttemptId: string | null;
   state: 'idle' | 'connecting' | 'ringing' | 'connected' | 'ended' | 'failed';
+  callType: 'voice' | 'video';
   webrtc: {
     peerConnection: RTCPeerConnection | null;
     localStream: MediaStream | null;
@@ -34,6 +36,7 @@ export interface CustomerCallState {
     showCallControls: boolean;
     statusMessage: string;
     isMuted: boolean;
+    isVideoEnabled: boolean;
   };
   handle: string;
   sourceId: string;

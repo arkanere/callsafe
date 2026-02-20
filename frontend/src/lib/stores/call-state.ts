@@ -32,6 +32,7 @@ callState.subscribe((state) => {
 const initialCustomerCallState: CustomerCallState = {
   callAttemptId: null,
   state: 'idle',
+  callType: 'voice',
   webrtc: {
     peerConnection: null,
     localStream: null,
@@ -41,7 +42,8 @@ const initialCustomerCallState: CustomerCallState = {
     showCallButton: true,
     showCallControls: false,
     statusMessage: '',
-    isMuted: false
+    isMuted: false,
+    isVideoEnabled: true
   },
   handle: '',
   sourceId: ''

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { page } from '$app/stores';
   import { onMount, onDestroy } from 'svelte';
-  import { MessageTypes } from '@callsafe/protocol';
+  import { MessageTypes, MediaToggleAction } from '@callsafe/protocol';
   import { env } from '$env/dynamic/public';
   import { WsTransport } from '$lib/transport/ws-transport';
   import { WebRTCManager } from '$lib/managers/webrtc-manager';
@@ -19,8 +19,10 @@
   // Call state
   let callAttemptId: string | null = null;
   let callState: 'idle' | 'connecting' | 'ringing' | 'connected' | 'ended' | 'failed' = 'idle';
+  let callType: 'voice' | 'video' = 'voice';
   let statusMessage = '';
   let isMuted = false;
+  let isVideoEnabled = true;
   let showCallButton = true;
   let showCallControls = false;
   let cleanupTimeout: any = null;
@@ -30,7 +32,6 @@
     console.log('[EMBED PAGE] onMount(): Handle:', handle);
     console.log('[EMBED PAGE] onMount(): Source ID:', sourceId);
 
-    // Initialize customer call state
     customerCallState.update(state => ({
       ...state,
       handle,
@@ -45,32 +46,21 @@
     cleanup();
   });
 
-  async function initiateCall() {
-    console.log('[EMBED PAGE] initiateCall(): Initiate call requested, current state:', callState);
+  async function initiateCall(type: 'voice' | 'video') {
+    console.log('[EMBED PAGE] initiateCall(): Initiate call requested, type:', type, 'current state:', callState);
     if (callState !== 'idle') {
       console.log('[EMBED PAGE] initiateCall(): Call already in progress, ignoring');
       return;
     }
+
+    callType = type;
 
     console.log('[EMBED PAGE] initiateCall(): Starting call initiation process');
     try {
       callAttemptId = generateUUID();
       console.log('[EMBED PAGE] initiateCall(): Generated call attempt ID:', callAttemptId);
 
-      console.log('[EMBED PAGE] initiateCall(): Requesting user media access');
-      // Get user media first
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        },
-        video: false
-      });
-      console.log('[EMBED PAGE] initiateCall(): User media obtained successfully');
-
       console.log('[EMBED PAGE] initiateCall(): Updating UI state to connecting');
-      // Update UI state
       callState = 'connecting';
       statusMessage = 'Finding agent...';
       showCallButton = false;
@@ -79,35 +69,37 @@
       customerCallState.update(state => ({
         ...state,
         callAttemptId,
+        callType: type,
         state: 'connecting',
-        webrtc: {
-          ...state.webrtc,
-          localStream: stream
-        },
         ui: {
           ...state.ui,
           showCallButton: false,
           showCallControls: true,
-          statusMessage: 'Finding agent...'
+          statusMessage: 'Finding agent...',
+          isVideoEnabled: true
         }
       }));
 
       console.log('[EMBED PAGE] initiateCall(): Connecting to signaling server');
-      // Connect to signaling server
       await connectToSignalingServer();
       console.log('[EMBED PAGE] initiateCall(): Connected to signaling server');
 
       console.log('[EMBED PAGE] initiateCall(): Initializing WebRTC');
-      // Initialize WebRTC
-      await initializeCustomerWebRTC(callAttemptId, stream);
+      await initializeCustomerWebRTC(callAttemptId, type);
       console.log('[EMBED PAGE] initiateCall(): WebRTC initialized');
 
       console.log('[EMBED PAGE] initiateCall(): Sending call initiate event');
-      // Send call initiate - handle is from URL path parameter
       socket!.emit(MessageTypes.CALL_INITIATE, {
         callAttemptId,
         handle,
         sourceId,
+        callType: type,
+        mediaCapabilities: {
+          canSendAudio: true,
+          canSendVideo: type === 'video',
+          canReceiveAudio: true,
+          canReceiveVideo: type === 'video'
+        },
         timestamp: Date.now()
       });
       console.log('[EMBED PAGE] initiateCall(): Call initiate event sent');
@@ -126,7 +118,6 @@
     socket = new WsTransport(wsUrl);
     console.log('[EMBED PAGE] connectToSignalingServer(): WsTransport instance created');
 
-    // Register event handlers before connecting so no messages are missed
     setupSocketEventHandlers();
 
     await socket.connect();
@@ -157,7 +148,6 @@
       }));
 
       console.log('[EMBED PAGE] setupSocketEventHandlers(): Creating WebRTC offer');
-      // Create and send WebRTC offer
       if (webrtcManager) {
         try {
           await webrtcManager.createOffer(data.callAttemptId);
@@ -179,7 +169,6 @@
         try {
           await webrtcManager.setRemoteDescription(data.answer);
           console.log('[EMBED PAGE] setupSocketEventHandlers(): Remote description set successfully');
-          // Server handles timeout management - connection is progressing
         } catch (error) {
           console.error('[EMBED PAGE] setupSocketEventHandlers(): Failed to set remote description:', error);
           handleConnectionFailure();
@@ -221,7 +210,6 @@
       handleCallFailure('No response from agents. Please try again.');
     });
 
-    // Call failed (WebRTC connection failures and timeouts)
     socket.on(MessageTypes.CALL_FAILED, (raw) => {
       const data = raw as { reason?: string };
       console.log('[EMBED PAGE] setupSocketEventHandlers(): Call failed event received:', data);
@@ -235,25 +223,34 @@
     socket.on(MessageTypes.CALL_ENDED, (_data) => {
       console.log('[EMBED PAGE] setupSocketEventHandlers(): Call ended event received');
 
-      // Clear any pending cleanup timeout since server responded
       if (cleanupTimeout) {
         clearTimeout(cleanupTimeout);
         cleanupTimeout = null;
       }
 
-      cleanup(); // Call cleanup directly - server already confirmed call end
+      cleanup();
     });
 
     console.log('[EMBED PAGE] setupSocketEventHandlers(): All socket event handlers setup complete');
   }
 
-  async function initializeCustomerWebRTC(callId: string, localStream: MediaStream) {
+  async function initializeCustomerWebRTC(callId: string, type: 'voice' | 'video') {
     webrtcManager = new WebRTCManager(socket!);
 
-    // Initialize with local stream
-    await webrtcManager.initialize(callId);
+    await webrtcManager.initialize(callId, type);
 
-    // Set up connection success handler
+    // For video calls, bind local stream to the preview element
+    if (type === 'video') {
+      const localVideoEl = document.querySelector('video[data-local]') as HTMLVideoElement;
+      if (localVideoEl) {
+        const localStream = webrtcManager.getLocalStream();
+        if (localStream) {
+          localVideoEl.srcObject = localStream;
+          localVideoEl.play().catch(() => {});
+        }
+      }
+    }
+
     const checkConnection = () => {
       const connectionState = webrtcManager?.getConnectionState();
       if (connectionState === 'connected') {
@@ -271,7 +268,6 @@
       }
     };
 
-    // Check connection state periodically
     const connectionCheckInterval = setInterval(() => {
       checkConnection();
       if (callState === 'connected' || callState === 'ended' || callState === 'failed') {
@@ -291,7 +287,6 @@
   function handleConnectionFailure() {
     console.error('[EMBED PAGE] handleConnectionFailure(): Customer WebRTC connection failed');
 
-    // Emit call:failed event
     if (socket && callAttemptId) {
       socket.emit(MessageTypes.CALL_FAILED, {
         callAttemptId: callAttemptId,
@@ -299,8 +294,6 @@
         timestamp: Date.now()
       });
     }
-
-    // UI cleanup will be handled by call:failed event from server
   }
 
   function handleCallFailure(message: string) {
@@ -318,7 +311,6 @@
       }
     }));
 
-    // Auto-reset after 3 seconds
     setTimeout(() => resetCustomerCallState(), 3000);
   }
 
@@ -326,16 +318,20 @@
     console.error('[EMBED PAGE] handleMediaAccessError(): Media access error:', error);
 
     callState = 'failed';
-    statusMessage = 'Please allow microphone access to make calls.';
     showCallButton = true;
     showCallControls = false;
+
+    const isCameraError = (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') && callType === 'video';
+    statusMessage = isCameraError
+      ? 'Please allow camera and microphone access for video calls.'
+      : 'Please allow microphone access to make calls.';
 
     customerCallState.update(state => ({
       ...state,
       state: 'failed',
       ui: {
         ...state.ui,
-        statusMessage: 'Please allow microphone access to make calls.',
+        statusMessage,
         showCallControls: false,
         showCallButton: true
       }
@@ -350,15 +346,12 @@
         reason: 'user_action',
         timestamp: Date.now()
       });
-      // Don't cleanup here - wait for server's call:ended response to confirm
 
-      // Failsafe: cleanup after 5 seconds if server doesn't respond
       cleanupTimeout = setTimeout(() => {
         console.log('[EMBED PAGE] endCall(): Server didn\'t respond to call:end, forcing cleanup');
         cleanup();
       }, 5000);
     } else {
-      // If no socket or callAttemptId, cleanup immediately
       cleanup();
     }
   }
@@ -377,48 +370,72 @@
     }));
   }
 
+  function toggleCamera() {
+    if (!webrtcManager || callType !== 'video') return;
+
+    const isDisabled = webrtcManager.toggleCamera();
+    isVideoEnabled = !isDisabled;
+
+    customerCallState.update(state => ({
+      ...state,
+      ui: {
+        ...state.ui,
+        isVideoEnabled
+      }
+    }));
+
+    if (socket && callAttemptId) {
+      socket.emit(MessageTypes.MEDIA_TOGGLE, {
+        callAttemptId,
+        action: isDisabled ? MediaToggleAction.DISABLE_CAMERA : MediaToggleAction.ENABLE_CAMERA,
+        success: true,
+        timestamp: Date.now()
+      });
+    }
+  }
+
   function resetCustomerCallState() {
     callState = 'idle';
     callAttemptId = null;
+    callType = 'voice';
     statusMessage = '';
     isMuted = false;
+    isVideoEnabled = true;
     showCallButton = true;
     showCallControls = false;
 
     customerCallState.update(state => ({
       ...state,
       callAttemptId: null,
+      callType: 'voice',
       state: 'idle',
       ui: {
         ...state.ui,
         showCallButton: true,
         showCallControls: false,
         statusMessage: '',
-        isMuted: false
+        isMuted: false,
+        isVideoEnabled: true
       }
     }));
   }
 
   function cleanup() {
-    // Clear any pending cleanup timeout
     if (cleanupTimeout) {
       clearTimeout(cleanupTimeout);
       cleanupTimeout = null;
     }
 
-    // Stop media streams and close connections
     if (webrtcManager) {
       webrtcManager.cleanup();
       webrtcManager = null;
     }
 
-    // Disconnect socket
     if (socket) {
       socket.disconnect();
       socket = null;
     }
 
-    // Reset state
     resetCustomerCallState();
   }
 
@@ -460,30 +477,59 @@
     <!-- Main Call Interface -->
     <div class="space-y-4">
       {#if callState === 'idle'}
+        <!-- Voice Call button -->
         <button
-          on:click={initiateCall}
+          on:click={() => initiateCall('voice')}
           disabled={!handle}
           class="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-semibold py-4 px-6 rounded-xl transition-colors duration-200 flex items-center justify-center"
         >
           <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
           </svg>
-          Start Call
+          Voice Call
         </button>
+
+        <!-- Video Call button -->
+        <button
+          on:click={() => initiateCall('video')}
+          disabled={!handle}
+          class="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-semibold py-4 px-6 rounded-xl transition-colors duration-200 flex items-center justify-center"
+        >
+          <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.723v6.554a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+          </svg>
+          Video Call
+        </button>
+
       {:else if callState === 'connecting' || callState === 'ringing'}
+
+        <!-- Video preview area (video calls only) -->
+        {#if callType === 'video'}
+          <div class="relative rounded-xl overflow-hidden bg-gray-900 mb-4" style="min-height: 200px;">
+            <video data-remote autoplay playsinline class="w-full h-full object-cover"></video>
+            <video data-local autoplay playsinline muted class="absolute bottom-2 right-2 w-24 rounded-lg object-cover bg-gray-800 border border-gray-600"></video>
+          </div>
+        {/if}
+
         <div class="text-center py-4">
           <div class="animate-pulse">
-            <div class="w-16 h-16 bg-yellow-200 rounded-full mx-auto mb-4 flex items-center justify-center">
-              <svg class="w-8 h-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
-              </svg>
+            <div class="w-16 h-16 {callType === 'video' ? 'bg-blue-200' : 'bg-yellow-200'} rounded-full mx-auto mb-4 flex items-center justify-center">
+              {#if callType === 'video'}
+                <svg class="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.723v6.554a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                </svg>
+              {:else}
+                <svg class="w-8 h-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
+                </svg>
+              {/if}
             </div>
             <p class="text-gray-600 mb-4">{statusMessage}</p>
           </div>
         </div>
 
         <!-- Call Controls during connecting -->
-        <div class="flex space-x-4">
+        <div class="flex space-x-2">
           <button
             on:click={toggleMute}
             class="flex-1 {isMuted ? 'bg-red-600 hover:bg-red-700' : 'bg-gray-600 hover:bg-gray-700'} text-white font-semibold py-3 px-4 rounded-xl transition-colors duration-200 flex items-center justify-center"
@@ -502,6 +548,25 @@
             {/if}
           </button>
 
+          {#if callType === 'video'}
+            <button
+              on:click={toggleCamera}
+              class="flex-1 {!isVideoEnabled ? 'bg-red-600 hover:bg-red-700' : 'bg-gray-600 hover:bg-gray-700'} text-white font-semibold py-3 px-4 rounded-xl transition-colors duration-200 flex items-center justify-center"
+            >
+              {#if !isVideoEnabled}
+                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.723v6.554a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2zM3 3l18 18"/>
+                </svg>
+                Camera Off
+              {:else}
+                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.723v6.554a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                </svg>
+                Camera
+              {/if}
+            </button>
+          {/if}
+
           <button
             on:click={endCall}
             class="flex-1 bg-red-600 hover:bg-red-700 text-white font-semibold py-3 px-4 rounded-xl transition-colors duration-200 flex items-center justify-center"
@@ -509,21 +574,37 @@
             <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 8l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M3 3l18 18"/>
             </svg>
-            End Call
+            End
           </button>
         </div>
+
       {:else if callState === 'connected'}
-        <div class="text-center py-4">
-          <div class="w-16 h-16 bg-green-200 rounded-full mx-auto mb-4 flex items-center justify-center">
-            <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
-            </svg>
+
+        <!-- Video area (video calls only) -->
+        {#if callType === 'video'}
+          <div class="relative rounded-xl overflow-hidden bg-gray-900 mb-4" style="min-height: 200px;">
+            <video data-remote autoplay playsinline class="w-full h-full object-cover"></video>
+            <video data-local autoplay playsinline muted class="absolute bottom-2 right-2 w-24 rounded-lg object-cover bg-gray-800 border border-gray-600"></video>
           </div>
-          <p class="text-green-600 font-semibold mb-4">Connected to Agent</p>
+        {/if}
+
+        <div class="text-center py-4">
+          <div class="w-16 h-16 {callType === 'video' ? 'bg-blue-200' : 'bg-green-200'} rounded-full mx-auto mb-4 flex items-center justify-center">
+            {#if callType === 'video'}
+              <svg class="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.723v6.554a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+              </svg>
+            {:else}
+              <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
+              </svg>
+            {/if}
+          </div>
+          <p class="{callType === 'video' ? 'text-blue-600' : 'text-green-600'} font-semibold mb-4">Connected to Agent</p>
         </div>
 
         <!-- Call Controls -->
-        <div class="flex space-x-4">
+        <div class="flex space-x-2">
           <button
             on:click={toggleMute}
             class="flex-1 {isMuted ? 'bg-red-600 hover:bg-red-700' : 'bg-gray-600 hover:bg-gray-700'} text-white font-semibold py-3 px-4 rounded-xl transition-colors duration-200 flex items-center justify-center"
@@ -542,6 +623,25 @@
             {/if}
           </button>
 
+          {#if callType === 'video'}
+            <button
+              on:click={toggleCamera}
+              class="flex-1 {!isVideoEnabled ? 'bg-red-600 hover:bg-red-700' : 'bg-gray-600 hover:bg-gray-700'} text-white font-semibold py-3 px-4 rounded-xl transition-colors duration-200 flex items-center justify-center"
+            >
+              {#if !isVideoEnabled}
+                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.723v6.554a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2zM3 3l18 18"/>
+                </svg>
+                Camera Off
+              {:else}
+                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.723v6.554a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                </svg>
+                Camera
+              {/if}
+            </button>
+          {/if}
+
           <button
             on:click={endCall}
             class="flex-1 bg-red-600 hover:bg-red-700 text-white font-semibold py-3 px-4 rounded-xl transition-colors duration-200 flex items-center justify-center"
@@ -549,9 +649,10 @@
             <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 8l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M3 3l18 18"/>
             </svg>
-            End Call
+            End
           </button>
         </div>
+
       {:else if callState === 'failed'}
         <div class="text-center py-4">
           <div class="w-16 h-16 bg-red-200 rounded-full mx-auto mb-4 flex items-center justify-center">
@@ -568,6 +669,7 @@
         >
           Try Again
         </button>
+
       {:else if callState === 'ended'}
         <div class="text-center py-4">
           <div class="w-16 h-16 bg-gray-200 rounded-full mx-auto mb-4 flex items-center justify-center">
@@ -587,13 +689,10 @@
       {/if}
     </div>
 
-    <!-- Hidden audio element for remote stream -->
-    <audio
-      autoplay
-      hidden
-      playsinline
-      muted={false}
-    ></audio>
+    <!-- Hidden audio element for voice calls -->
+    {#if callType !== 'video'}
+      <audio autoplay hidden playsinline muted={false}></audio>
+    {/if}
 
     <!-- Footer -->
     <div class="mt-8 pt-6 border-t border-gray-200">

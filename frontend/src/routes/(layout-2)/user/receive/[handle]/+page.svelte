@@ -2,7 +2,7 @@
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { onMount, onDestroy } from 'svelte';
-  import { MessageTypes, PROTOCOL_VERSION } from '@callsafe/protocol';
+  import { MessageTypes, PROTOCOL_VERSION, MediaToggleAction } from '@callsafe/protocol';
   import { AuthManager } from '$lib/managers/auth-manager';
   import { ConnectionManager } from '$lib/managers/connection-manager';
   import { WebRTCManager } from '$lib/managers/webrtc-manager';
@@ -24,7 +24,7 @@
 
   // Call state
   let isOnline = false;
-  let incomingCalls: any[] = [];
+  let incomingCalls: Array<{ callId: string; sourceId: string; callType: 'voice' | 'video'; timestamp: number }> = [];
   let callHistory: any[] = [];
   let currentCallStartTime: number | null = null;
   let callDuration = 0;
@@ -32,20 +32,18 @@
 
   // UI state
   let currentPhase = 'terminated';
+  let currentCallType: 'voice' | 'video' = 'voice';
   let isMuted = false;
+  let isCameraEnabled = true;
 
   onMount(async () => {
-    // Check authentication
     const isAuthenticated = await AuthManager.isAuthenticated();
     if (!isAuthenticated) {
       goto('/');
       return;
     }
 
-    // Load call history from localStorage
     loadCallHistory();
-
-    // Initialize connection
     await initializeConnection();
   });
 
@@ -62,7 +60,7 @@
       connectionStatus = 'Connected';
       errorMessage = '';
 
-      // Request microphone permission directly (enables audio autoplay)
+      // Request microphone permission (enables audio autoplay)
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: {
@@ -73,7 +71,6 @@
           video: false
         });
 
-        // Stop the stream immediately - we just needed permission
         stream.getTracks().forEach(track => track.stop());
 
         console.log('[CONNECTION] initializeConnection(): Microphone permission granted - audio autoplay enabled');
@@ -98,23 +95,18 @@
 
     // Incoming call handler
     socket.on(MessageTypes.CALL_INCOMING, (raw) => {
-      const data = raw as { callAttemptId: string; sourceId: string; timestamp: number };
-      console.log('[CONNECTION] setupSocketEventHandlers(): === INCOMING CALL DATA FORMAT ===');
-      console.log('[CONNECTION] setupSocketEventHandlers(): Raw data received:', data);
-      console.log('[CONNECTION] setupSocketEventHandlers(): Data type:', typeof data);
-      console.log('[CONNECTION] setupSocketEventHandlers(): Data keys:', Object.keys(data));
-      console.log('[CONNECTION] setupSocketEventHandlers(): Data values:', Object.values(data));
-      console.log('[CONNECTION] setupSocketEventHandlers(): JSON stringified:', JSON.stringify(data, null, 2));
-      console.log('[CONNECTION] setupSocketEventHandlers(): === END INCOMING CALL DATA ===');
+      const data = raw as { callAttemptId: string; sourceId: string; callType?: string; timestamp: number };
       console.log('[CONNECTION] setupSocketEventHandlers(): Incoming call:', data);
+
+      const incomingCallType = (data.callType === 'video' ? 'video' : 'voice') as 'voice' | 'video';
 
       incomingCalls = [...incomingCalls, {
         callId: data.callAttemptId,
         sourceId: data.sourceId,
+        callType: incomingCallType,
         timestamp: data.timestamp
       }];
 
-      // Play incoming call sound
       playIncomingCallSound();
 
       callState.update(state => ({
@@ -122,6 +114,7 @@
         currentCall: {
           callAttemptId: data.callAttemptId,
           sourceId: data.sourceId,
+          callType: incomingCallType,
           state: 'incoming',
           startTime: data.timestamp,
           duration: 0
@@ -133,15 +126,13 @@
       }));
     });
 
-    // Call accepted handler (confirmation from server)
+    // Call accepted handler
     socket.on(MessageTypes.CALL_ACCEPTED, async (_raw) => {
       console.log('[CONNECTION] setupSocketEventHandlers(): Call accepted');
-      // WebRTC is already initialized when accepting the call
-      // This event confirms the call was accepted on the server side
       currentPhase = 'connecting';
     });
 
-    // WebRTC offer handler (business receives offer from customer)
+    // WebRTC offer handler (agent receives offer from customer)
     socket.on(MessageTypes.WEBRTC_OFFER, async (raw) => {
       const data = raw as { offer: RTCSessionDescription; callAttemptId: string };
       console.log('[CONNECTION] setupSocketEventHandlers(): Received WebRTC offer');
@@ -150,7 +141,18 @@
         try {
           await webrtcManager.createAnswer(data.offer, data.callAttemptId);
 
-          // Update call state to active once answer is sent
+          // For video calls, bind local stream after answer is created
+          if (currentCallType === 'video') {
+            const localVideoEl = document.querySelector('video[data-local]') as HTMLVideoElement;
+            if (localVideoEl) {
+              const localStream = webrtcManager.getLocalStream();
+              if (localStream) {
+                localVideoEl.srcObject = localStream;
+                localVideoEl.play().catch(() => {});
+              }
+            }
+          }
+
           currentPhase = 'active';
           startCallTimer();
 
@@ -205,7 +207,6 @@
       const data = raw as { callAttemptId: string; timestamp: number; duration: number };
       console.log('[CONNECTION] setupSocketEventHandlers(): Call ended:', data);
 
-      // Save to call history
       saveCallToHistory({
         callAttemptId: data.callAttemptId,
         sourceId: getCurrentCall()?.sourceId || 'unknown',
@@ -236,13 +237,9 @@
       const data = raw as { callAttemptId: string; reason: string };
       console.log('[CONNECTION] setupSocketEventHandlers(): Call cancelled:', data);
 
-      // Stop any playing ringtone
       stopIncomingCallSound();
-
-      // Remove from incoming calls UI
       incomingCalls = incomingCalls.filter(call => call.callId !== data.callAttemptId);
 
-      // Update UI to show cancellation reason
       let statusMessage = '';
       switch (data.reason) {
         case 'customer_cancelled':
@@ -258,13 +255,11 @@
           statusMessage = 'Call was cancelled';
       }
 
-      // Clean up any WebRTC resources if they were initialized
       if (webrtcManager) {
         webrtcManager.cleanup();
         webrtcManager = null;
       }
 
-      // Update call state
       callState.update(state => ({
         ...state,
         currentCall: state.currentCall?.callAttemptId === data.callAttemptId ? null : state.currentCall,
@@ -276,7 +271,6 @@
         }
       }));
 
-      // Show brief notification if this was an incoming call that got cancelled
       if (data.reason !== 'other_device_accepted') {
         errorMessage = statusMessage;
         setTimeout(() => {
@@ -284,14 +278,14 @@
         }, 3000);
       }
 
-      // Reset call state after brief delay
       setTimeout(() => {
         currentPhase = 'terminated';
+        currentCallType = 'voice';
+        isCameraEnabled = true;
         currentCallStartTime = null;
         callDuration = 0;
         isMuted = false;
 
-        // Stop call timer if running
         if (durationInterval) {
           clearInterval(durationInterval);
           durationInterval = null;
@@ -316,7 +310,6 @@
   async function registerDevice() {
     if (!socket) return;
 
-    // Fetch JWT for server-side authentication
     const tokenResponse = await fetch('/api/socket-token', { credentials: 'include' });
     if (!tokenResponse.ok) {
       console.error('[CONNECTION] registerDevice(): Failed to get auth token');
@@ -334,7 +327,6 @@
       timestamp: Date.now()
     });
 
-    // Set device as online by default after successful connection
     socket.emit(MessageTypes.DEVICE_STATUS, {
       deviceId: generateDeviceId(),
       status: 'available',
@@ -372,18 +364,19 @@
     }));
   }
 
-  async function acceptCall(callId: string) {
+  async function acceptCall(callId: string, callType: 'voice' | 'video' = 'voice') {
     if (!socket) return;
 
     currentPhase = 'connecting';
+    currentCallType = callType;
+    isCameraEnabled = true;
 
-    // Initialize WebRTC immediately when accepting the call (before sending call:accept)
     try {
       webrtcManager = new WebRTCManager(socket);
-      await webrtcManager.initialize(callId);
+      await webrtcManager.initialize(callId, callType);
     } catch (error) {
       console.error('[CONNECTION] acceptCall(): WebRTC initialization failed:', error);
-      handleCallFailure('Failed to initialize audio');
+      handleCallFailure(callType === 'video' ? 'Failed to initialize camera/audio' : 'Failed to initialize audio');
       return;
     }
 
@@ -391,10 +384,15 @@
       callAttemptId: callId,
       deviceType: 'web',
       deviceId: generateDeviceId(),
+      mediaCapabilities: {
+        canSendAudio: true,
+        canSendVideo: callType === 'video',
+        canReceiveAudio: true,
+        canReceiveVideo: callType === 'video'
+      },
       timestamp: Date.now()
     });
 
-    // Remove from incoming calls and stop ringtone
     incomingCalls = incomingCalls.filter(call => call.callId !== callId);
     stopIncomingCallSound();
     currentCallStartTime = Date.now();
@@ -419,7 +417,6 @@
       timestamp: Date.now()
     });
 
-    // Remove from incoming calls and stop ringtone
     incomingCalls = incomingCalls.filter(call => call.callId !== callId);
     stopIncomingCallSound();
 
@@ -442,26 +439,22 @@
       });
     }
 
-    // Stop any playing ringtone
     stopIncomingCallSound();
-
-    // Clear any pending incoming calls UI
     incomingCalls = [];
 
-    // Clean up WebRTC
     if (webrtcManager) {
       webrtcManager.cleanup();
       webrtcManager = null;
     }
 
-    // Stop call timer
     if (durationInterval) {
       clearInterval(durationInterval);
       durationInterval = null;
     }
 
-    // Reset state
     currentPhase = 'terminated';
+    currentCallType = 'voice';
+    isCameraEnabled = true;
     currentCallStartTime = null;
     callDuration = 0;
     isMuted = false;
@@ -493,6 +486,22 @@
     }));
   }
 
+  function toggleCamera() {
+    if (!webrtcManager || currentCallType !== 'video') return;
+
+    const isDisabled = webrtcManager.toggleCamera();
+    isCameraEnabled = !isDisabled;
+
+    if (socket && getCurrentCall()) {
+      socket.emit(MessageTypes.MEDIA_TOGGLE, {
+        callAttemptId: getCurrentCall()!.callAttemptId,
+        action: isDisabled ? MediaToggleAction.DISABLE_CAMERA : MediaToggleAction.ENABLE_CAMERA,
+        success: true,
+        timestamp: Date.now()
+      });
+    }
+  }
+
   function getCurrentCall() {
     const state = $callState;
     return state.currentCall;
@@ -501,13 +510,11 @@
   function handleCallFailure(message: string) {
     errorMessage = message;
 
-    // Clean up WebRTC
     if (webrtcManager) {
       webrtcManager.cleanup();
       webrtcManager = null;
     }
 
-    // Reset state
     setTimeout(() => {
       endCall();
       errorMessage = '';
@@ -525,14 +532,13 @@
   }
 
   function playIncomingCallSound() {
-    if (typeof document === 'undefined') return; // Skip on server-side
+    if (typeof document === 'undefined') return;
 
     const audioElement = document.querySelector('audio[src="/ringtone.mp3"]') as HTMLAudioElement;
     if (audioElement) {
       audioElement.loop = true;
       audioElement.play().catch(error => {
         console.log('[CONNECTION] playIncomingCallSound(): Could not play ringtone:', error);
-        // Fallback: Show visual notification if audio fails
         if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
           new Notification('Incoming Call', {
             body: 'You have an incoming call',
@@ -544,12 +550,12 @@
   }
 
   function saveCallToHistory(callRecord: any) {
-    callHistory = [callRecord, ...callHistory.slice(0, 49)]; // Keep last 50 calls
+    callHistory = [callRecord, ...callHistory.slice(0, 49)];
     localStorage.setItem(`callsafe_history_${handle}`, JSON.stringify(callHistory));
   }
 
   function stopIncomingCallSound() {
-    if (typeof document === 'undefined') return; // Skip on server-side
+    if (typeof document === 'undefined') return;
 
     const audioElement = document.querySelector('audio[src="/ringtone.mp3"]') as HTMLAudioElement;
     if (audioElement) {
@@ -607,7 +613,6 @@
       connectionManager.disconnect();
     }
 
-    // Stop any playing ringtone
     stopIncomingCallSound();
   }
 </script>
@@ -641,7 +646,6 @@
 
     <!-- Header -->
     <div class="bg-white rounded-2xl shadow-xl p-6 mb-6">
-      <!-- Top Section: Title + Toggle -->
       <div class="flex items-center justify-between mb-4">
         <div>
           <h1 class="text-3xl font-bold text-gray-800">Agent Dashboard</h1>
@@ -657,7 +661,6 @@
         </button>
       </div>
 
-      <!-- Middle Section: Handle and Source ID -->
       {#if handle || sourceId}
         <div class="flex items-center space-x-4 mb-4">
           {#if handle}
@@ -675,10 +678,8 @@
         </div>
       {/if}
 
-      <!-- Bottom Section: Unified Status Bar -->
       <div class="pt-4 border-t border-gray-200">
         <div class="flex items-center justify-between space-x-6">
-          <!-- Connection Status -->
           <div class="flex items-center">
             <div class="w-3 h-3 rounded-full mr-2 {socketConnected ? 'bg-green-500' : 'bg-red-500'}"></div>
             <span class="text-sm font-medium {getStatusColor(connectionStatus)}">
@@ -686,7 +687,6 @@
             </span>
           </div>
 
-          <!-- Device Status -->
           <div class="flex items-center">
             <div class="w-3 h-3 rounded-full mr-2 {socketConnected ? 'bg-green-500' : 'bg-red-500'}"></div>
             <span class="text-sm font-medium text-gray-700">
@@ -694,7 +694,6 @@
             </span>
           </div>
 
-          <!-- Handle Status -->
           <div class="flex items-center">
             <span class="text-sm font-medium text-gray-600 mr-2">Handle:</span>
             <span class="text-sm font-semibold {currentPhase === 'active' ? 'text-red-600' : 'text-green-600'}">
@@ -751,26 +750,49 @@
         {:else if currentPhase === 'connecting'}
           <div class="text-center py-8">
             <div class="animate-pulse">
-              <div class="w-16 h-16 bg-yellow-200 rounded-full mx-auto mb-4 flex items-center justify-center">
-                <svg class="w-8 h-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
-                </svg>
+              <div class="w-16 h-16 {currentCallType === 'video' ? 'bg-blue-200' : 'bg-yellow-200'} rounded-full mx-auto mb-4 flex items-center justify-center">
+                {#if currentCallType === 'video'}
+                  <svg class="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.723v6.554a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                  </svg>
+                {:else}
+                  <svg class="w-8 h-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
+                  </svg>
+                {/if}
               </div>
               <p class="text-gray-600">Connecting to customer...</p>
             </div>
           </div>
         {:else if currentPhase === 'active'}
-          <div class="text-center py-2 sm:py-4">
-            <div class="w-12 h-12 sm:w-16 sm:h-16 bg-green-200 rounded-full mx-auto mb-2 sm:mb-4 flex items-center justify-center">
-              <svg class="w-6 h-6 sm:w-8 sm:h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
-              </svg>
+          <div class="py-2 sm:py-4">
+
+            <!-- Video area (video calls only) -->
+            {#if currentCallType === 'video'}
+              <div class="relative rounded-xl overflow-hidden bg-gray-900 mb-4" style="min-height: 200px;">
+                <video data-remote autoplay playsinline class="w-full h-full object-cover"></video>
+                <video data-local autoplay playsinline muted class="absolute bottom-2 right-2 w-24 rounded-lg object-cover bg-gray-800 border border-gray-600"></video>
+              </div>
+            {/if}
+
+            <div class="text-center mb-4">
+              <div class="w-12 h-12 sm:w-16 sm:h-16 {currentCallType === 'video' ? 'bg-blue-200' : 'bg-green-200'} rounded-full mx-auto mb-2 sm:mb-4 flex items-center justify-center">
+                {#if currentCallType === 'video'}
+                  <svg class="w-6 h-6 sm:w-8 sm:h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.723v6.554a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                  </svg>
+                {:else}
+                  <svg class="w-6 h-6 sm:w-8 sm:h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
+                  </svg>
+                {/if}
+              </div>
+              <p class="{currentCallType === 'video' ? 'text-blue-600' : 'text-green-600'} font-semibold mb-2">Connected to Customer</p>
+              <p class="text-xl sm:text-2xl font-mono text-green-700 font-bold mb-2 sm:mb-4 border border-green-200 bg-green-50 px-2 py-1 rounded">{formatDuration(callDuration)}</p>
             </div>
-            <p class="text-green-600 font-semibold mb-2">Connected to Customer</p>
-            <p class="text-xl sm:text-2xl font-mono text-green-700 font-bold mb-2 sm:mb-4 border border-green-200 bg-green-50 px-2 py-1 rounded">{formatDuration(callDuration)}</p>
 
             <!-- Call Controls -->
-            <div class="flex space-x-4">
+            <div class="flex space-x-2">
               <button
                 on:click={toggleMute}
                 class="flex-1 {isMuted ? 'bg-red-600 hover:bg-red-700' : 'bg-gray-600 hover:bg-gray-700'} text-white font-semibold py-3 px-4 rounded-xl transition-colors duration-200 flex items-center justify-center"
@@ -788,6 +810,25 @@
                   Mute
                 {/if}
               </button>
+
+              {#if currentCallType === 'video'}
+                <button
+                  on:click={toggleCamera}
+                  class="flex-1 {!isCameraEnabled ? 'bg-red-600 hover:bg-red-700' : 'bg-gray-600 hover:bg-gray-700'} text-white font-semibold py-3 px-4 rounded-xl transition-colors duration-200 flex items-center justify-center"
+                >
+                  {#if !isCameraEnabled}
+                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.723v6.554a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2zM3 3l18 18"/>
+                    </svg>
+                    Camera Off
+                  {:else}
+                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.723v6.554a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                    </svg>
+                    Camera
+                  {/if}
+                </button>
+              {/if}
 
               <button
                 on:click={endCall}
@@ -819,10 +860,22 @@
         {:else}
           <div class="space-y-4">
             {#each incomingCalls as call (call.callId)}
-              <div class="border border-blue-200 rounded-lg p-4 bg-blue-50 animate-pulse">
+              <div class="border {call.callType === 'video' ? 'border-blue-200 bg-blue-50' : 'border-green-200 bg-green-50'} rounded-lg p-4 animate-pulse">
                 <div class="flex items-center justify-between">
                   <div>
-                    <p class="font-semibold text-gray-800">New Customer Call</p>
+                    <div class="flex items-center gap-2 mb-1">
+                      {#if call.callType === 'video'}
+                        <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.723v6.554a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                        </svg>
+                        <p class="font-semibold text-gray-800">Incoming Video Call</p>
+                      {:else}
+                        <svg class="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
+                        </svg>
+                        <p class="font-semibold text-gray-800">Incoming Voice Call</p>
+                      {/if}
+                    </div>
                     <p class="text-sm text-gray-600">Call ID: {call.callId.slice(-8)}</p>
                     {#if call.sourceId}
                       <p class="text-sm text-blue-600">Source: {call.sourceId}</p>
@@ -833,9 +886,9 @@
                   </div>
                   <div class="flex space-x-2">
                     <button
-                      on:click={() => acceptCall(call.callId)}
+                      on:click={() => acceptCall(call.callId, call.callType)}
                       disabled={currentPhase !== 'terminated'}
-                      class="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white px-4 py-2 rounded-lg font-semibold transition-colors duration-200"
+                      class="{call.callType === 'video' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-600 hover:bg-green-700'} disabled:bg-gray-400 text-white px-4 py-2 rounded-lg font-semibold transition-colors duration-200"
                     >
                       Accept
                     </button>
@@ -904,17 +957,7 @@
     </div>
 
     <!-- Hidden audio elements -->
-    <audio
-      autoplay
-      hidden
-      playsinline
-      muted={false}
-    ></audio>
-
-    <audio
-      src="/ringtone.mp3"
-      preload="auto"
-      hidden
-    ></audio>
+    <audio autoplay hidden playsinline muted={false}></audio>
+    <audio src="/ringtone.mp3" preload="auto" hidden></audio>
   </div>
 </div>
