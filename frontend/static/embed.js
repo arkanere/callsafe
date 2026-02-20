@@ -17,32 +17,22 @@
 
     // WebRTC ICE Servers
     STUN_SERVER_1: 'stun:stun.l.google.com:19302',
-    STUN_SERVER_2: 'stun:stun1.l.google.com:19302'
+    STUN_SERVER_2: 'stun:stun1.l.google.com:19302',
     // TURN credentials removed - fetched dynamically from server
+
+    // Set debug: true to enable verbose logging (off by default in production)
+    debug: false
   };
 
-  // Debug logging utility - ALWAYS logs in production for debugging call issues
+  // Debug logging — gated behind CONFIG.debug. console.error calls are always on.
   function debugLog(category, message, data = null) {
-    // Check if debugging is disabled via window flag (for future control)
-    if (window.CALLSAFE_DISABLE_DEBUG === true) {
-      return;
-    }
-    
+    if (!CONFIG.debug) return;
     const timestamp = new Date().toISOString();
-    const logPrefix = `[CallSafe Debug ${timestamp}] [${category.toUpperCase()}]`;
-    
-    // Always log in production to help debug call connection issues
-    // Critical categories that should ALWAYS log even if debugging is limited
-    const criticalCategories = ['socket', 'call', 'cleanup', 'modal'];
-    const isCritical = criticalCategories.includes(category.toLowerCase());
-    
-    // Log if it's critical OR if debugging is not specifically disabled
-    if (isCritical || window.CALLSAFE_DISABLE_DEBUG !== true) {
-      if (data) {
-        console.log(`${logPrefix} ${message}`, data);
-      } else {
-        console.log(`${logPrefix} ${message}`);
-      }
+    const prefix = `[CallSafe ${timestamp}] [${category.toUpperCase()}]`;
+    if (data) {
+      console.log(`${prefix} ${message}`, data);
+    } else {
+      console.log(`${prefix} ${message}`);
     }
   }
 
@@ -1343,7 +1333,7 @@
 
         this.ws.onmessage = (event) => {
           let msg;
-          try { msg = JSON.parse(event.data); } catch { return; }
+          try { msg = JSON.parse(event.data); } catch { console.warn('[CallSafe] Malformed WebSocket message discarded:', event.data); return; }
           const { type, ...data } = msg;
           if (typeof type !== 'string') return;
           if (type === 'pong') { this.wsOnPong(); return; }
