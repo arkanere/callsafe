@@ -2,26 +2,28 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../call/call_manager.dart';
 import '../../call/call_state.dart';
 import '../../signaling/signaling_client.dart';
-import '../../platform/webrtc_platform.dart';
-import '../../platform/audio_platform.dart';
+import '../../platform/platform.dart';
 import '../../storage/call_history_service.dart';
+
+// Server URL injected at build time via --dart-define=SIGNALING_SERVER_URL=ws://...
+const _signalingUrl = String.fromEnvironment(
+  'SIGNALING_SERVER_URL',
+  defaultValue: 'ws://localhost:4000/ws',
+);
 
 /// Signaling client provider
 final signalingClientProvider = Provider<SignalingClient>((ref) {
-  // Using mock for Phase 1
-  return MockSignalingClient();
+  return SignalingClient(_signalingUrl);
 });
 
 /// WebRTC platform provider
 final webrtcPlatformProvider = Provider<WebRTCPlatform>((ref) {
-  // Using mock for Phase 1
-  return MockWebRTCPlatform();
+  return WebRTCMethodChannel();
 });
 
 /// Audio platform provider
 final audioPlatformProvider = Provider<AudioPlatform>((ref) {
-  // Using mock for Phase 1
-  return MockAudioPlatform();
+  return AudioMethodChannel();
 });
 
 /// Call history service provider
