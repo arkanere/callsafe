@@ -81,6 +81,7 @@
       this.localStream = null;
       this.remoteStream = null;
       this.callId = null;
+      this.callType = 'voice';
       this.connectionState = 'idle';
       this.connectionCheckInterval = null;
       this.turnCredentials = null; // Dynamic TURN credentials from server
@@ -127,14 +128,31 @@
       return iceServers;
     }
 
-    async initialize(callId, localStream) {
-      debugLog('webrtc', 'Initializing WebRTC manager', { 
-        callId, 
+    getLocalStream() {
+      return this.localStream;
+    }
+
+    toggleCamera() {
+      if (!this.localStream) return false;
+      const videoTracks = this.localStream.getVideoTracks();
+      if (videoTracks.length > 0) {
+        const willDisable = videoTracks[0].enabled;
+        videoTracks.forEach(track => { track.enabled = !willDisable; });
+        return willDisable; // returns true if camera is now disabled
+      }
+      return false;
+    }
+
+    async initialize(callId, localStream, callType = 'voice') {
+      debugLog('webrtc', 'Initializing WebRTC manager', {
+        callId,
+        callType,
         hasLocalStream: !!localStream,
         localStreamTracks: localStream ? localStream.getTracks().length : 0
       });
-      
+
       this.callId = callId;
+      this.callType = callType;
       this.localStream = localStream;
       
       // Create peer connection with dynamic ICE servers
@@ -177,7 +195,11 @@
           trackKind: event.track.kind
         });
         this.remoteStream = event.streams[0];
-        this.playRemoteAudio(this.remoteStream);
+        if (this.callType === 'video') {
+          this.playRemoteVideo(this.remoteStream);
+        } else {
+          this.playRemoteAudio(this.remoteStream);
+        }
         this.connectionState = 'connected';
         debugLog('webrtc', 'Connection state changed to connected via ontrack');
       };
@@ -313,18 +335,28 @@
     playRemoteAudio(stream) {
       // Remove any existing remote audio elements
       document.querySelectorAll('audio[data-callsafe-remote]').forEach(el => el.remove());
-      
+
       const audio = document.createElement('audio');
       audio.srcObject = stream;
       audio.autoplay = true;
       audio.hidden = true;
       audio.setAttribute('data-callsafe-remote', 'true');
       document.body.appendChild(audio);
-      
+
       // Ensure audio plays
       audio.play().catch(error => {
         console.warn('CallSafe: Failed to autoplay remote audio', error);
       });
+    }
+
+    playRemoteVideo(stream) {
+      const videoEl = document.querySelector('video[data-callsafe-remote]');
+      if (videoEl) {
+        videoEl.srcObject = stream;
+        videoEl.play().catch(error => {
+          console.warn('CallSafe: Failed to autoplay remote video', error);
+        });
+      }
     }
 
     cleanup() {
@@ -342,10 +374,11 @@
         this.peerConnection = null;
       }
       
-      // Remove remote audio elements
+      // Remove remote audio/video elements
       document.querySelectorAll('audio[data-callsafe-remote]').forEach(el => el.remove());
-      
+
       this.remoteStream = null;
+      this.callType = 'voice';
       this.connectionState = 'idle';
     }
   }
@@ -375,6 +408,8 @@
       this.isVisible = true;
       this.isEnabled = true;
       this.isMuted = false;
+      this.callType = 'voice';
+      this.isVideoEnabled = true;
 
       // Message queuing for ws connection race condition
       this.messageQueue = [];
@@ -530,6 +565,11 @@
               <div class="callsafe-confirmation" id="callsafe-confirmation">
                 <div class="callsafe-confirmation-message">Ready to connect on call?</div>
               </div>
+              <!-- Video area (shown during video calls) -->
+              <div class="callsafe-video-area" id="callsafe-video-area" style="display: none;">
+                <video data-callsafe-remote autoplay playsinline class="callsafe-video-remote"></video>
+                <video data-callsafe-local autoplay playsinline muted class="callsafe-video-local"></video>
+              </div>
               <!-- Call Status UI (shown during/after call) -->
               <div class="callsafe-call-status" id="callsafe-call-status" style="display: none;">
                 <div class="callsafe-status-message" id="callsafe-status">Ready to call</div>
@@ -542,11 +582,17 @@
                 <button class="callsafe-control-btn cancel-btn" id="callsafe-cancel">
                   Cancel
                 </button>
-                <button class="callsafe-control-btn call-now-btn" id="callsafe-call-now">
+                <button class="callsafe-control-btn call-voice-btn" id="callsafe-call-voice">
                   <svg viewBox="0 0 24 24" width="20" height="20">
                     <path fill="currentColor" d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56-.35-.12-.74-.03-1.01.24l-1.57 1.97c-2.83-1.35-5.48-3.9-6.89-6.83l1.95-1.66c.27-.28.35-.67.24-1.02-.37-1.11-.56-2.3-.56-3.53 0-.54-.45-.99-.99-.99H4.19C3.65 3 3 3.24 3 3.99 3 13.28 10.73 21 20.01 21c.71 0 .99-.63.99-1.18v-3.45c0-.54-.45-.99-.99-.99z"/>
                   </svg>
-                  Call Now
+                  Voice
+                </button>
+                <button class="callsafe-control-btn call-video-btn" id="callsafe-call-video">
+                  <svg viewBox="0 0 24 24" width="20" height="20">
+                    <path fill="currentColor" d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/>
+                  </svg>
+                  Video
                 </button>
               </div>
               <!-- Call Control Buttons -->
@@ -557,6 +603,12 @@
                     <path fill="currentColor" d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
                   </svg>
                   Mute
+                </button>
+                <button class="callsafe-control-btn camera-btn" id="callsafe-camera" style="display: none;">
+                  <svg viewBox="0 0 24 24" width="20" height="20">
+                    <path fill="currentColor" d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/>
+                  </svg>
+                  Camera
                 </button>
                 <button class="callsafe-control-btn end-btn" id="callsafe-end">
                   <svg viewBox="0 0 24 24" width="20" height="20">
@@ -791,6 +843,36 @@
           color: #28a745;
           font-family: 'Courier New', monospace;
         }
+
+        /* Video area */
+        .callsafe-video-area {
+          position: relative;
+          background: #1a1a2e;
+          border-radius: 8px;
+          overflow: hidden;
+          margin-bottom: 12px;
+          min-height: 180px;
+        }
+
+        .callsafe-video-remote {
+          width: 100%;
+          height: 180px;
+          object-fit: cover;
+          display: block;
+          background: #1a1a2e;
+        }
+
+        .callsafe-video-local {
+          position: absolute;
+          bottom: 8px;
+          right: 8px;
+          width: 72px;
+          height: 54px;
+          object-fit: cover;
+          border-radius: 6px;
+          border: 2px solid rgba(255,255,255,0.3);
+          background: #333;
+        }
         
         .callsafe-modal-footer {
           padding: 16px 24px 24px;
@@ -856,16 +938,42 @@
           color: white;
         }
 
-        .call-now-btn {
+        .call-voice-btn {
           border-color: #28a745;
           color: #28a745;
         }
 
-        .call-now-btn:hover {
+        .call-voice-btn:hover {
           background: #28a745;
           color: white;
         }
-        
+
+        .call-video-btn {
+          border-color: #4a90e2;
+          color: #4a90e2;
+        }
+
+        .call-video-btn:hover {
+          background: #4a90e2;
+          color: white;
+        }
+
+        .camera-btn {
+          border-color: #4a90e2;
+          color: #4a90e2;
+        }
+
+        .camera-btn:hover {
+          background: #4a90e2;
+          color: white;
+        }
+
+        .camera-btn.camera-off {
+          background: #dc3545;
+          border-color: #dc3545;
+          color: white;
+        }
+
         .mute-btn {
           border-color: #6c757d;
           color: #6c757d;
@@ -932,8 +1040,13 @@
           color: white;
         }
 
-        .theme-dark .call-now-btn:hover {
+        .theme-dark .call-voice-btn:hover {
           background: #28a745;
+          color: white;
+        }
+
+        .theme-dark .call-video-btn:hover {
+          background: #4a90e2;
           color: white;
         }
 
@@ -984,9 +1097,11 @@
       debugLog('modal', 'Attaching modal event listeners');
       const modal = this.widgetElement.querySelector('.callsafe-modal');
       const closeBtn = modal.querySelector('.callsafe-modal-close');
-      const callNowBtn = modal.querySelector('#callsafe-call-now');
+      const callVoiceBtn = modal.querySelector('#callsafe-call-voice');
+      const callVideoBtn = modal.querySelector('#callsafe-call-video');
       const cancelBtn = modal.querySelector('#callsafe-cancel');
       const muteBtn = modal.querySelector('#callsafe-mute');
+      const cameraBtn = modal.querySelector('#callsafe-camera');
       const endBtn = modal.querySelector('#callsafe-end');
 
       closeBtn.onclick = () => {
@@ -995,9 +1110,14 @@
       };
 
       // Confirmation buttons
-      callNowBtn.onclick = () => {
-        debugLog('modal', 'Call Now button clicked');
-        this.handleCallNow();
+      callVoiceBtn.onclick = () => {
+        debugLog('modal', 'Voice Call button clicked');
+        this.handleCallNow('voice');
+      };
+
+      callVideoBtn.onclick = () => {
+        debugLog('modal', 'Video Call button clicked');
+        this.handleCallNow('video');
       };
 
       cancelBtn.onclick = () => {
@@ -1009,6 +1129,10 @@
       muteBtn.onclick = () => {
         debugLog('modal', 'Mute button clicked');
         this.toggleMute();
+      };
+      cameraBtn.onclick = () => {
+        debugLog('modal', 'Camera button clicked');
+        this.toggleCamera();
       };
       endBtn.onclick = () => {
         debugLog('modal', 'End call button clicked');
@@ -1296,8 +1420,8 @@
       debugLog('modal', 'Confirmation modal shown');
     }
 
-    async handleCallNow() {
-      debugLog('call', 'Call Now confirmed - initiating call');
+    async handleCallNow(type = 'voice') {
+      debugLog('call', 'Call Now confirmed - initiating call', { type });
 
       // Switch to call status UI
       const confirmationUI = this.widgetElement.querySelector('#callsafe-confirmation');
@@ -1311,21 +1435,25 @@
       if (callButtons) callButtons.style.display = 'flex';
 
       // Initiate the call
-      await this.initiateCall();
+      await this.initiateCall(type);
     }
     
-    async initiateCall() {
-      debugLog('call', 'Call initiation started', { 
+    async initiateCall(type = 'voice') {
+      debugLog('call', 'Call initiation started', {
         isEnabled: this.isEnabled,
         handle: this.config.handle,
-        sourceId: this.config.sourceId
+        sourceId: this.config.sourceId,
+        callType: type
       });
-      
+
       if (!this.isEnabled) {
         debugLog('call', 'Call initiation failed - widget disabled');
         return { success: false, error: { code: 'WIDGET_DISABLED', message: 'Widget is disabled' } };
       }
-      
+
+      this.callType = type;
+      this.isVideoEnabled = true;
+
       try {
         // Generate call attempt ID
         const callAttemptId = this.generateCallId();
@@ -1335,24 +1463,37 @@
           throw new Error('Invalid call attempt ID generated');
         }
 
-        // Get microphone permission and TURN credentials in parallel
-        debugLog('call', 'Requesting microphone permission and fetching TURN credentials in parallel');
+        // Get media permission and TURN credentials in parallel
+        const mediaConstraints = {
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          },
+          video: type === 'video' ? { width: { ideal: 1280 }, height: { ideal: 720 } } : false
+        };
+
+        debugLog('call', 'Requesting media permission and fetching TURN credentials in parallel', { mediaConstraints });
         const [localStream, turnCredentials] = await Promise.all([
-          navigator.mediaDevices.getUserMedia({
-            audio: {
-              echoCancellation: true,
-              noiseSuppression: true,
-              autoGainControl: true
-            },
-            video: false
-          }),
+          navigator.mediaDevices.getUserMedia(mediaConstraints),
           this.getTurnCredentials()
         ]);
 
-        debugLog('call', 'Microphone permission granted', {
+        debugLog('call', 'Media permission granted', {
           streamId: localStream.id,
           trackCount: localStream.getTracks().length
         });
+
+        // For video calls, bind local stream to preview element
+        if (type === 'video') {
+          const localVideoEl = this.widgetElement.querySelector('video[data-callsafe-local]');
+          if (localVideoEl) {
+            localVideoEl.srcObject = localStream;
+            localVideoEl.play().catch(() => {});
+          }
+          const videoArea = this.widgetElement.querySelector('#callsafe-video-area');
+          if (videoArea) videoArea.style.display = 'block';
+        }
 
         // Create call object
         this.currentCall = {
@@ -1382,43 +1523,52 @@
           this.webrtcManager.setTurnCredentials(turnCredentials);
         }
 
-        await this.webrtcManager.initialize(callAttemptId, localStream);
-        
+        await this.webrtcManager.initialize(callAttemptId, localStream, type);
+
         // Start connection monitoring
         debugLog('call', 'Starting connection state monitoring');
         this.startConnectionStateMonitoring();
-        
+
         // Send call initiate
         const initiateData = {
           callAttemptId: sanitizeInput(callAttemptId),
           handle: sanitizeInput(this.config.handle),
           sourceId: sanitizeInput(this.config.sourceId),
+          callType: type,
+          mediaCapabilities: {
+            canSendAudio: true,
+            canSendVideo: type === 'video',
+            canReceiveAudio: true,
+            canReceiveVideo: type === 'video'
+          },
           timestamp: Date.now()
         };
         debugLog('call', 'Sending call:initiate to server', initiateData);
         this.sendSocketMessage('call:initiate', initiateData);
-        
-        this.emit('call:initiated', { callAttemptId });
-        debugLog('call', 'Call initiated successfully', { callAttemptId });
-        
+
+        this.emit('call:initiated', { callAttemptId, callType: type });
+        debugLog('call', 'Call initiated successfully', { callAttemptId, callType: type });
+
         return { success: true, callAttemptId };
-        
+
       } catch (error) {
-        debugLog('call', 'Call initiation failed', { 
+        debugLog('call', 'Call initiation failed', {
           error: error.message,
           errorName: error.name,
           stack: error.stack
         });
-        
+
         let errorMessage;
-        if (error.name === 'NotAllowedError') {
-          errorMessage = 'Please allow microphone access to make calls.';
+        if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+          errorMessage = type === 'video'
+            ? 'Please allow camera and microphone access for video calls.'
+            : 'Please allow microphone access to make calls.';
         } else if (error.message === 'Connection timeout') {
           errorMessage = 'Connection failed. Please try again.';
         } else {
           errorMessage = 'Failed to start call. Please try again.';
         }
-        
+
         this.handleCallError(errorMessage);
         return { success: false, error: { code: 'CALL_INITIATION_FAILED', message: error.message } };
       }
@@ -1639,24 +1789,57 @@
     
     showCallControls() {
       const muteBtn = this.widgetElement.querySelector('#callsafe-mute');
+      const cameraBtn = this.widgetElement.querySelector('#callsafe-camera');
       const timer = this.widgetElement.querySelector('#callsafe-timer');
-      
+
       if (muteBtn) muteBtn.style.display = 'flex';
+      if (cameraBtn && this.callType === 'video') cameraBtn.style.display = 'flex';
       if (timer) timer.style.display = 'block';
     }
-    
+
     hideCallControls() {
       const muteBtn = this.widgetElement.querySelector('#callsafe-mute');
+      const cameraBtn = this.widgetElement.querySelector('#callsafe-camera');
       const timer = this.widgetElement.querySelector('#callsafe-timer');
-      
+
       if (muteBtn) {
         muteBtn.style.display = 'none';
         muteBtn.classList.remove('muted');
+      }
+      if (cameraBtn) {
+        cameraBtn.style.display = 'none';
+        cameraBtn.classList.remove('camera-off');
       }
       if (timer) {
         timer.style.display = 'none';
         timer.textContent = '00:00';
       }
+    }
+
+    toggleCamera() {
+      if (!this.webrtcManager || this.callType !== 'video') return;
+
+      const isNowDisabled = this.webrtcManager.toggleCamera();
+      this.isVideoEnabled = !isNowDisabled;
+
+      const cameraBtn = this.widgetElement.querySelector('#callsafe-camera');
+      if (cameraBtn) {
+        cameraBtn.classList.toggle('camera-off', isNowDisabled);
+        cameraBtn.innerHTML = isNowDisabled
+          ? `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M18.4 5.6L5.6 18.4 4.2 17l1.4-1.4c-.1-.2-.1-.4-.1-.6V7c0-1.1.9-2 2-2h9c.4 0 .8.1 1.1.3l1.4-1.4 1.3 1.7zM3.4 6.7l1.4 1.4c-.1.2-.1.4-.1.6v7c0 1.1.9 2 2 2h7c.2 0 .4 0 .6-.1l1.4 1.4L14 20.5l-1.4-1.4c-.2.1-.4.1-.6.1H7c-1.1 0-2-.9-2-2V9c0-.2 0-.4.1-.6L3.7 7l-.3-.3z"/></svg>Camera Off`
+          : `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/></svg>Camera`;
+      }
+
+      if (this.wsConnected && this.currentCall) {
+        this.sendSocketMessage('media:toggle', {
+          callAttemptId: this.currentCall.id,
+          action: isNowDisabled ? 'disable_camera' : 'enable_camera',
+          success: true,
+          timestamp: Date.now()
+        });
+      }
+
+      debugLog('call', 'Camera toggled', { isVideoEnabled: this.isVideoEnabled });
     }
     
     startCallTimer() {
@@ -1777,7 +1960,19 @@
       const previousCallState = this.currentCall?.state;
       this.currentCall = null;
       this.isMuted = false;
+      this.callType = 'voice';
+      this.isVideoEnabled = true;
       debugLog('cleanup', 'State reset complete', { previousCallState });
+
+      // Hide video area and clear video elements
+      const videoArea = this.widgetElement?.querySelector('#callsafe-video-area');
+      if (videoArea) {
+        videoArea.style.display = 'none';
+        const localEl = videoArea.querySelector('video[data-callsafe-local]');
+        const remoteEl = videoArea.querySelector('video[data-callsafe-remote]');
+        if (localEl) localEl.srcObject = null;
+        if (remoteEl) remoteEl.srcObject = null;
+      }
       
       // Reset UI
       debugLog('cleanup', 'Resetting UI');
