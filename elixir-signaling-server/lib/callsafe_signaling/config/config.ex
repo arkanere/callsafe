@@ -41,6 +41,13 @@ defmodule CallsafeSignaling.Config do
   end
 
   @doc """
+  Get FCM HTTP endpoint URL. Overridable in tests to point at a mock server.
+  """
+  def fcm_endpoint do
+    get(:fcm_endpoint, "https://fcm.googleapis.com/fcm/send")
+  end
+
+  @doc """
   Get TURN server configuration.
   """
   def turn_servers do

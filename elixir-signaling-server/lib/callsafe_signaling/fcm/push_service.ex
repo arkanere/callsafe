@@ -7,8 +7,6 @@ defmodule CallsafeSignaling.FCM.PushService do
   require Logger
   alias CallsafeSignaling.Stats
 
-  @fcm_endpoint "https://fcm.googleapis.com/fcm/send"
-
   @doc """
   Send push notification to a device via FCM.
 
@@ -47,6 +45,14 @@ defmodule CallsafeSignaling.FCM.PushService do
 
   # Private functions
 
+  defp fcm_endpoint do
+    Application.get_env(
+      :callsafe_signaling,
+      :fcm_endpoint,
+      "https://fcm.googleapis.com/fcm/send"
+    )
+  end
+
   defp send_fcm_request(device_token, payload, server_key) do
     headers = [
       {"Authorization", "key=#{server_key}"},
@@ -62,7 +68,7 @@ defmodule CallsafeSignaling.FCM.PushService do
 
     start_time = System.monotonic_time(:millisecond)
 
-    case Req.post(@fcm_endpoint, headers: headers, json: body) do
+    case Req.post(fcm_endpoint(), headers: headers, json: body) do
       {:ok, %{status: status, body: response_body}} when status in 200..299 ->
         duration = System.monotonic_time(:millisecond) - start_time
 
