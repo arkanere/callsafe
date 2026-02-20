@@ -5,6 +5,7 @@ export class WebRTCManager {
   private peerConnection: RTCPeerConnection | null = null;
   private localStream: MediaStream | null = null;
   private socket: WsTransport;
+  private callType: 'voice' | 'video' = 'voice';
 
   constructor(socket: WsTransport) {
     console.log('[WEBRTC MANAGER] constructor(): Constructor called');
@@ -41,18 +42,19 @@ export class WebRTCManager {
     return iceServers;
   }
 
-  async initialize(callAttemptId: string) {
-    console.log('[WEBRTC MANAGER] initialize(): Initializing WebRTC for call:', callAttemptId);
+  async initialize(callAttemptId: string, callType: 'voice' | 'video' = 'voice') {
+    console.log('[WEBRTC MANAGER] initialize(): Initializing WebRTC for call:', callAttemptId, 'type:', callType);
+    this.callType = callType;
 
     console.log('[WEBRTC MANAGER] initialize(): Requesting user media');
-    // Get user media
+    // Get user media — request video track only for video calls
     this.localStream = await navigator.mediaDevices.getUserMedia({
       audio: {
         echoCancellation: true,
         noiseSuppression: true,
         autoGainControl: true
       },
-      video: false
+      video: callType === 'video'
     });
     console.log('[WEBRTC MANAGER] initialize(): User media obtained successfully');
 
@@ -76,11 +78,15 @@ export class WebRTCManager {
     });
 
     console.log('[WEBRTC MANAGER] initialize(): Setting up remote stream handler');
-    // Handle remote stream
+    // Handle remote stream — route to video element for video calls, audio element otherwise
     this.peerConnection.ontrack = (event) => {
       console.log('[WEBRTC MANAGER] initialize(): Remote track received:', event.track.kind);
       const remoteStream = event.streams[0];
-      this.playRemoteAudio(remoteStream);
+      if (this.callType === 'video') {
+        this.playRemoteVideo(remoteStream);
+      } else {
+        this.playRemoteAudio(remoteStream);
+      }
 
       console.log('[WEBRTC MANAGER] initialize(): Remote stream established successfully');
       // Remote stream received - connection established successfully
@@ -197,6 +203,28 @@ export class WebRTCManager {
     console.log('[WEBRTC MANAGER] addIceCandidate(): ICE candidate added successfully');
   }
 
+  toggleCamera(): boolean {
+    console.log('[WEBRTC MANAGER] toggleCamera(): Toggling camera');
+
+    if (!this.localStream) {
+      console.log('[WEBRTC MANAGER] toggleCamera(): No local stream available for camera toggle');
+      return false;
+    }
+
+    const videoTracks = this.localStream.getVideoTracks();
+    console.log('[WEBRTC MANAGER] toggleCamera(): Found', videoTracks.length, 'video tracks');
+
+    videoTracks.forEach(track => {
+      const wasEnabled = track.enabled;
+      track.enabled = !track.enabled;
+      console.log('[WEBRTC MANAGER] toggleCamera(): Track toggled from', wasEnabled, 'to', track.enabled);
+    });
+
+    const isDisabled = !videoTracks[0]?.enabled;
+    console.log('[WEBRTC MANAGER] toggleCamera(): Camera toggle complete, disabled:', isDisabled);
+    return isDisabled;
+  }
+
   toggleMute(): boolean {
     console.log('[WEBRTC MANAGER] toggleMute(): Toggling mute');
 
@@ -233,6 +261,23 @@ export class WebRTCManager {
       });
     } else {
       console.error('[WEBRTC MANAGER] playRemoteAudio(): No audio element found for remote stream playback');
+    }
+  }
+
+  private playRemoteVideo(remoteStream: MediaStream) {
+    console.log('[WEBRTC MANAGER] playRemoteVideo(): Setting up remote video playback');
+
+    const videoElement = document.querySelector('video[data-remote]') as HTMLVideoElement;
+    if (videoElement) {
+      console.log('[WEBRTC MANAGER] playRemoteVideo(): Video element found, setting remote stream');
+      videoElement.srcObject = remoteStream;
+      videoElement.play().then(() => {
+        console.log('[WEBRTC MANAGER] playRemoteVideo(): Remote video playback started');
+      }).catch((error) => {
+        console.error('[WEBRTC MANAGER] playRemoteVideo(): Failed to start remote video playback:', error);
+      });
+    } else {
+      console.error('[WEBRTC MANAGER] playRemoteVideo(): No video[data-remote] element found for remote stream playback');
     }
   }
 
