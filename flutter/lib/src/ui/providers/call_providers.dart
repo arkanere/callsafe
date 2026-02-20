@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../call/call_manager.dart';
 import '../../call/call_state.dart';
@@ -10,6 +12,56 @@ const _signalingUrl = String.fromEnvironment(
   'SIGNALING_SERVER_URL',
   defaultValue: 'ws://localhost:4000/ws',
 );
+
+// HTTP base URL for REST API — injected via --dart-define=API_BASE_URL=https://...
+// Defaults to deriving from signaling URL (ws→http, strip /ws path).
+const _apiBaseUrl = String.fromEnvironment(
+  'API_BASE_URL',
+  defaultValue: '',
+);
+
+// JWT token for authenticated REST calls — injected via --dart-define=API_AUTH_TOKEN=...
+const _apiAuthToken = String.fromEnvironment(
+  'API_AUTH_TOKEN',
+  defaultValue: '',
+);
+
+/// Derive HTTP base URL from WebSocket URL when API_BASE_URL is not explicitly set.
+String _resolvedApiBaseUrl() {
+  if (_apiBaseUrl.isNotEmpty) return _apiBaseUrl;
+  return _signalingUrl
+      .replaceFirst(RegExp(r'^ws'), 'http')
+      .replaceFirst(RegExp(r'/ws$'), '');
+}
+
+/// Fetch TURN credentials from the server.
+/// Returns a list of ICE server configs, or null if unavailable (falls back to STUN-only).
+Future<List<Map<String, dynamic>>?> _fetchTurnServers() async {
+  if (_apiAuthToken.isEmpty) return null;
+  final client = HttpClient();
+  try {
+    final uri = Uri.parse('${_resolvedApiBaseUrl()}/api/v1/turn/credentials');
+    final req = await client.postUrl(uri);
+    req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $_apiAuthToken');
+    req.headers.contentType = ContentType.json;
+    req.write('{}');
+    final resp = await req.close();
+    if (resp.statusCode != 200) return null;
+    final body = await resp.transform(utf8.decoder).join();
+    final data = jsonDecode(body) as Map<String, dynamic>;
+    return [
+      {
+        'urls': data['uris'],
+        'username': data['username'],
+        'credential': data['password'],
+      }
+    ];
+  } catch (_) {
+    return null;
+  } finally {
+    client.close();
+  }
+}
 
 /// Signaling client provider
 final signalingClientProvider = Provider<SignalingClient>((ref) {
@@ -39,7 +91,7 @@ final callManagerProvider =
     StateNotifierProvider<CallManager, CallManagerState>((ref) {
   final signaling = ref.watch(signalingClientProvider);
   final webrtc = ref.watch(webrtcPlatformProvider);
-  return CallManager(signaling, webrtc);
+  return CallManager(signaling, webrtc, fetchTurnServers: _fetchTurnServers);
 });
 
 /// Call history persistence listener

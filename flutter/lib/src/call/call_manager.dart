@@ -23,13 +23,15 @@ class CallError {
 class CallManager extends StateNotifier<CallManagerState> {
   final SignalingClient _signaling;
   final WebRTCPlatform _webrtc;
+  final Future<List<Map<String, dynamic>>?> Function()? _fetchTurnServers;
   final Uuid _uuid = const Uuid();
 
   StreamSubscription<Map<String, dynamic>>? _messageSubscription;
   StreamSubscription<SignalingState>? _signalingStateSubscription;
 
-  CallManager(this._signaling, this._webrtc)
-      : super(const CallManagerState()) {
+  CallManager(this._signaling, this._webrtc, {Future<List<Map<String, dynamic>>?> Function()? fetchTurnServers})
+      : _fetchTurnServers = fetchTurnServers,
+        super(const CallManagerState()) {
     _setupMessageHandlers();
   }
 
@@ -108,9 +110,10 @@ class CallManager extends StateNotifier<CallManagerState> {
 
       _signaling.emit(MessageTypes.callInitiate, payload.toJson());
 
-      // Initialize WebRTC with call type for video track setup
+      // Fetch TURN credentials then initialize WebRTC
+      final iceServers = await _fetchTurnServers?.call();
       await _webrtc
-          .initializePeerConnection(callAttemptId, callType: callType)
+          .initializePeerConnection(callAttemptId, callType: callType, iceServers: iceServers)
           .run();
 
       return callAttemptId;
@@ -142,11 +145,13 @@ class CallManager extends StateNotifier<CallManagerState> {
 
       _signaling.emit(MessageTypes.callAccept, payload.toJson());
 
-      // Initialize WebRTC with call type for video track setup
+      // Fetch TURN credentials then initialize WebRTC
+      final iceServers = await _fetchTurnServers?.call();
       await _webrtc
           .initializePeerConnection(
             session.callAttemptId,
             callType: session.callType,
+            iceServers: iceServers,
           )
           .run();
 

@@ -3,11 +3,7 @@ import 'package:fpdart/fpdart.dart';
 import '../protocol/protocol.dart';
 import 'webrtc_platform.dart';
 
-const _iceConfig = {
-  'iceServers': [
-    {'urls': 'stun:stun.l.google.com:19302'},
-  ],
-};
+const _stunServer = {'urls': 'stun:stun.l.google.com:19302'};
 
 /// WebRTC platform implementation using flutter_webrtc directly.
 /// Manages peer connections, local/remote media streams, and video renderers.
@@ -35,6 +31,7 @@ class WebRTCMethodChannel implements WebRTCPlatform {
   Task<Unit> initializePeerConnection(
     String callAttemptId, {
     CallType callType = CallType.voice,
+    List<Map<String, dynamic>>? iceServers,
   }) {
     return Task(() async {
       // Initialize video renderers for video calls
@@ -59,8 +56,13 @@ class WebRTCMethodChannel implements WebRTCPlatform {
         _localRenderer.srcObject = _localStream;
       }
 
+      // Build ICE config: always include STUN, append TURN servers if provided
+      final iceConfig = {
+        'iceServers': [_stunServer, ...?iceServers],
+      };
+
       // Create peer connection
-      final pc = await fwrtc.createPeerConnection(_iceConfig);
+      final pc = await fwrtc.createPeerConnection(iceConfig);
       _connections[callAttemptId] = pc;
 
       // Add local tracks

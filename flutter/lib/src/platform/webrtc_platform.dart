@@ -11,10 +11,12 @@ abstract class WebRTCPlatform {
   /// Remote video renderer (non-null only during active video calls)
   fwrtc.RTCVideoRenderer? get remoteRenderer;
 
-  /// Initialize peer connection for call
+  /// Initialize peer connection for call.
+  /// [iceServers] — TURN/STUN servers fetched from server; null falls back to STUN-only.
   Task<Unit> initializePeerConnection(
     String callAttemptId, {
     CallType callType = CallType.voice,
+    List<Map<String, dynamic>>? iceServers,
   });
 
   /// Create WebRTC offer
@@ -85,6 +87,7 @@ class MockWebRTCPlatform implements WebRTCPlatform {
   Task<Unit> initializePeerConnection(
     String callAttemptId, {
     CallType callType = CallType.voice,
+    List<Map<String, dynamic>>? iceServers,
   }) {
     return Task(() async {
       _connections[callAttemptId] = true;

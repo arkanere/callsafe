@@ -19,12 +19,9 @@ class WebRTCManager: NSObject {
     private var audioSession: AVAudioSession = AVAudioSession.sharedInstance()
     private var callAttemptId: String?
 
-    // ICE server configuration
+    // ICE server configuration (STUN only — TURN credentials fetched dynamically by Dart layer)
     private let stunServer1 = "stun:stun.l.google.com:19302"
     private let stunServer2 = "stun:stun1.l.google.com:19302"
-    private let turnServerUrl = "turn:a.relay.metered.ca:80"
-    private let turnUsername = "***REDACTED***"
-    private let turnCredential = "***REDACTED***"
 
     override init() {
         super.init()
