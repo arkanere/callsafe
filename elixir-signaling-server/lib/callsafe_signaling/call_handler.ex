@@ -236,16 +236,14 @@ defmodule CallsafeSignaling.CallHandler do
     end
   end
 
-  # Default to voice for backward-compatible clients that omit callType
-  defp extract_call_type(_), do: {:ok, :voice}
+  defp extract_call_type(_), do: {:error, "missing_field", "callType is required"}
 
   defp extract_media_capabilities(%{"mediaCapabilities" => caps}) when is_map(caps) do
     {:ok, caps}
   end
 
-  # Default to audio-only for backward-compatible clients that omit mediaCapabilities
   defp extract_media_capabilities(_),
-    do: {:ok, %{"audio" => true, "video" => false}}
+    do: {:error, "missing_field", "mediaCapabilities is required"}
 
   defp extract_device_type(%{"deviceType" => type}) when is_binary(type) do
     if Enums.valid_device_type?(type) do
