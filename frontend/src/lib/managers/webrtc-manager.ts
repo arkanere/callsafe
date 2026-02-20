@@ -10,6 +10,8 @@ export class WebRTCManager {
   private _disconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private _iceRestartAttempted = false;
 
+  onAutoplayBlocked: (() => void) | null = null;
+
   constructor(socket: WsTransport) {
     console.log('[WEBRTC MANAGER] constructor(): Constructor called');
     this.socket = socket;
@@ -290,6 +292,7 @@ export class WebRTCManager {
         console.log('[WEBRTC MANAGER] playRemoteAudio(): Remote audio playback started');
       }).catch((error) => {
         console.error('[WEBRTC MANAGER] playRemoteAudio(): Failed to start remote audio playback:', error);
+        this.onAutoplayBlocked?.();
       });
     } else {
       console.error('[WEBRTC MANAGER] playRemoteAudio(): No audio element found for remote stream playback');
@@ -307,6 +310,7 @@ export class WebRTCManager {
         console.log('[WEBRTC MANAGER] playRemoteVideo(): Remote video playback started');
       }).catch((error) => {
         console.error('[WEBRTC MANAGER] playRemoteVideo(): Failed to start remote video playback:', error);
+        this.onAutoplayBlocked?.();
       });
     } else {
       console.error('[WEBRTC MANAGER] playRemoteVideo(): No video[data-remote] element found for remote stream playback');
@@ -342,6 +346,17 @@ export class WebRTCManager {
     // UI cleanup will be handled by call:failed event from server
     // Clean up WebRTC resources immediately
     this.cleanup();
+  }
+
+  resumePlayback(): void {
+    const audioEl = document.querySelector('audio[autoplay]') as HTMLAudioElement | null;
+    if (audioEl?.srcObject) {
+      audioEl.play().catch((e) => console.error('[WEBRTC MANAGER] resumePlayback(): audio play failed:', e));
+    }
+    const videoEl = document.querySelector('video[data-remote]') as HTMLVideoElement | null;
+    if (videoEl?.srcObject) {
+      videoEl.play().catch((e) => console.error('[WEBRTC MANAGER] resumePlayback(): video play failed:', e));
+    }
   }
 
   cleanup(): void {

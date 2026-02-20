@@ -87,6 +87,7 @@
       this.turnCredentials = null; // Dynamic TURN credentials from server
       this._disconnectTimer = null;
       this._iceRestartAttempted = false;
+      this.onAutoplayBlocked = null;
     }
 
     setTurnCredentials(credentials) {
@@ -385,6 +386,7 @@
       // Ensure audio plays
       audio.play().catch(error => {
         console.warn('CallSafe: Failed to autoplay remote audio', error);
+        if (this.onAutoplayBlocked) this.onAutoplayBlocked();
       });
     }
 
@@ -394,7 +396,19 @@
         videoEl.srcObject = stream;
         videoEl.play().catch(error => {
           console.warn('CallSafe: Failed to autoplay remote video', error);
+          if (this.onAutoplayBlocked) this.onAutoplayBlocked();
         });
+      }
+    }
+
+    resumePlayback() {
+      const audioEl = document.querySelector('audio[data-callsafe-remote]');
+      if (audioEl && audioEl.srcObject) {
+        audioEl.play().catch(e => console.error('CallSafe: resumePlayback audio failed', e));
+      }
+      const videoEl = document.querySelector('video[data-callsafe-remote]');
+      if (videoEl && videoEl.srcObject) {
+        videoEl.play().catch(e => console.error('CallSafe: resumePlayback video failed', e));
       }
     }
 
@@ -1557,6 +1571,7 @@
         // Initialize WebRTC with TURN credentials
         debugLog('call', 'Initializing WebRTC with credentials');
         this.webrtcManager = new WebRTCManager(null, this.sendSocketMessage.bind(this));
+        this.webrtcManager.onAutoplayBlocked = () => this.showAutoplayPrompt();
 
         // Set TURN credentials if available
         if (turnCredentials) {
@@ -1854,6 +1869,23 @@
       }
     }
 
+    showAutoplayPrompt() {
+      const modal = this.widgetElement?.querySelector('.callsafe-modal-content');
+      if (!modal || modal.querySelector('#callsafe-autoplay-prompt')) return;
+
+      const prompt = document.createElement('button');
+      prompt.id = 'callsafe-autoplay-prompt';
+      prompt.textContent = 'Tap to enable audio';
+      prompt.style.cssText = 'display:block;width:100%;margin-bottom:8px;padding:10px;background:#f59e0b;color:#fff;font-weight:600;border:none;border-radius:12px;cursor:pointer;font-size:14px;';
+      prompt.onclick = () => {
+        this.webrtcManager?.resumePlayback();
+        prompt.remove();
+      };
+
+      const body = modal.querySelector('.callsafe-modal-body');
+      if (body) body.prepend(prompt);
+    }
+
     toggleCamera() {
       if (!this.webrtcManager || this.callType !== 'video') return;
 
@@ -1975,6 +2007,9 @@
         this.cleanupTimeout = null;
       }
       
+      // Remove autoplay prompt if present
+      this.widgetElement?.querySelector('#callsafe-autoplay-prompt')?.remove();
+
       // Stop WebRTC and media streams
       if (this.webrtcManager) {
         debugLog('cleanup', 'Cleaning up WebRTC manager');

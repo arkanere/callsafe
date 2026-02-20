@@ -26,6 +26,7 @@
   let showCallButton = true;
   let showCallControls = false;
   let cleanupTimeout: any = null;
+  let autoplayBlocked = false;
 
   onMount(() => {
     console.log('[EMBED PAGE] onMount(): Component mounted');
@@ -234,6 +235,7 @@
 
   async function initializeCustomerWebRTC(callId: string, type: 'voice' | 'video') {
     webrtcManager = new WebRTCManager(socket!);
+    webrtcManager.onAutoplayBlocked = () => { autoplayBlocked = true; };
 
     await webrtcManager.initialize(callId, type);
 
@@ -418,7 +420,14 @@
     }));
   }
 
+  function resumeAutoplay() {
+    webrtcManager?.resumePlayback();
+    autoplayBlocked = false;
+  }
+
   function cleanup() {
+    autoplayBlocked = false;
+
     if (cleanupTimeout) {
       clearTimeout(cleanupTimeout);
       cleanupTimeout = null;
@@ -471,6 +480,21 @@
         </span>
       </div>
     </div>
+
+    <!-- Autoplay blocked prompt -->
+    {#if autoplayBlocked && ['connecting', 'ringing', 'connected'].includes(callState)}
+      <div class="mb-4">
+        <button
+          on:click={resumeAutoplay}
+          class="w-full bg-yellow-500 hover:bg-yellow-600 text-white font-semibold py-3 px-4 rounded-xl transition-colors duration-200 flex items-center justify-center"
+        >
+          <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/>
+          </svg>
+          Tap to enable audio
+        </button>
+      </div>
+    {/if}
 
     <!-- Main Call Interface -->
     <div class="space-y-4">
