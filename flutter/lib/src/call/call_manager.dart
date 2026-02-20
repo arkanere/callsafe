@@ -28,6 +28,7 @@ class CallManager extends StateNotifier<CallManagerState> {
 
   StreamSubscription<Map<String, dynamic>>? _messageSubscription;
   StreamSubscription<SignalingState>? _signalingStateSubscription;
+  bool _isOfferer = false;
 
   CallManager(this._signaling, this._webrtc, {Future<List<Map<String, dynamic>>?> Function()? fetchTurnServers})
       : _fetchTurnServers = fetchTurnServers,
@@ -110,6 +111,8 @@ class CallManager extends StateNotifier<CallManagerState> {
 
       _signaling.emit(MessageTypes.callInitiate, payload.toJson());
 
+      _isOfferer = true;
+
       // Fetch TURN credentials then initialize WebRTC
       final iceServers = await _fetchTurnServers?.call();
       await _webrtc
@@ -144,6 +147,8 @@ class CallManager extends StateNotifier<CallManagerState> {
       );
 
       _signaling.emit(MessageTypes.callAccept, payload.toJson());
+
+      _isOfferer = false;
 
       // Fetch TURN credentials then initialize WebRTC
       final iceServers = await _fetchTurnServers?.call();
@@ -368,6 +373,17 @@ class CallManager extends StateNotifier<CallManagerState> {
 
   /// Setup message handlers
   void _setupMessageHandlers() {
+    _webrtc.onConnectionStateChange((callAttemptId, connectionState) {
+      final session = state.currentCall;
+      if (session?.callAttemptId != callAttemptId) return;
+
+      if (connectionState == 'ice-restart-needed' && _isOfferer) {
+        _createAndSendOffer(callAttemptId);
+      } else if (connectionState == 'failed') {
+        state = _endCall(session!, CallState.ended);
+      }
+    });
+
     _messageSubscription = _signaling.messageStream.listen((message) {
       final type = message['type'] as String;
       final payload = message['payload'] as Map<String, dynamic>;

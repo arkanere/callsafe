@@ -6,6 +6,9 @@ export class WebRTCManager {
   private localStream: MediaStream | null = null;
   private socket: WsTransport;
   private callType: 'voice' | 'video' = 'voice';
+  private _isOfferer = false;
+  private _disconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private _iceRestartAttempted = false;
 
   constructor(socket: WsTransport) {
     console.log('[WEBRTC MANAGER] constructor(): Constructor called');
@@ -114,17 +117,45 @@ export class WebRTCManager {
       const state = this.peerConnection!.iceConnectionState;
       console.log('[WEBRTC MANAGER] initialize(): ICE connection state changed:', state);
 
-      if (state === 'failed') {
-        console.error('[WEBRTC MANAGER] initialize(): ICE connection failed');
-        this.handleConnectionFailure(callAttemptId);
+      if (state === 'connected' || state === 'completed') {
+        if (this._disconnectTimer !== null) {
+          clearTimeout(this._disconnectTimer);
+          this._disconnectTimer = null;
+        }
+        this._iceRestartAttempted = false;
+      } else if (state === 'disconnected') {
+        // Transient — wait 4s before attempting ICE restart
+        if (this._disconnectTimer === null) {
+          this._disconnectTimer = setTimeout(() => {
+            this._disconnectTimer = null;
+            if (this.peerConnection?.iceConnectionState === 'disconnected') {
+              this._triggerIceRestart(callAttemptId).catch(() => {
+                this.handleConnectionFailure(callAttemptId);
+              });
+            }
+          }, 4000);
+        }
+      } else if (state === 'failed') {
+        if (this._disconnectTimer !== null) {
+          clearTimeout(this._disconnectTimer);
+          this._disconnectTimer = null;
+        }
+        if (!this._iceRestartAttempted) {
+          this._triggerIceRestart(callAttemptId).catch(() => {
+            this.handleConnectionFailure(callAttemptId);
+          });
+        } else {
+          console.error('[WEBRTC MANAGER] initialize(): ICE restart failed, giving up');
+          this.handleConnectionFailure(callAttemptId);
+        }
       }
-      // Connection success is handled by server timeout management
     };
 
     console.log('[WEBRTC MANAGER] initialize(): WebRTC initialization complete');
   }
 
   async createAnswer(offer: RTCSessionDescription, callAttemptId: string) {
+    this._isOfferer = false;
     console.log('[WEBRTC MANAGER] createAnswer(): Creating answer for call:', callAttemptId);
 
     if (!this.peerConnection) {
@@ -153,6 +184,7 @@ export class WebRTCManager {
   }
 
   async createOffer(callAttemptId: string): Promise<RTCSessionDescription> {
+    this._isOfferer = true;
     console.log('[WEBRTC MANAGER] createOffer(): Creating offer for call:', callAttemptId);
 
     if (!this.peerConnection) {
@@ -281,6 +313,20 @@ export class WebRTCManager {
     }
   }
 
+  private async _triggerIceRestart(callAttemptId: string): Promise<void> {
+    if (!this.peerConnection || this._iceRestartAttempted) return;
+    this._iceRestartAttempted = true;
+
+    if (this._isOfferer) {
+      console.log('[WEBRTC MANAGER] _triggerIceRestart(): Restarting ICE for call:', callAttemptId);
+      this.peerConnection.restartIce();
+      await this.createOffer(callAttemptId);
+    } else {
+      console.error('[WEBRTC MANAGER] _triggerIceRestart(): Callee cannot restart ICE — signaling failure');
+      this.handleConnectionFailure(callAttemptId);
+    }
+  }
+
   private handleConnectionFailure(callAttemptId: string): void {
     console.error('[WEBRTC MANAGER] handleConnectionFailure(): WebRTC connection failed for call:', callAttemptId);
 
@@ -300,6 +346,12 @@ export class WebRTCManager {
 
   cleanup(): void {
     console.log('[WEBRTC MANAGER] cleanup(): Starting cleanup');
+
+    if (this._disconnectTimer !== null) {
+      clearTimeout(this._disconnectTimer);
+      this._disconnectTimer = null;
+    }
+    this._iceRestartAttempted = false;
 
     // Stop local media stream
     if (this.localStream) {

@@ -85,6 +85,8 @@
       this.connectionState = 'idle';
       this.connectionCheckInterval = null;
       this.turnCredentials = null; // Dynamic TURN credentials from server
+      this._disconnectTimer = null;
+      this._iceRestartAttempted = false;
     }
 
     setTurnCredentials(credentials) {
@@ -231,20 +233,53 @@
       // Handle connection state changes
       this.peerConnection.oniceconnectionstatechange = () => {
         const state = this.peerConnection.iceConnectionState;
-        debugLog('webrtc', 'ICE connection state changed', { 
+        debugLog('webrtc', 'ICE connection state changed', {
           newState: state,
-          previousState: this.connectionState 
+          previousState: this.connectionState
         });
-        
+
         if (state === 'connected' || state === 'completed') {
           this.connectionState = 'connected';
-        } else if (state === 'failed' || state === 'disconnected') {
-          this.connectionState = 'failed';
+          if (this._disconnectTimer !== null) {
+            clearTimeout(this._disconnectTimer);
+            this._disconnectTimer = null;
+          }
+          this._iceRestartAttempted = false;
+        } else if (state === 'disconnected') {
+          // Transient — wait 4s before attempting ICE restart
+          if (this._disconnectTimer === null) {
+            this._disconnectTimer = setTimeout(() => {
+              this._disconnectTimer = null;
+              if (this.peerConnection?.iceConnectionState === 'disconnected') {
+                this._triggerIceRestart();
+              }
+            }, 4000);
+          }
+        } else if (state === 'failed') {
+          if (this._disconnectTimer !== null) {
+            clearTimeout(this._disconnectTimer);
+            this._disconnectTimer = null;
+          }
+          if (!this._iceRestartAttempted) {
+            this._triggerIceRestart();
+          } else {
+            this.connectionState = 'failed';
+          }
         }
       };
 
       // Start connection monitoring
       this.startConnectionMonitoring();
+    }
+
+    _triggerIceRestart() {
+      if (!this.peerConnection || this._iceRestartAttempted) return;
+      this._iceRestartAttempted = true;
+      debugLog('webrtc', 'Triggering ICE restart', { callId: this.callId });
+      this.peerConnection.restartIce();
+      this.createOffer(this.callId).catch(() => {
+        this.connectionState = 'failed';
+      });
     }
 
     startConnectionMonitoring() {
@@ -283,6 +318,10 @@
       if (this.connectionCheckInterval) {
         clearInterval(this.connectionCheckInterval);
         this.connectionCheckInterval = null;
+      }
+      if (this._disconnectTimer !== null) {
+        clearTimeout(this._disconnectTimer);
+        this._disconnectTimer = null;
       }
     }
 
@@ -380,6 +419,7 @@
       this.remoteStream = null;
       this.callType = 'voice';
       this.connectionState = 'idle';
+      this._iceRestartAttempted = false;
     }
   }
 

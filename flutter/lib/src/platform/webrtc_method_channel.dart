@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter_webrtc/flutter_webrtc.dart' as fwrtc;
 import 'package:fpdart/fpdart.dart';
 import '../protocol/protocol.dart';
@@ -18,6 +19,8 @@ class WebRTCMethodChannel implements WebRTCPlatform {
 
   void Function(String, RTCIceCandidate)? _iceCandidateCallback;
   void Function(String, String)? _connectionStateCallback;
+  Timer? _disconnectTimer;
+  bool _iceRestartAttempted = false;
 
   @override
   fwrtc.RTCVideoRenderer? get localRenderer =>
@@ -89,6 +92,32 @@ class WebRTCMethodChannel implements WebRTCPlatform {
         _connectionStateCallback?.call(callAttemptId, state.name);
       };
 
+      // ICE connection state — restart on disconnected/failed
+      pc.onIceConnectionState = (state) {
+        if (state == fwrtc.RTCIceConnectionState.RTCIceConnectionStateConnected ||
+            state == fwrtc.RTCIceConnectionState.RTCIceConnectionStateCompleted) {
+          _disconnectTimer?.cancel();
+          _disconnectTimer = null;
+          _iceRestartAttempted = false;
+        } else if (state == fwrtc.RTCIceConnectionState.RTCIceConnectionStateDisconnected) {
+          _disconnectTimer ??= Timer(const Duration(seconds: 4), () {
+            _disconnectTimer = null;
+            final currentPc = _connections[callAttemptId];
+            if (currentPc != null) {
+              _restartIce(callAttemptId, currentPc);
+            }
+          });
+        } else if (state == fwrtc.RTCIceConnectionState.RTCIceConnectionStateFailed) {
+          _disconnectTimer?.cancel();
+          _disconnectTimer = null;
+          if (!_iceRestartAttempted) {
+            _restartIce(callAttemptId, pc);
+          } else {
+            _connectionStateCallback?.call(callAttemptId, 'failed');
+          }
+        }
+      };
+
       // Remote tracks → attach to renderer
       pc.onTrack = (event) {
         if (event.streams.isNotEmpty) {
@@ -101,6 +130,13 @@ class WebRTCMethodChannel implements WebRTCPlatform {
 
       return unit;
     });
+  }
+
+  void _restartIce(String callAttemptId, fwrtc.RTCPeerConnection pc) {
+    if (_iceRestartAttempted) return;
+    _iceRestartAttempted = true;
+    pc.restartIce();
+    _connectionStateCallback?.call(callAttemptId, 'ice-restart-needed');
   }
 
   @override
@@ -170,6 +206,10 @@ class WebRTCMethodChannel implements WebRTCPlatform {
   @override
   Task<Unit> closePeerConnection(String callAttemptId) {
     return Task(() async {
+      _disconnectTimer?.cancel();
+      _disconnectTimer = null;
+      _iceRestartAttempted = false;
+
       final pc = _connections.remove(callAttemptId);
       await pc?.close();
 
@@ -251,6 +291,9 @@ class WebRTCMethodChannel implements WebRTCPlatform {
 
   @override
   void dispose() {
+    _disconnectTimer?.cancel();
+    _disconnectTimer = null;
+
     for (final pc in _connections.values) {
       pc.close();
     }
