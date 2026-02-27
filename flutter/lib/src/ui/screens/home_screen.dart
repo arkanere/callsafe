@@ -36,14 +36,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             fontWeight: FontWeight.w600,
           ),
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.settings, color: Colors.white),
-            onPressed: () {
-              context.push(AppRoutes.settings);
-            },
-          ),
-        ],
+        actions: const [],
       ),
       body: _buildBody(),
       bottomNavigationBar: BottomNavigationBar(

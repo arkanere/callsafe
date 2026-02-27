@@ -7,7 +7,6 @@ import '../screens/home_screen.dart';
 import '../screens/incoming_call_screen.dart';
 import '../screens/active_call_screen.dart';
 import '../screens/call_history_screen.dart';
-import '../screens/settings_screen.dart';
 
 /// Route paths
 class AppRoutes {
@@ -15,7 +14,6 @@ class AppRoutes {
   static const incomingCall = '/incoming-call';
   static const activeCall = '/active-call';
   static const callHistory = '/history';
-  static const settings = '/settings';
 }
 
 /// Router provider
@@ -68,15 +66,6 @@ final routerProvider = Provider<GoRouter>((ref) {
         ),
       ),
 
-      // Settings route
-      GoRoute(
-        path: AppRoutes.settings,
-        name: 'settings',
-        pageBuilder: (context, state) => MaterialPage(
-          key: state.pageKey,
-          child: const SettingsScreen(),
-        ),
-      ),
     ],
     redirect: (context, state) {
       final currentCall = callManager.currentCall;
