@@ -49,34 +49,6 @@ if (!result.valid) {
 }
 ```
 
-### Kotlin (Android App)
-
-**AUTO-GENERATED** constants at `android-app/app/src/main/java/tech/callsafe/business/protocol/Protocol.kt`
-
-```kotlin
-import tech.callsafe.business.protocol.Protocol
-
-// Use message type constants
-socket.emit(Protocol.MessageTypes.DEVICE_CONNECT, JSONObject().apply {
-    put("type", Protocol.MessageTypes.DEVICE_CONNECT)
-    put("deviceType", Protocol.DeviceType.MOBILE.value)
-    put("deviceId", deviceId)
-    put("protocolVersion", Protocol.VERSION)
-})
-
-// Use enums for type safety
-put("status", Protocol.DeviceStatus.AVAILABLE.value)
-put("callType", Protocol.CallType.VOICE.value)
-```
-
-To regenerate Kotlin constants after protocol changes:
-```bash
-cd protocol
-node generate-kotlin.js
-```
-
-See `android-app/PROTOCOL.md` for complete usage guide.
-
 ## Message Categories
 
 ### Call Lifecycle (12 messages)
@@ -212,5 +184,4 @@ Patch version increments are bug fixes only.
 ## Platform-Specific Documentation
 
 - **TypeScript/JavaScript**: See usage examples above
-- **Android/Kotlin**: See `android-app/PROTOCOL.md`
-- **Flutter/Dart**: Will be documented in Phase 5
+- **Flutter/Dart**: See `flutter/lib/src/protocol/`
