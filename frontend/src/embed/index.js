@@ -99,6 +99,10 @@ class CallSafeWidget {
     this.turnCredentials = null;
     this.turnCredentialsFetchPromise = null;
 
+    // Server reachability — probed on init via TURN fetch
+    this.serverReachable = true;
+    this.serverCheckInterval = null;
+
     this.init();
   }
 
@@ -141,7 +145,13 @@ class CallSafeWidget {
         return credentials;
       })
       .catch(error => {
-        debugLog('turn', 'Failed to pre-fetch TURN credentials (will use STUN only)', { error: error.message });
+        if (error instanceof TypeError) {
+          // Network error — signaling server is unreachable
+          debugLog('turn', 'Server unreachable — disabling widget until server returns', { error: error.message });
+          this.setServerUnavailable();
+        } else {
+          debugLog('turn', 'Failed to pre-fetch TURN credentials (will use STUN only)', { error: error.message });
+        }
         return null;
       });
   }
@@ -968,7 +978,38 @@ class CallSafeWidget {
     if (button) {
       const textElement = button.querySelector('.callsafe-text');
       if (textElement) textElement.textContent = text;
-      button.disabled = state === 'connecting';
+      button.disabled = state === 'connecting' || state === 'unavailable';
+    }
+  }
+
+  setServerUnavailable() {
+    if (!this.serverReachable) return;
+    this.serverReachable = false;
+    this.updateButtonState('unavailable', 'Calls temporarily unavailable');
+    debugLog('server', 'Starting background server reachability check (every 30s)');
+    this.serverCheckInterval = setInterval(() => this.retryServerCheck(), 30_000);
+  }
+
+  async retryServerCheck() {
+    if (!this.widgetElement) {
+      clearInterval(this.serverCheckInterval);
+      this.serverCheckInterval = null;
+      return;
+    }
+    debugLog('server', 'Retrying server reachability');
+    try {
+      const res = await fetch(`${this.getSignalingServerUrl()}/api/turn-credentials`, {
+        signal: AbortSignal.timeout(5000)
+      });
+      if (res.status < 500) {
+        clearInterval(this.serverCheckInterval);
+        this.serverCheckInterval = null;
+        this.serverReachable = true;
+        this.updateButtonState('idle', this.config.buttonText);
+        debugLog('server', 'Signaling server back online — widget re-enabled');
+      }
+    } catch {
+      debugLog('server', 'Server still unreachable');
     }
   }
 
