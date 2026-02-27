@@ -18,7 +18,7 @@ config :callsafe_signaling,
   timeout_connecting: 10_000,
   timeout_idle: 300_000,
 
-  # TURN servers - loaded from environment
+  # TURN servers - set at runtime from TURN_SERVER_URL env var (see runtime.exs)
   turn_servers: [],
 
   # FCM push notifications

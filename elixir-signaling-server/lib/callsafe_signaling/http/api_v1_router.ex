@@ -18,19 +18,22 @@ defmodule CallsafeSignaling.HTTP.ApiV1Router do
 
   # TURN credentials endpoint
   post "/turn/credentials" do
-    # Return TURN server configuration
     turn_servers = Config.turn_servers()
+    turn_secret = Config.turn_secret()
 
-    credentials = %{
-      ttl: 86400,
-      uris:
-        Enum.map(turn_servers, fn server ->
-          Map.get(server, :urls, [])
-        end)
-        |> List.flatten(),
-      username: generate_turn_username(),
-      password: generate_turn_password()
-    }
+    credentials =
+      if turn_servers == [] or is_nil(turn_secret) do
+        %{ttl: 86400, uris: [], username: nil, password: nil}
+      else
+        username = generate_turn_username()
+
+        %{
+          ttl: 86400,
+          uris: Enum.flat_map(turn_servers, &Map.get(&1, :urls, [])),
+          username: username,
+          password: generate_turn_credential(username, turn_secret)
+        }
+      end
 
     send_resp(conn, 200, Jason.encode!(credentials))
   end
@@ -128,17 +131,11 @@ defmodule CallsafeSignaling.HTTP.ApiV1Router do
   # Private helpers
 
   defp generate_turn_username do
-    # Generate timestamp-based username (expires in 24 hours)
     expiry = System.system_time(:second) + 86400
-    "#{expiry}:callsafe"
+    "#{expiry}:#{Config.turn_username()}"
   end
 
-  defp generate_turn_password do
-    # Generate HMAC-based password using shared secret
-    # In production, this should use actual TURN server credentials
-    username = generate_turn_username()
-    secret = Config.jwt_secret() || "turn-secret"
-
+  defp generate_turn_credential(username, secret) do
     :crypto.mac(:hmac, :sha256, secret, username)
     |> Base.encode64()
   end

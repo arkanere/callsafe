@@ -55,6 +55,20 @@ defmodule CallsafeSignaling.Config do
   end
 
   @doc """
+  Get TURN shared secret for HMAC credential generation.
+  """
+  def turn_secret do
+    get(:turn_secret, nil)
+  end
+
+  @doc """
+  Get TURN username identifier (embedded in time-limited username as "expiry:identifier").
+  """
+  def turn_username do
+    get(:turn_username, "callsafe")
+  end
+
+  @doc """
   Get rate limit configuration.
   """
   def rate_limits do
