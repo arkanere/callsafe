@@ -24,6 +24,9 @@ defmodule CallsafeSignaling.Application do
       # Stats tracking with :counters
       CallsafeSignaling.Stats,
 
+      # FCM OAuth2 token cache
+      CallsafeSignaling.FCM.TokenServer,
+
       # Dynamic supervisor for call sessions
       CallsafeSignaling.CallSessionSupervisor,
 

@@ -1,14 +1,15 @@
 defmodule CallsafeSignaling.FCM.PushService do
   @moduledoc """
   Firebase Cloud Messaging integration for push notifications to offline devices.
-  Sends notifications to wake up mobile apps for incoming calls.
+  Uses the FCM HTTP v2 API with OAuth2 bearer token auth.
   """
 
   require Logger
   alias CallsafeSignaling.Stats
+  alias CallsafeSignaling.FCM.TokenServer
 
   @doc """
-  Send push notification to a device via FCM.
+  Send push notification to a device via FCM HTTP v2 API.
 
   ## Parameters
     - device_token: FCM registration token for the target device
@@ -19,13 +20,17 @@ defmodule CallsafeSignaling.FCM.PushService do
     - {:error, reason} on failure
   """
   def send_notification(device_token, payload) when is_binary(device_token) and is_map(payload) do
-    server_key = CallsafeSignaling.Config.fcm_server_key()
+    case TokenServer.get_token() do
+      {:ok, access_token, project_id} ->
+        send_fcm_request(device_token, payload, access_token, project_id)
 
-    if is_nil(server_key) or server_key == "" do
-      Logger.warning("FCM server key not configured, skipping push notification")
-      {:error, :fcm_not_configured}
-    else
-      send_fcm_request(device_token, payload, server_key)
+      {:error, :fcm_not_configured} ->
+        Logger.warning("FCM service account not configured, skipping push notification")
+        {:error, :fcm_not_configured}
+
+      {:error, reason} ->
+        Logger.error("FCM token retrieval failed: #{inspect(reason)}")
+        {:error, reason}
     end
   end
 
@@ -45,34 +50,34 @@ defmodule CallsafeSignaling.FCM.PushService do
 
   # Private functions
 
-  defp fcm_endpoint do
+  defp fcm_endpoint(project_id) do
     Application.get_env(
       :callsafe_signaling,
       :fcm_endpoint,
-      "https://fcm.googleapis.com/fcm/send"
+      "https://fcm.googleapis.com/v1/projects/#{project_id}/messages:send"
     )
   end
 
-  defp send_fcm_request(device_token, payload, server_key) do
+  defp send_fcm_request(device_token, payload, access_token, project_id) do
     headers = [
-      {"Authorization", "key=#{server_key}"},
+      {"Authorization", "Bearer #{access_token}"},
       {"Content-Type", "application/json"}
     ]
 
     body = %{
-      to: device_token,
-      priority: "high",
-      data: payload,
-      notification: build_notification(payload)
+      message: %{
+        token: device_token,
+        data: stringify_values(payload),
+        notification: build_notification(payload)
+      }
     }
 
     start_time = System.monotonic_time(:millisecond)
 
-    case Req.post(fcm_endpoint(), headers: headers, json: body) do
+    case Req.post(fcm_endpoint(project_id), headers: headers, json: body) do
       {:ok, %{status: status, body: response_body}} when status in 200..299 ->
         duration = System.monotonic_time(:millisecond) - start_time
 
-        # Track successful FCM notification
         Stats.increment_fcm_sent()
 
         :telemetry.execute(
@@ -89,7 +94,6 @@ defmodule CallsafeSignaling.FCM.PushService do
         {:ok, response_body}
 
       {:ok, %{status: status, body: response_body}} ->
-        # Track failed FCM notification
         Stats.increment_fcm_failed()
 
         Logger.warning("FCM request failed",
@@ -107,7 +111,6 @@ defmodule CallsafeSignaling.FCM.PushService do
         {:error, {:fcm_error, status, response_body}}
 
       {:error, reason} ->
-        # Track failed FCM notification
         Stats.increment_fcm_failed()
 
         Logger.error("FCM request error",
@@ -134,5 +137,9 @@ defmodule CallsafeSignaling.FCM.PushService do
       sound: "default",
       badge: 1
     }
+  end
+
+  defp stringify_values(map) do
+    Map.new(map, fn {k, v} -> {to_string(k), to_string(v)} end)
   end
 end

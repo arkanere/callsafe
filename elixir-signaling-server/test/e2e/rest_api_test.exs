@@ -289,15 +289,25 @@ defmodule CallsafeSignaling.E2E.RestApiTest do
       Application.put_env(
         :callsafe_signaling,
         :fcm_endpoint,
-        "http://localhost:#{port}/fcm/send"
+        "http://localhost:#{port}/v1/projects/test/messages:send"
       )
 
-      Application.put_env(:callsafe_signaling, :fcm_server_key, "test_server_key")
+      # Inject a fake cached token into the TokenServer so it skips real OAuth2
+      :sys.replace_state(CallsafeSignaling.FCM.TokenServer, fn state ->
+        %{state |
+          creds: %{client_email: "test@test.iam.gserviceaccount.com", private_key: "fake", project_id: "test"},
+          token: "test_bearer_token",
+          expires_at: System.system_time(:second) + 3600
+        }
+      end)
 
       on_exit(fn ->
         MockFCMServer.stop()
         Application.delete_env(:callsafe_signaling, :fcm_endpoint)
-        Application.delete_env(:callsafe_signaling, :fcm_server_key)
+        # Restore TokenServer to unconfigured state
+        :sys.replace_state(CallsafeSignaling.FCM.TokenServer, fn state ->
+          %{state | creds: nil, token: nil, expires_at: 0}
+        end)
       end)
 
       {:ok, mock_port: port}
@@ -332,17 +342,17 @@ defmodule CallsafeSignaling.E2E.RestApiTest do
       # response arrives the push has already been sent.
       TestClient.assert_receive_type(caller, "call:incoming")
 
-      # Assert mock FCM server captured the push request
+      # Assert mock FCM server captured the push request (v2 envelope)
       assert {:ok, fcm_req} = MockFCMServer.await_request()
 
-      assert fcm_req["to"] == push_token
-      assert fcm_req["priority"] == "high"
+      message = fcm_req["message"]
+      assert message["token"] == push_token
 
-      data = fcm_req["data"]
+      data = message["data"]
       assert data["call_id"] == call_id
       assert data["caller_id"] == caller_id
       assert data["call_type"] == "voice"
-      assert is_integer(data["timestamp"])
+      assert is_binary(data["timestamp"])
 
       # Verify fcm_sent stat incremented
       {200, stats_after} = HttpClient.get("/stats")
@@ -372,7 +382,7 @@ defmodule CallsafeSignaling.E2E.RestApiTest do
 
       assert {:ok, fcm_req} = MockFCMServer.await_request()
 
-      notification = fcm_req["notification"]
+      notification = fcm_req["message"]["notification"]
       assert is_map(notification)
       assert notification["title"] =~ "voice"
       assert is_binary(notification["body"])

@@ -1,11 +1,16 @@
 defmodule CallsafeSignaling.FCM.PushServiceTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias CallsafeSignaling.FCM.PushService
 
+  setup do
+    start_supervised!(CallsafeSignaling.FCM.TokenServer)
+    :ok
+  end
+
   describe "send_notification/2" do
     test "returns error when FCM is not configured" do
-      # Test without FCM_SERVER_KEY set
+      # TokenServer starts without FCM_SERVICE_ACCOUNT_JSON in test env
       result =
         PushService.send_notification("device_token_123", %{
           call_id: "call_123",
@@ -40,7 +45,7 @@ defmodule CallsafeSignaling.FCM.PushServiceTest do
       caller_id = "device_123"
       call_type = :voice
 
-      # This will fail due to no FCM key, but we can verify it doesn't crash
+      # This will fail due to no service account, but we can verify it doesn't crash
       result = PushService.notify_incoming_call(device_token, call_id, caller_id, call_type)
 
       # Should return error about configuration, not crash
@@ -72,10 +77,10 @@ defmodule CallsafeSignaling.FCM.PushServiceTest do
       assert Map.has_key?(fcm_config, :timeout_ms)
     end
 
-    test "FCM server key is accessible" do
+    test "FCM service account JSON is accessible" do
       # Should not crash, returns nil or string
-      server_key = CallsafeSignaling.Config.fcm_server_key()
-      assert is_nil(server_key) or is_binary(server_key)
+      json = CallsafeSignaling.Config.fcm_service_account_json()
+      assert is_nil(json) or is_binary(json)
     end
   end
 end

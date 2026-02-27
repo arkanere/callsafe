@@ -34,7 +34,8 @@ defmodule CallsafeSignaling.MixProject do
       {:telemetry_poller, "~> 1.0"},
       {:plug, "~> 1.16"},
       {:plug_cowboy, "~> 2.7"},
-      {:cowboy, "~> 2.12"}
+      {:cowboy, "~> 2.12"},
+      {:joken, "~> 2.6"}
     ]
   end
 end

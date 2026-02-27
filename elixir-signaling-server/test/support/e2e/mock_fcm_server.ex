@@ -1,12 +1,11 @@
 defmodule CallsafeSignaling.E2E.MockFCMServer do
   @moduledoc """
-  Minimal Cowboy/Plug HTTP server that impersonates the FCM HTTP endpoint.
+  Minimal Cowboy/Plug HTTP server that impersonates the FCM HTTP v2 API endpoint.
   Captures incoming push requests so E2E tests can assert on payload contents.
 
   Usage:
     {:ok, port} = MockFCMServer.start()
-    Application.put_env(:callsafe_signaling, :fcm_endpoint, "http://localhost:\#{port}/fcm/send")
-    Application.put_env(:callsafe_signaling, :fcm_server_key, "test_key")
+    Application.put_env(:callsafe_signaling, :fcm_endpoint, "http://localhost:\#{port}/v1/projects/test/messages:send")
     # ... trigger FCM dispatch via call flow ...
     {:ok, req} = MockFCMServer.await_request()
     MockFCMServer.stop()
@@ -75,7 +74,7 @@ defmodule CallsafeSignaling.E2E.MockFCMServer do
 
       conn
       |> put_resp_content_type("application/json")
-      |> send_resp(200, Jason.encode!(%{"success" => 1}))
+      |> send_resp(200, Jason.encode!(%{"name" => "projects/test/messages/123"}))
     end
   end
 end

@@ -34,17 +34,20 @@ defmodule CallsafeSignaling.Config do
   end
 
   @doc """
-  Get FCM server key for push notifications.
+  Get FCM service account JSON from environment.
   """
-  def fcm_server_key do
-    get(:fcm_server_key, System.get_env("FCM_SERVER_KEY"))
+  def fcm_service_account_json do
+    System.get_env("FCM_SERVICE_ACCOUNT_JSON")
   end
 
   @doc """
-  Get FCM HTTP endpoint URL. Overridable in tests to point at a mock server.
+  Get FCM project ID from TokenServer.
   """
-  def fcm_endpoint do
-    get(:fcm_endpoint, "https://fcm.googleapis.com/fcm/send")
+  def fcm_project_id do
+    case CallsafeSignaling.FCM.TokenServer.project_id() do
+      {:ok, id} -> id
+      {:error, _} -> nil
+    end
   end
 
   @doc """
