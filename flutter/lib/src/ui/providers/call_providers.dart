@@ -51,9 +51,9 @@ Future<List<Map<String, dynamic>>?> _fetchTurnServers() async {
     final data = jsonDecode(body) as Map<String, dynamic>;
     return [
       {
-        'urls': data['uris'],
+        'urls': data['urls'],
         'username': data['username'],
-        'credential': data['password'],
+        'credential': data['credential'],
       }
     ];
   } catch (_) {

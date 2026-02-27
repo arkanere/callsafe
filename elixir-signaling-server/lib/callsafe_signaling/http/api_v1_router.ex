@@ -23,15 +23,15 @@ defmodule CallsafeSignaling.HTTP.ApiV1Router do
 
     credentials =
       if turn_servers == [] or is_nil(turn_secret) do
-        %{ttl: 86400, uris: [], username: nil, password: nil}
+        %{ttl: 86400, urls: [], username: nil, credential: nil}
       else
         username = generate_turn_username()
 
         %{
           ttl: 86400,
-          uris: Enum.flat_map(turn_servers, &Map.get(&1, :urls, [])),
+          urls: Enum.flat_map(turn_servers, &Map.get(&1, :urls, [])),
           username: username,
-          password: generate_turn_credential(username, turn_secret)
+          credential: generate_turn_credential(username, turn_secret)
         }
       end
 
