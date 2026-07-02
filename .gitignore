@@ -110,3 +110,57 @@ python-automation-script/
 
 # Internal analysis and design docs
 frontend/workings-of-turn-server-and-proposed-changes-to-callsafe.md
+
+# Internal planning and sprint docs (not for public repo)
+P1-protocol-extraction.md
+P2-Flutter-Migration-Plan.md
+P3-Elixir-Migration-Plan.md
+P3.2-WebSocket-Transport.md
+P3.3-Shadow-Mode-Plan.md
+P3.3.1-Frontend-Client-WebSocket-Migration.md
+P3.3.2-Flutter-Client-Migration-Plan.md
+P3.3.3-End-to-End-Testing-Plan.md
+P3.3.3.2-Call-Lifecycle-E2E-Tests.md
+P3.3.3.2.3-Busy-Concurrency-E2E-Tests.md
+P3.3.3.3-REST-API-FCM-Verification-Plan.md
+P3.3.3.4-Cross-Platform-Manual-Test-Protocol.md
+P3.3.3.4.1-Manual-Test-Checklist.md
+P3.3.3.x-Test-Observability-Refactor.md
+P3.3.4-Video-Calling-Plan.md
+P3.3.5-Pre-Production-Fixes.md
+P3.3.6-Deployment-Readiness.md
+P3.3.6-Pre-Deployment-Test-Protocol.md
+P3.3.7-Production-Blockers.md
+planning-and-implementation.md
+manual-test-results.md
+migration.md
+OPEN-SOURCE-CHECKLIST.md
+
+# Claude internal guidance files
+CLAUDE.md
+frontend/CLAUDE.md
+frontend/.claude/
+flutter/CLUADE.md
+
+# Flutter internal planning docs
+flutter/plan.md
+flutter/planning-and-implementation.md
+
+# Editor tooling
+.clj-kondo/
+.lsp/
+
+# Internal operational docs (not for public repo)
+docs/2. document-driven-development.md
+docs/3. callsafe-document-index.md
+docs/16. deployment-guide.md
+docs/17. monitoring-logging.md
+docs/22. analytics-tracking.md
+docs/23. infrastructure-requirements.md
+docs/24. backup-recovery.md
+docs/25. guidance-to-get-started.md
+docs/26.capacity-and-scaling.md
+docs/28.progress-report.md
+docs/29. main-assumption-hypothesis.md
+docs/30.security-audit-report.md
+docs/31.bugs.md
