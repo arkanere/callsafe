@@ -104,3 +104,9 @@ android-app/app/src/test/
 
 # Firebase WebRTC sample project
 FirebaseWebRTCVideoCall/
+
+# Internal automation scripts (not for public repo)
+python-automation-script/
+
+# Internal analysis and design docs
+frontend/workings-of-turn-server-and-proposed-changes-to-callsafe.md

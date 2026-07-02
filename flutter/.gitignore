@@ -41,6 +41,17 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
+# Firebase config (contains API keys — keep locally, never commit)
+android/app/google-services.json
+
+# Local SDK paths (machine-specific)
+android/local.properties
+
+# Flutter generated files with local paths
+ios/Flutter/flutter_export_environment.sh
+ios/Flutter/Generated.xcconfig
+ios/Flutter/ephemeral/
+
 # Generated files
 *.freezed.dart
 *.g.dart
