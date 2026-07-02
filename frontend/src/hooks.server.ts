@@ -1,6 +1,7 @@
 import type { Handle } from '@sveltejs/kit';
 import { sequence } from '@sveltejs/kit/hooks';
 import { dev } from '$app/environment';
+import { env } from '$env/dynamic/private';
 
 // Pure function to check if route is embeddable widget
 const isEmbedRoute = (pathname: string): boolean => {
@@ -44,13 +45,16 @@ const isStateMutating = (method: string): boolean => {
 
 // Pure function to generate Content Security Policy directive
 const generateCSP = (pathname: string): string => {
+	const signalingUrl = env.VITE_SIGNALING_SERVER_URL || 'https://tunnel.callsafe.tech';
+	const signalingWss = signalingUrl.replace(/^https:\/\//, 'wss://').replace(/^http:\/\//, 'ws://');
+
 	const baseDirectives = [
 		"default-src 'self'",
 		"script-src 'self' 'unsafe-inline'",
 		"style-src 'self' 'unsafe-inline'",
 		"img-src 'self' data: https:",
 		"font-src 'self' data:",
-		"connect-src 'self' wss://tunnel.callsafe.tech https://tunnel.callsafe.tech",
+		`connect-src 'self' ${signalingWss} ${signalingUrl}`,
 		"media-src 'self'",
 		"base-uri 'self'",
 		"form-action 'self'"

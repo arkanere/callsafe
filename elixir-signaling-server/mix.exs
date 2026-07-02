@@ -8,7 +8,9 @@ defmodule CallsafeSignaling.MixProject do
       elixir: "~> 1.19",
       start_permanent: Mix.env() == :prod,
       elixirc_paths: elixirc_paths(Mix.env()),
-      deps: deps()
+      deps: deps(),
+      licenses: ["MIT"],
+      links: %{"GitHub" => "https://github.com/arkanere/callsafe"}
     ]
   end
 
