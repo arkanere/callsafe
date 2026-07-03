@@ -64,8 +64,8 @@ defmodule CallsafeSignaling.E2E.MockFCMServer do
     @moduledoc false
     use Plug.Builder
 
-    plug Plug.Parsers, parsers: [:json], json_decoder: Jason
-    plug :capture
+    plug(Plug.Parsers, parsers: [:json], json_decoder: Jason)
+    plug(:capture)
 
     def capture(conn, _opts) do
       Agent.update(CallsafeSignaling.E2E.MockFCMServer, fn reqs ->

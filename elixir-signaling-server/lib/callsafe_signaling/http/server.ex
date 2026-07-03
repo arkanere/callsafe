@@ -44,8 +44,6 @@ defmodule CallsafeSignaling.HTTP.Server do
        [
          # WebSocket route for normal clients
          {"/ws", CallsafeSignaling.WebSocket.Handler, []},
-         # Shadow bridge route for mirrored traffic from Node.js (P3.3 Phase 2)
-         {"/shadow", CallsafeSignaling.WebSocket.ShadowHandler, []},
          # All other routes go to Plug router
          {:_, Plug.Cowboy.Handler, {CallsafeSignaling.HTTP.Router, []}}
        ]}

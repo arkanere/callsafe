@@ -6,10 +6,11 @@ defmodule CallsafeSignaling.Auth.JWTTest do
   @secret "test_secret_key_for_jwt"
   @device_id "device_123"
   @business_id "business_456"
+  @role "business"
 
-  describe "generate/3" do
+  describe "generate/4" do
     test "generates valid JWT token" do
-      token = JWT.generate(@device_id, @business_id, @secret)
+      token = JWT.generate(@device_id, @business_id, @role, @secret)
 
       assert is_binary(token)
       assert String.contains?(token, ".")
@@ -19,20 +20,21 @@ defmodule CallsafeSignaling.Auth.JWTTest do
 
   describe "verify/1" do
     test "verifies valid token successfully" do
-      token = JWT.generate(@device_id, @business_id, @secret)
+      token = JWT.generate(@device_id, @business_id, @role, @secret)
 
       # Mock Config to return test secret
       with_config(@secret, fn ->
         assert {:ok, claims} = JWT.verify(token)
         assert claims.device_id == @device_id
         assert claims.business_id == @business_id
+        assert claims.role == @role
         assert is_integer(claims.exp)
         assert is_integer(claims.iat)
       end)
     end
 
     test "rejects token with invalid signature" do
-      token = JWT.generate(@device_id, @business_id, @secret)
+      token = JWT.generate(@device_id, @business_id, @role, @secret)
       tampered_token = token <> "tampered"
 
       with_config(@secret, fn ->
@@ -48,6 +50,7 @@ defmodule CallsafeSignaling.Auth.JWTTest do
       payload = %{
         "device_id" => @device_id,
         "business_id" => @business_id,
+        "role" => @role,
         "iat" => now - 7200,
         "exp" => now - 3600
       }
@@ -65,7 +68,13 @@ defmodule CallsafeSignaling.Auth.JWTTest do
     test "rejects token with missing device_id" do
       now = System.system_time(:second)
       header = %{"alg" => "HS256", "typ" => "JWT"}
-      payload = %{"business_id" => @business_id, "iat" => now, "exp" => now + 3600}
+
+      payload = %{
+        "business_id" => @business_id,
+        "role" => @role,
+        "iat" => now,
+        "exp" => now + 3600
+      }
 
       header_b64 = encode_json(header)
       payload_b64 = encode_json(payload)
@@ -80,7 +89,7 @@ defmodule CallsafeSignaling.Auth.JWTTest do
     test "rejects token with missing business_id" do
       now = System.system_time(:second)
       header = %{"alg" => "HS256", "typ" => "JWT"}
-      payload = %{"device_id" => @device_id, "iat" => now, "exp" => now + 3600}
+      payload = %{"device_id" => @device_id, "role" => @role, "iat" => now, "exp" => now + 3600}
 
       header_b64 = encode_json(header)
       payload_b64 = encode_json(payload)
@@ -107,9 +116,39 @@ defmodule CallsafeSignaling.Auth.JWTTest do
       end)
     end
 
+    test "rejects token with missing or invalid role" do
+      now = System.system_time(:second)
+      header = %{"alg" => "HS256", "typ" => "JWT"}
+
+      for payload <- [
+            %{
+              "device_id" => @device_id,
+              "business_id" => @business_id,
+              "iat" => now,
+              "exp" => now + 3600
+            },
+            %{
+              "device_id" => @device_id,
+              "business_id" => @business_id,
+              "role" => "admin",
+              "iat" => now,
+              "exp" => now + 3600
+            }
+          ] do
+        header_b64 = encode_json(header)
+        payload_b64 = encode_json(payload)
+        signature = sign(header_b64, payload_b64, @secret)
+        token = "#{header_b64}.#{payload_b64}.#{signature}"
+
+        with_config(@secret, fn ->
+          assert {:error, :invalid_token} = JWT.verify(token)
+        end)
+      end
+    end
+
     test "returns error when secret is missing" do
       with_config(nil, fn ->
-        token = JWT.generate(@device_id, @business_id, @secret)
+        token = JWT.generate(@device_id, @business_id, @role, @secret)
         assert {:error, :missing_secret} = JWT.verify(token)
       end)
     end
@@ -117,14 +156,14 @@ defmodule CallsafeSignaling.Auth.JWTTest do
 
   describe "decode/2" do
     test "decodes valid token" do
-      token = JWT.generate(@device_id, @business_id, @secret)
+      token = JWT.generate(@device_id, @business_id, @role, @secret)
       assert {:ok, payload} = JWT.decode(token, @secret)
       assert payload["device_id"] == @device_id
       assert payload["business_id"] == @business_id
     end
 
     test "rejects token with invalid signature" do
-      token = JWT.generate(@device_id, @business_id, @secret)
+      token = JWT.generate(@device_id, @business_id, @role, @secret)
       [header, payload, _sig] = String.split(token, ".")
       bad_token = "#{header}.#{payload}.invalidsignature"
 
@@ -132,7 +171,7 @@ defmodule CallsafeSignaling.Auth.JWTTest do
     end
 
     test "rejects token with wrong secret" do
-      token = JWT.generate(@device_id, @business_id, @secret)
+      token = JWT.generate(@device_id, @business_id, @role, @secret)
       assert {:error, :invalid_signature} = JWT.decode(token, "wrong_secret")
     end
   end

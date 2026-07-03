@@ -1,12 +1,19 @@
 defmodule CallsafeSignaling.Protocol.Validator do
   @moduledoc """
-  Message validation as pure data transformation.
-  Validates messages against protocol schemas without side effects.
+  Schema-driven message validation. Required fields and field types come
+  from protocol/protocol.json at compile time (via Protocol.Spec) — nothing
+  here is hand-mirrored from the spec.
   """
 
-  alias CallsafeSignaling.Protocol.{MessageTypes, Enums}
+  alias CallsafeSignaling.Protocol.{Enums, MessageTypes, Spec}
 
   @type validation_result :: :ok | {:error, [String.t()]}
+
+  # RFC 4122 version 4 UUID (the spec requires client-generated UUIDv4).
+  @uuid_v4 ~r/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+  @message_fields Map.new(Spec.message_names(), &{&1, Spec.fields(&1)})
+  @type_fields Map.new(Map.keys(Spec.types()), &{&1, Spec.type_fields(&1)})
 
   @doc """
   Validate a message against its schema.
@@ -14,211 +21,104 @@ defmodule CallsafeSignaling.Protocol.Validator do
   """
   @spec validate(String.t(), map) :: validation_result
   def validate(message_type, payload) do
-    errors = collect_errors(message_type, payload)
-
-    case errors do
-      [] -> :ok
-      errors -> {:error, errors}
-    end
-  end
-
-  # Collect all validation errors for a message
-  defp collect_errors(message_type, payload) do
-    []
-    |> check_message_type(message_type)
-    |> check_required_fields(message_type, payload)
-    |> check_field_types(message_type, payload)
-  end
-
-  defp check_message_type(errors, message_type) do
     if MessageTypes.valid?(message_type) do
-      errors
+      schema = Map.fetch!(@message_fields, message_type)
+
+      errors =
+        []
+        |> check_required(schema, payload)
+        |> check_field_types(schema, payload)
+
+      case errors do
+        [] -> :ok
+        errors -> {:error, errors}
+      end
     else
-      ["Invalid message type: #{message_type}" | errors]
+      {:error, ["Invalid message type: #{message_type}"]}
     end
   end
 
-  defp check_required_fields(errors, message_type, payload) do
-    required = required_fields(message_type)
-    missing = Enum.reject(required, &Map.has_key?(payload, &1))
+  defp check_required(errors, schema, payload) do
+    missing =
+      for {field, %{"required" => true}} <- schema,
+          not Map.has_key?(payload, field),
+          do: field
 
-    case missing do
+    case Enum.sort(missing) do
       [] -> errors
       fields -> ["Missing required fields: #{Enum.join(fields, ", ")}" | errors]
     end
   end
 
-  defp check_field_types(errors, message_type, payload) do
+  defp check_field_types(errors, schema, payload) do
     Enum.reduce(payload, errors, fn {field, value}, acc ->
-      case validate_field(message_type, field, value) do
-        :ok -> acc
-        {:error, reason} -> [reason | acc]
+      case Map.get(schema, field) do
+        # "type" itself and unknown fields are not validated (forward compatible)
+        nil -> acc
+        %{"type" => type} -> collect(acc, field, check_type(value, type))
       end
     end)
   end
 
-  # Define required fields per message type
-  defp required_fields(msg_type) do
-    case msg_type do
-      "call:initiate" -> ["callAttemptId", "handle", "callType", "mediaCapabilities"]
-      "call:accept" -> ["callAttemptId", "deviceType", "deviceId"]
-      "call:reject" -> ["callAttemptId", "deviceType"]
-      "call:end" -> ["callAttemptId", "initiator"]
-      "call:failed" -> ["callAttemptId", "reason"]
-      "call:incoming" -> ["callAttemptId", "sourceId", "callType", "timestamp"]
-      "call:accepted" -> ["callAttemptId", "acceptingDevice", "timestamp"]
-      "call:cancelled" -> ["callAttemptId", "reason", "timestamp"]
-      "call:ended" -> ["callAttemptId", "duration", "timestamp"]
-      "device:connect" -> ["deviceType", "deviceId"]
-      "device:status" -> ["deviceId", "status"]
-      "media:toggle" -> ["callAttemptId", "action", "success"]
-      "call:escalate" -> ["callAttemptId", "requestedBy", "mediaCapabilities"]
-      "call:downgrade" -> ["callAttemptId", "requestedBy"]
-      "webrtc:offer" -> ["callAttemptId", "sdp"]
-      "webrtc:answer" -> ["callAttemptId", "sdp"]
-      "webrtc:ice-candidate" -> ["callAttemptId", "candidate"]
-      _ -> []
-    end
-  end
+  defp collect(errors, _field, :ok), do: errors
+  defp collect(errors, field, {:error, reason}), do: ["#{field}: #{reason}" | errors]
 
-  # Validate individual field values
-  defp validate_field(message_type, field, value) do
-    case {message_type, field} do
-      {_, "callAttemptId"} -> validate_uuid(value)
-      {_, "callType"} -> validate_call_type(value)
-      {_, "deviceType"} -> validate_device_type(value)
-      {_, "status"} -> validate_device_status(value)
-      {_, "initiator"} -> validate_call_initiator(value)
-      {_, "requestedBy"} -> validate_call_initiator(value)
-      {_, "reason"} when message_type == "call:ended" -> validate_call_end_reason(value)
-      {_, "action"} -> validate_media_toggle_action(value)
-      {_, "success"} -> validate_boolean(value)
-      {_, "timestamp"} -> validate_number(value)
-      {_, "duration"} -> validate_number(value)
-      {_, "mediaCapabilities"} -> validate_media_capabilities(value)
-      {_, "protocolVersion"} -> validate_string(value)
-      {_, "handle"} -> validate_string(value)
-      {_, "deviceId"} -> validate_string(value)
-      {_, "sourceId"} -> validate_string(value)
-      {_, "pushToken"} -> validate_string(value)
-      {_, "sdp"} -> validate_string(value)
-      {_, "candidate"} -> validate_ice_candidate(value)
-      _ -> :ok
-    end
-  end
+  # Type checkers, keyed by the spec's type language
 
-  # Type validators
-  defp validate_uuid(value) when is_binary(value) do
-    # Basic UUID format check
-    case Regex.match?(~r/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, value) do
-      true -> :ok
-      false -> {:error, "Invalid UUID format: #{value}"}
-    end
-  end
-
-  defp validate_uuid(_), do: {:error, "UUID must be a string"}
-
-  defp validate_call_type(value) when is_binary(value) do
-    if Enums.valid_call_type?(value) do
+  defp check_type(value, "uuid") do
+    if is_binary(value) and Regex.match?(@uuid_v4, value) do
       :ok
     else
-      {:error, "Invalid call type: #{value}"}
+      {:error, "must be a UUIDv4 string"}
     end
   end
 
-  defp validate_call_type(_), do: {:error, "Call type must be a string"}
+  defp check_type(value, "string") when is_binary(value), do: :ok
+  defp check_type(_value, "string"), do: {:error, "must be a string"}
 
-  defp validate_device_type(value) when is_binary(value) do
-    if Enums.valid_device_type?(value) do
+  defp check_type(value, "number") when is_number(value), do: :ok
+  defp check_type(_value, "number"), do: {:error, "must be a number"}
+
+  defp check_type(value, "boolean") when is_boolean(value), do: :ok
+  defp check_type(_value, "boolean"), do: {:error, "must be a boolean"}
+
+  defp check_type(value, "string|null") when is_binary(value) or is_nil(value), do: :ok
+  defp check_type(_value, "string|null"), do: {:error, "must be a string or null"}
+
+  defp check_type(value, "number|null") when is_number(value) or is_nil(value), do: :ok
+  defp check_type(_value, "number|null"), do: {:error, "must be a number or null"}
+
+  defp check_type(value, "enum:" <> enum_name) do
+    if is_binary(value) and Enums.valid?(enum_name, value) do
       :ok
     else
-      {:error, "Invalid device type: #{value}"}
+      {:error, "must be one of: #{Enum.join(Enums.values(enum_name), ", ")}"}
     end
   end
 
-  defp validate_device_type(_), do: {:error, "Device type must be a string"}
+  defp check_type(value, "array<enum:" <> rest) do
+    enum_name = String.trim_trailing(rest, ">")
 
-  defp validate_device_status(value) when is_binary(value) do
-    if Enums.valid_device_status?(value) do
+    if is_list(value) and Enum.all?(value, &(is_binary(&1) and Enums.valid?(enum_name, &1))) do
       :ok
     else
-      {:error, "Invalid device status: #{value}"}
+      {:error, "must be an array of: #{Enum.join(Enums.values(enum_name), ", ")}"}
     end
   end
 
-  defp validate_device_status(_), do: {:error, "Device status must be a string"}
+  defp check_type(value, "object:" <> type_name) when is_map(value) do
+    schema = Map.fetch!(@type_fields, type_name)
 
-  defp validate_call_initiator(value) when is_binary(value) do
-    if Enums.valid_call_initiator?(value) do
-      :ok
-    else
-      {:error, "Invalid call initiator: #{value}"}
-    end
-  end
+    errors =
+      []
+      |> check_required(schema, value)
+      |> check_field_types(schema, value)
 
-  defp validate_call_initiator(_), do: {:error, "Call initiator must be a string"}
-
-  defp validate_call_end_reason(value) when is_binary(value) do
-    if Enums.valid_call_end_reason?(value) do
-      :ok
-    else
-      {:error, "Invalid call end reason: #{value}"}
-    end
-  end
-
-  defp validate_call_end_reason(_), do: {:error, "Call end reason must be a string"}
-
-  defp validate_media_toggle_action(value) when is_binary(value) do
-    if Enums.valid_media_toggle_action?(value) do
-      :ok
-    else
-      {:error, "Invalid media toggle action: #{value}"}
-    end
-  end
-
-  defp validate_media_toggle_action(_), do: {:error, "Media toggle action must be a string"}
-
-  defp validate_boolean(value) when is_boolean(value), do: :ok
-  defp validate_boolean(_), do: {:error, "Value must be a boolean"}
-
-  defp validate_number(value) when is_number(value), do: :ok
-  defp validate_number(_), do: {:error, "Value must be a number"}
-
-  defp validate_string(value) when is_binary(value), do: :ok
-  defp validate_string(_), do: {:error, "Value must be a string"}
-
-  defp validate_media_capabilities(value) when is_map(value) do
-    # MediaCapabilities should have canSend and canReceive arrays
-    cond do
-      not Map.has_key?(value, "canSend") ->
-        {:error, "MediaCapabilities missing canSend field"}
-
-      not Map.has_key?(value, "canReceive") ->
-        {:error, "MediaCapabilities missing canReceive field"}
-
-      not is_list(value["canSend"]) ->
-        {:error, "canSend must be an array"}
-
-      not is_list(value["canReceive"]) ->
-        {:error, "canReceive must be an array"}
-
-      true ->
-        :ok
-    end
-  end
-
-  defp validate_media_capabilities(_), do: {:error, "MediaCapabilities must be an object"}
-
-  defp validate_ice_candidate(value) when is_map(value) do
-    # ICE candidate should have candidate, sdpMid, sdpMLineIndex
-    required = ["candidate", "sdpMid", "sdpMLineIndex"]
-    missing = Enum.reject(required, &Map.has_key?(value, &1))
-
-    case missing do
+    case errors do
       [] -> :ok
-      fields -> {:error, "ICE candidate missing fields: #{Enum.join(fields, ", ")}"}
+      errors -> {:error, "invalid #{type_name} (#{Enum.join(Enum.reverse(errors), "; ")})"}
     end
   end
 
-  defp validate_ice_candidate(_), do: {:error, "ICE candidate must be an object"}
+  defp check_type(_value, "object:" <> type_name), do: {:error, "must be a #{type_name} object"}
 end

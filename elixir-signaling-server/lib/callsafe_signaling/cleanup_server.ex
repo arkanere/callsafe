@@ -77,7 +77,9 @@ defmodule CallsafeSignaling.CleanupServer do
 
   defp cleanup_stale_sessions do
     # Get all call sessions from the registry
-    Registry.select(CallsafeSignaling.CallRegistry, [{{:"$1", :"$2", :"$3"}, [], [{{:"$1", :"$2"}}]}])
+    Registry.select(CallsafeSignaling.CallRegistry, [
+      {{:"$1", :"$2", :"$3"}, [], [{{:"$1", :"$2"}}]}
+    ])
     |> Enum.reduce(0, fn {call_id, pid}, count ->
       if should_cleanup_session?(pid) do
         cleanup_session(call_id, pid)

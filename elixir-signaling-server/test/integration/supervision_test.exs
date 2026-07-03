@@ -123,10 +123,10 @@ defmodule CallsafeSignaling.Integration.SupervisionTest do
       {:ok, pid3} = CallSessionSupervisor.start_call(call_3_id, "business_1", "device_3", :video)
 
       # Transition calls to different states
-      CallSession.set_ringing(call_1_id, "device_x", self())
-      CallSession.set_ringing(call_2_id, "device_y", self())
-      CallSession.set_connecting(call_2_id)
-      CallSession.set_ringing(call_3_id, "device_z", self())
+      CallSession.set_ringing(call_1_id)
+      CallSession.set_ringing(call_2_id)
+      CallSession.set_connecting(call_2_id, "device_2", self())
+      CallSession.set_ringing(call_3_id)
 
       # Kill the middle call
       ref1 = Process.monitor(pid1)
@@ -153,8 +153,8 @@ defmodule CallsafeSignaling.Integration.SupervisionTest do
       {:ok, _pid2} = CallSessionSupervisor.start_call(call_2_id, "business_1", "device_2", :voice)
 
       # Transition first call through states
-      {:ok, _} = CallSession.set_ringing(call_1_id, "device_x", self())
-      {:ok, _} = CallSession.set_connecting(call_1_id)
+      {:ok, _} = CallSession.set_ringing(call_1_id)
+      {:ok, _} = CallSession.set_connecting(call_1_id, "device_2", self())
       {:ok, _} = CallSession.set_connected(call_1_id)
 
       # Second call should remain in initial state
@@ -171,10 +171,10 @@ defmodule CallsafeSignaling.Integration.SupervisionTest do
       ref = Process.monitor(pid)
 
       # Transition through valid states to terminal state
-      {:ok, _} = CallSession.set_ringing(call_id, "device_2", self())
-      {:ok, _} = CallSession.set_connecting(call_id)
+      {:ok, _} = CallSession.set_ringing(call_id)
+      {:ok, _} = CallSession.set_connecting(call_id, "device_2", self())
       {:ok, _} = CallSession.set_connected(call_id)
-      {:ok, _} = CallSession.set_ended(call_id, :user_hangup)
+      {:ok, _} = CallSession.set_ended(call_id, :customer_hangup, :customer)
 
       # Process should auto-stop after timeout (5 seconds in implementation)
       assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 6_000
@@ -187,7 +187,7 @@ defmodule CallsafeSignaling.Integration.SupervisionTest do
       ref = Process.monitor(pid)
 
       # Transition through ringing before cancelling
-      {:ok, _} = CallSession.set_ringing(call_id, "device_2", self())
+      {:ok, _} = CallSession.set_ringing(call_id)
       {:ok, _} = CallSession.set_cancelled(call_id)
 
       # Should auto-stop
@@ -201,9 +201,9 @@ defmodule CallsafeSignaling.Integration.SupervisionTest do
       ref = Process.monitor(pid)
 
       # Transition through ringing before failing
-      {:ok, _} = CallSession.set_ringing(call_id, "device_2", self())
-      {:ok, _} = CallSession.set_connecting(call_id)
-      {:ok, _} = CallSession.set_failed(call_id, "Connection lost")
+      {:ok, _} = CallSession.set_ringing(call_id)
+      {:ok, _} = CallSession.set_connecting(call_id, "device_2", self())
+      {:ok, _} = CallSession.set_failed(call_id, :connection_failed)
 
       # Should auto-stop
       assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 6_000
@@ -233,14 +233,16 @@ defmodule CallsafeSignaling.Integration.SupervisionTest do
       assert {:error, :not_found} = CallSession.get_state(call_id)
     end
 
-    test "duplicate call IDs return existing process" do
+    test "duplicate call IDs are rejected (v2: duplicate_call_id)" do
       call_id = "duplicate_#{:rand.uniform(100_000)}"
 
       {:ok, pid1} = CallSessionSupervisor.start_call(call_id, "business_1", "device_1", :voice)
-      {:ok, pid2} = CallSessionSupervisor.start_call(call_id, "business_1", "device_1", :voice)
 
-      # Should return the same PID
-      assert pid1 == pid2
+      assert {:error, :already_started} =
+               CallSessionSupervisor.start_call(call_id, "business_1", "device_1", :voice)
+
+      # The original session is unaffected
+      assert Process.alive?(pid1)
     end
   end
 
@@ -266,10 +268,10 @@ defmodule CallsafeSignaling.Integration.SupervisionTest do
       call_ids
       |> Enum.take(10)
       |> Enum.each(fn call_id ->
-        CallSession.set_ringing(call_id, "device_x", self())
-        CallSession.set_connecting(call_id)
+        CallSession.set_ringing(call_id)
+        CallSession.set_connecting(call_id, "device_2", self())
         CallSession.set_connected(call_id)
-        CallSession.set_ended(call_id, :user_hangup)
+        CallSession.set_ended(call_id, :customer_hangup, :customer)
       end)
 
       # Give time for auto-cleanup
@@ -327,8 +329,8 @@ defmodule CallsafeSignaling.Integration.SupervisionTest do
 
     test "device registry remains functional after call crashes" do
       # Register devices with proper parameters
-      DeviceRegistry.register("device_1", "business_1", self(), :web)
-      DeviceRegistry.register("device_2", "business_1", self(), :web)
+      DeviceRegistry.register("device_1", "business_1", self(), :web, :business)
+      DeviceRegistry.register("device_2", "business_1", self(), :web, :business)
 
       # Start and crash a call
       call_id = "registry_crash_test_#{:rand.uniform(100_000)}"
@@ -377,8 +379,8 @@ defmodule CallsafeSignaling.Integration.SupervisionTest do
 
       # Try multiple state transitions concurrently
       tasks = [
-        Task.async(fn -> CallSession.set_ringing(call_id, "device_x", self()) end),
-        Task.async(fn -> CallSession.set_connecting(call_id) end),
+        Task.async(fn -> CallSession.set_ringing(call_id) end),
+        Task.async(fn -> CallSession.set_connecting(call_id, "device_2", self()) end),
         Task.async(fn -> CallSession.get_state(call_id) end)
       ]
 

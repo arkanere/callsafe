@@ -1,37 +1,20 @@
 defmodule CallsafeSignaling.Protocol.StateMachine do
   @moduledoc """
-  Call state machine as pure data.
-  Defines valid state transitions without side effects.
+  Call state machine as pure data, derived at compile time from
+  protocol/protocol.json (`stateMachine` section).
   """
 
-  alias CallsafeSignaling.Protocol.Enums
+  alias CallsafeSignaling.Protocol.{Enums, Spec}
 
   @type state :: Enums.call_state()
   @type transition_result :: {:ok, state} | {:error, :invalid_transition}
 
-  # State transition map - immutable data structure
-  @transitions %{
-    initiated: [:ringing, :busy, :unavailable, :cancelled, :failed],
-    ringing: [:connecting, :timeout, :cancelled, :failed],
-    connecting: [:connected, :timeout, :camera_permission_denied, :failed, :cancelled],
-    connected: [
-      :ended,
-      :failed,
-      :escalation_pending,
-      :video_paused_by_user,
-      :video_paused_bandwidth
-    ],
-    escalation_pending: [:connected, :ended, :failed],
-    video_paused_by_user: [:connected, :ended, :failed],
-    video_paused_bandwidth: [:connected, :ended, :failed],
-    camera_permission_denied: [:connected, :ended, :failed],
-    ended: [],
-    failed: [],
-    cancelled: [],
-    busy: [],
-    unavailable: [],
-    timeout: []
-  }
+  @transitions Map.new(Spec.transitions(), fn {from, ts} ->
+                 {String.to_atom(from), Enum.map(ts, &String.to_atom(&1["to"]))}
+               end)
+
+  @initial_state String.to_atom(Spec.initial_state())
+  @terminal_states Enum.map(Spec.terminal_states(), &String.to_atom/1)
 
   @doc """
   Attempt state transition. Returns {:ok, new_state} or {:error, :invalid_transition}.
@@ -67,12 +50,12 @@ defmodule CallsafeSignaling.Protocol.StateMachine do
   """
   @spec terminal?(state) :: boolean
   def terminal?(state) do
-    next_states(state) == []
+    state in @terminal_states
   end
 
   @doc """
   Get initial state for a new call.
   """
   @spec initial_state() :: state
-  def initial_state, do: :initiated
+  def initial_state, do: @initial_state
 end

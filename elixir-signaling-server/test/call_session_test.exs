@@ -9,79 +9,103 @@ defmodule CallsafeSignaling.CallSessionTest do
     :ok
   end
 
+  defp start_call(call_type \\ :voice) do
+    call_id = "call_#{System.unique_integer([:positive])}"
+    {:ok, pid} = CallSession.start_link(call_id, "business_1", "device_1", call_type)
+    {call_id, pid}
+  end
+
+  # Drive a call to :connected with self() as callee socket.
+  defp connect_call(call_id) do
+    {:ok, _} = CallSession.set_ringing(call_id)
+    {:ok, _} = CallSession.set_connecting(call_id, "device_2", self())
+    {:ok, _} = CallSession.set_connected(call_id)
+    :ok
+  end
+
   describe "start_link/5" do
     test "starts a new call session" do
-      call_id = "call_#{:rand.uniform(1000)}"
-      business_id = "business_1"
-      caller_id = "device_1"
-      call_type = :voice
-
-      assert {:ok, pid} = CallSession.start_link(call_id, business_id, caller_id, call_type)
+      {call_id, pid} = start_call()
       assert Process.alive?(pid)
 
       {:ok, state} = CallSession.get_state(call_id)
       assert state.call_id == call_id
-      assert state.business_id == business_id
-      assert state.caller_id == caller_id
-      assert state.call_type == call_type
+      assert state.business_id == "business_1"
+      assert state.caller_id == "device_1"
+      assert state.call_type == :voice
       assert state.state == :initiated
     end
 
     test "starts video call session" do
-      call_id = "call_#{:rand.uniform(1000)}"
-      business_id = "business_1"
-      caller_id = "device_1"
-      call_type = :video
-
-      assert {:ok, _pid} = CallSession.start_link(call_id, business_id, caller_id, call_type)
+      {call_id, _pid} = start_call(:video)
       {:ok, state} = CallSession.get_state(call_id)
       assert state.call_type == :video
     end
   end
 
   describe "state transitions" do
-    setup do
-      call_id = "call_#{:rand.uniform(1000)}"
-      business_id = "business_1"
-      caller_id = "device_1"
-      {:ok, pid} = CallSession.start_link(call_id, business_id, caller_id, :voice)
-      %{call_id: call_id, pid: pid}
-    end
+    test "initiated -> ringing (devices notified)" do
+      {call_id, _pid} = start_call()
 
-    test "initiated -> ringing", %{call_id: call_id} do
-      callee_id = "device_2"
-      callee_pid = self()
-
-      assert {:ok, state} = CallSession.set_ringing(call_id, callee_id, callee_pid)
+      assert {:ok, state} = CallSession.set_ringing(call_id)
       assert state.state == :ringing
-      assert state.callee_id == callee_id
-      assert state.callee_pid == callee_pid
+      assert is_nil(state.callee_id)
     end
 
-    test "ringing -> connecting", %{call_id: call_id} do
-      CallSession.set_ringing(call_id, "device_2", self())
-      assert {:ok, state} = CallSession.set_connecting(call_id)
+    test "ringing -> connecting binds the accepting device" do
+      {call_id, _pid} = start_call()
+      {:ok, _} = CallSession.set_ringing(call_id)
+
+      caps = %{"canSend" => ["audio"], "canReceive" => ["audio"]}
+      assert {:ok, state} = CallSession.set_connecting(call_id, "device_2", self(), caps)
       assert state.state == :connecting
+      assert state.callee_id == "device_2"
+      assert state.callee_pid == self()
+      assert state.callee_media_capabilities == caps
     end
 
-    test "connecting -> connected", %{call_id: call_id} do
-      CallSession.set_ringing(call_id, "device_2", self())
-      CallSession.set_connecting(call_id)
+    test "connecting -> connected" do
+      {call_id, _pid} = start_call()
+      {:ok, _} = CallSession.set_ringing(call_id)
+      {:ok, _} = CallSession.set_connecting(call_id, "device_2", self())
+
       assert {:ok, state} = CallSession.set_connected(call_id)
       assert state.state == :connected
       assert is_integer(state.connected_at)
     end
 
-    test "connected -> ended", %{call_id: call_id} do
-      CallSession.set_ringing(call_id, "device_2", self())
-      CallSession.set_connecting(call_id)
-      CallSession.set_connected(call_id)
-      assert {:ok, state} = CallSession.set_ended(call_id, :normal)
+    test "connected -> ended records reason and endedBy" do
+      {call_id, _pid} = start_call()
+      connect_call(call_id)
+
+      assert {:ok, state} = CallSession.set_ended(call_id, :customer_hangup, :customer)
       assert state.state == :ended
+      assert state.end_reason == :customer_hangup
+      assert state.ended_by == :customer
       assert is_integer(state.ended_at)
     end
 
-    test "invalid transition returns error", %{call_id: call_id} do
+    test "v2: hang-up allowed while still connecting" do
+      {call_id, _pid} = start_call()
+      {:ok, _} = CallSession.set_ringing(call_id)
+      {:ok, _} = CallSession.set_connecting(call_id, "device_2", self())
+
+      assert {:ok, state} = CallSession.set_ended(call_id, :business_hangup, :business)
+      assert state.state == :ended
+    end
+
+    test "caller cancel from initiated and ringing" do
+      {call_id, _pid} = start_call()
+      assert {:ok, %{state: :cancelled}} = CallSession.set_cancelled(call_id)
+
+      {call_id2, _pid2} = start_call()
+      {:ok, _} = CallSession.set_ringing(call_id2)
+      assert {:ok, %{state: :cancelled}} = CallSession.set_cancelled(call_id2)
+    end
+
+    test "invalid transition returns error" do
+      {call_id, _pid} = start_call()
+
       # Try to go from initiated directly to connected (invalid)
       assert {:error, :invalid_transition} = CallSession.set_connected(call_id)
 
@@ -91,67 +115,106 @@ defmodule CallsafeSignaling.CallSessionTest do
     end
   end
 
-  describe "video-specific state transitions" do
-    setup do
-      call_id = "call_#{:rand.uniform(1000)}"
-      business_id = "business_1"
-      caller_id = "device_1"
-      {:ok, pid} = CallSession.start_link(call_id, business_id, caller_id, :video)
+  describe "reject tracking" do
+    test "unavailable only after every notified device rejected" do
+      {call_id, _pid} = start_call()
+      {:ok, _} = CallSession.add_notified_devices(call_id, ["dev_a", "dev_b"])
+      {:ok, _} = CallSession.set_ringing(call_id)
 
-      # Setup to connected state
-      CallSession.set_ringing(call_id, "device_2", self())
-      CallSession.set_connecting(call_id)
-      CallSession.set_connected(call_id)
-
-      %{call_id: call_id, pid: pid}
+      assert {:ok, :pending, _state} = CallSession.record_reject(call_id, "dev_a")
+      assert {:ok, :all_rejected, state} = CallSession.record_reject(call_id, "dev_b")
+      assert state.state == :unavailable
     end
 
-    test "connected -> escalation_pending", %{call_id: call_id} do
-      assert {:ok, state} = CallSession.set_escalation_pending(call_id)
+    test "rejects from devices that were never notified are refused" do
+      {call_id, _pid} = start_call()
+      {:ok, _} = CallSession.add_notified_devices(call_id, ["dev_a"])
+      {:ok, _} = CallSession.set_ringing(call_id)
+
+      assert {:error, :not_notified} = CallSession.record_reject(call_id, "dev_x")
+    end
+  end
+
+  describe "escalation" do
+    test "connected -> escalation_pending records the requester" do
+      {call_id, _pid} = start_call()
+      connect_call(call_id)
+
+      caps = %{"canSend" => ["audio", "video"], "canReceive" => ["audio", "video"]}
+      assert {:ok, state} = CallSession.set_escalation_pending(call_id, :customer, caps)
       assert state.state == :escalation_pending
+      assert state.escalation_requested_by == :customer
     end
 
-    test "escalation_pending -> connected", %{call_id: call_id} do
-      CallSession.set_escalation_pending(call_id)
-      assert {:ok, state} = CallSession.set_connected(call_id)
+    test "accepted escalation upgrades call type and sets the offerer" do
+      {call_id, _pid} = start_call()
+      connect_call(call_id)
+
+      caps = %{"canSend" => ["audio", "video"], "canReceive" => ["audio", "video"]}
+      {:ok, _} = CallSession.set_escalation_pending(call_id, :customer, caps)
+
+      assert {:ok, state} = CallSession.resolve_escalation(call_id, :accepted)
       assert state.state == :connected
+      assert state.call_type == :video
+      assert state.renegotiation_offerer == :customer
     end
 
-    test "connected -> video_paused_by_user", %{call_id: call_id} do
-      assert {:ok, state} = CallSession.set_video_paused_user(call_id)
-      assert state.state == :video_paused_by_user
+    test "rejected escalation keeps the call voice" do
+      {call_id, _pid} = start_call()
+      connect_call(call_id)
+
+      caps = %{"canSend" => ["audio", "video"], "canReceive" => ["audio", "video"]}
+      {:ok, _} = CallSession.set_escalation_pending(call_id, :business, caps)
+
+      assert {:ok, state} = CallSession.resolve_escalation(call_id, :rejected)
+      assert state.state == :connected
+      assert state.call_type == :voice
+    end
+  end
+
+  describe "downgrade" do
+    test "downgrades a connected video call to voice" do
+      {call_id, _pid} = start_call(:video)
+      connect_call(call_id)
+
+      assert {:ok, state} = CallSession.downgrade(call_id, :business)
+      assert state.call_type == :voice
+      assert state.renegotiation_offerer == :business
     end
 
-    test "connected -> video_paused_bandwidth", %{call_id: call_id} do
-      assert {:ok, state} = CallSession.set_video_paused_bandwidth(call_id)
-      assert state.state == :video_paused_bandwidth
+    test "cannot downgrade a voice call" do
+      {call_id, _pid} = start_call(:voice)
+      connect_call(call_id)
+
+      assert {:error, :invalid_transition} = CallSession.downgrade(call_id, :customer)
+    end
+  end
+
+  describe "reconnect" do
+    test "re-binds a participant pid while in-call" do
+      {call_id, _pid} = start_call()
+      connect_call(call_id)
+
+      new_socket = spawn(fn -> Process.sleep(:infinity) end)
+      assert {:ok, state} = CallSession.reconnect(call_id, "device_1", new_socket)
+      assert state.caller_pid == new_socket
     end
 
-    test "connecting -> camera_permission_denied", %{call_id: _call_id} do
-      call_id2 = "call_#{:rand.uniform(1000)}"
-      {:ok, _} = CallSession.start_link(call_id2, "business_1", "device_1", :video)
-      CallSession.set_ringing(call_id2, "device_2", self())
-      CallSession.set_connecting(call_id2)
+    test "rejects reconnect from non-participants and wrong states" do
+      {call_id, _pid} = start_call()
+      connect_call(call_id)
+      assert {:error, :not_participant} = CallSession.reconnect(call_id, "stranger", self())
 
-      assert {:ok, state} = CallSession.set_camera_permission_denied(call_id2)
-      assert state.state == :camera_permission_denied
+      {call_id2, _pid2} = start_call()
+      assert {:error, :invalid_transition} = CallSession.reconnect(call_id2, "device_1", self())
     end
   end
 
   describe "media capabilities" do
-    setup do
-      call_id = "call_#{:rand.uniform(1000)}"
-      business_id = "business_1"
-      caller_id = "device_1"
-      {:ok, pid} = CallSession.start_link(call_id, business_id, caller_id, :video)
-      %{call_id: call_id, pid: pid}
-    end
+    test "updates media capabilities" do
+      {call_id, _pid} = start_call(:video)
 
-    test "updates media capabilities", %{call_id: call_id} do
-      capabilities = %{
-        audio: %{send: true, receive: true},
-        video: %{send: true, receive: true}
-      }
+      capabilities = %{"canSend" => ["audio", "video"], "canReceive" => ["audio", "video"]}
 
       assert {:ok, state} = CallSession.update_media_capabilities(call_id, capabilities)
       assert state.media_capabilities == capabilities
@@ -159,22 +222,9 @@ defmodule CallsafeSignaling.CallSessionTest do
   end
 
   describe "message sending" do
-    setup do
-      call_id = "call_#{:rand.uniform(1000)}"
-      business_id = "business_1"
-      caller_id = "device_1"
+    test "sends message to caller" do
+      {call_id, _pid} = start_call()
 
-      {:ok, pid} = CallSession.start_link(call_id, business_id, caller_id, :voice)
-
-      callee_pid = spawn(fn -> Process.sleep(:infinity) end)
-
-      CallSession.set_ringing(call_id, "device_2", callee_pid)
-
-      %{call_id: call_id, pid: pid, caller_pid: self(), callee_pid: callee_pid}
-    end
-
-    test "sends message to caller", %{call_id: call_id} do
-      # Set caller PID to receive messages
       {:ok, _state} = CallSession.set_caller_pid(call_id, self())
 
       assert :ok = CallSession.send_to_caller(call_id, "test:message", %{data: "test"})
@@ -182,33 +232,25 @@ defmodule CallsafeSignaling.CallSessionTest do
       assert_receive {:send_message, "test:message", %{data: "test"}}
     end
 
-    test "returns error when caller not connected", %{call_id: _call_id} do
-      call_id2 = "call_#{:rand.uniform(1000)}"
-      {:ok, _} = CallSession.start_link(call_id2, "business_1", "device_1", :voice)
+    test "returns error when caller not connected" do
+      {call_id, _pid} = start_call()
 
       assert {:error, :caller_not_connected} =
-               CallSession.send_to_caller(call_id2, "test:message", %{})
+               CallSession.send_to_caller(call_id, "test:message", %{})
     end
   end
 
   describe "terminal state auto-stop" do
-    test "process stops after terminal state" do
-      call_id = "call_#{:rand.uniform(1000)}"
-      business_id = "business_1"
-      caller_id = "device_1"
-      {:ok, pid} = CallSession.start_link(call_id, business_id, caller_id, :voice)
-
-      # Transition to terminal state
-      CallSession.set_ringing(call_id, "device_2", self())
-      CallSession.set_connecting(call_id)
-      CallSession.set_connected(call_id)
-      CallSession.set_ended(call_id, :normal)
+    test "process stops after terminal_retention" do
+      {call_id, pid} = start_call()
+      connect_call(call_id)
+      CallSession.set_ended(call_id, :normal, :customer)
 
       # Monitor the process
       ref = Process.monitor(pid)
 
-      # Process should stop automatically after 5 seconds
-      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 6_000
+      # terminal_retention is 5_000 in test config
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 7_000
     end
   end
 

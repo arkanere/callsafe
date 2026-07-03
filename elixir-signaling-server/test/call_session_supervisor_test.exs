@@ -34,14 +34,12 @@ defmodule CallsafeSignaling.CallSessionSupervisorTest do
       caller_id = "device_1"
       call_type = :voice
 
-      assert {:ok, pid1} =
+      assert {:ok, _pid1} =
                CallSessionSupervisor.start_call(call_id, business_id, caller_id, call_type)
 
-      assert {:ok, pid2} =
+      # v2: duplicate callAttemptId is an error (duplicate_call_id on the wire)
+      assert {:error, :already_started} =
                CallSessionSupervisor.start_call(call_id, business_id, caller_id, call_type)
-
-      # Should return the same PID
-      assert pid1 == pid2
     end
 
     test "starts video call session" do

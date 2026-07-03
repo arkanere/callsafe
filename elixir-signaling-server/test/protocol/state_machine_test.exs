@@ -28,11 +28,26 @@ defmodule CallsafeSignaling.Protocol.StateMachineTest do
       assert {:ok, :connected} = StateMachine.transition(:escalation_pending, :connected)
     end
 
-    test "allows video pause transitions" do
-      assert {:ok, :video_paused_by_user} =
+    test "v2: hang-up allowed from connecting and escalation_pending" do
+      assert {:ok, :ended} = StateMachine.transition(:connecting, :ended)
+      assert {:ok, :ended} = StateMachine.transition(:escalation_pending, :ended)
+    end
+
+    test "v2: caller cancel allowed from initiated and ringing" do
+      assert {:ok, :cancelled} = StateMachine.transition(:initiated, :cancelled)
+      assert {:ok, :cancelled} = StateMachine.transition(:ringing, :cancelled)
+    end
+
+    test "v2: all-reject moves ringing to unavailable" do
+      assert {:ok, :unavailable} = StateMachine.transition(:ringing, :unavailable)
+    end
+
+    test "v2: video-pause pseudo-states no longer exist" do
+      assert {:error, :invalid_transition} =
                StateMachine.transition(:connected, :video_paused_by_user)
 
-      assert {:ok, :connected} = StateMachine.transition(:video_paused_by_user, :connected)
+      assert {:error, :invalid_transition} =
+               StateMachine.transition(:connecting, :camera_permission_denied)
     end
   end
 
@@ -40,7 +55,7 @@ defmodule CallsafeSignaling.Protocol.StateMachineTest do
     test "checks transition validity" do
       assert StateMachine.valid_transition?(:initiated, :ringing)
       refute StateMachine.valid_transition?(:initiated, :connected)
-      assert StateMachine.valid_transition?(:connecting, :camera_permission_denied)
+      assert StateMachine.valid_transition?(:connecting, :timeout)
     end
   end
 

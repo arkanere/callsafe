@@ -56,8 +56,9 @@ defmodule CallsafeSignaling.E2E.WebsocketHarnessTest do
 
       assert response["type"] == "device:connected"
       assert response["deviceId"] == "harness_auth_01"
-      assert response["status"] == "connected"
-      assert response["protocolVersion"] == "1.0.0"
+      assert response["role"] == "business"
+      assert response["protocolVersion"] == "2.0.0"
+      assert is_number(response["timestamp"])
 
       TestClient.disconnect(client)
     end
@@ -71,11 +72,12 @@ defmodule CallsafeSignaling.E2E.WebsocketHarnessTest do
           "deviceId" => "bad_auth_device",
           "deviceType" => "web",
           "token" => "not.a.valid.jwt",
-          "protocolVersion" => "1.0.0"
+          "protocolVersion" => "2.0.0"
         })
 
       response = TestClient.assert_receive_type(client, "error")
-      assert response["error"] != nil
+      assert response["code"] == "auth_failed"
+      assert response["relatedType"] == "device:connect"
 
       TestClient.disconnect(client)
     end
@@ -88,11 +90,11 @@ defmodule CallsafeSignaling.E2E.WebsocketHarnessTest do
           "type" => "device:connect",
           "deviceId" => "no_token_device",
           "deviceType" => "web",
-          "protocolVersion" => "1.0.0"
+          "protocolVersion" => "2.0.0"
         })
 
       response = TestClient.assert_receive_type(client, "error")
-      assert response["error"] != nil
+      assert response["code"] == "validation_error"
 
       TestClient.disconnect(client)
     end
@@ -109,7 +111,7 @@ defmodule CallsafeSignaling.E2E.WebsocketHarnessTest do
 
       :ok = TestClient.send_message(client, %{"type" => "unknown:message_type"})
       response = TestClient.assert_receive_type(client, "error")
-      assert response["error"] != nil
+      assert response["code"] == "unknown_message_type"
 
       TestClient.disconnect(client)
     end

@@ -11,6 +11,7 @@ defmodule CallsafeSignaling.Auth.JWT do
   @type claims :: %{
           device_id: String.t(),
           business_id: String.t(),
+          role: String.t(),
           exp: integer(),
           iat: integer()
         }
@@ -68,6 +69,7 @@ defmodule CallsafeSignaling.Auth.JWT do
   def validate_claims({:ok, claims}) do
     with {:ok, device_id} <- extract_string(claims, "device_id"),
          {:ok, business_id} <- extract_string(claims, "business_id"),
+         {:ok, role} <- extract_role(claims),
          {:ok, exp} <- extract_integer(claims, "exp"),
          {:ok, iat} <- extract_integer(claims, "iat"),
          :ok <- check_expiration(exp) do
@@ -75,6 +77,7 @@ defmodule CallsafeSignaling.Auth.JWT do
        %{
          device_id: device_id,
          business_id: business_id,
+         role: role,
          exp: exp,
          iat: iat
        }}
@@ -84,19 +87,22 @@ defmodule CallsafeSignaling.Auth.JWT do
   end
 
   @doc """
-  Generate JWT token for testing.
-  Returns token string.
+  Generate a JWT token with the v2 claim set (device_id, business_id, role,
+  iat, exp). Used by the guest-token endpoint and tests.
+
+  Options: `:ttl` — validity in seconds (default 3600).
   """
-  @spec generate(String.t(), String.t(), String.t()) :: token
-  def generate(device_id, business_id, secret) do
+  @spec generate(String.t(), String.t(), String.t(), String.t(), keyword()) :: token
+  def generate(device_id, business_id, role, secret, opts \\ []) do
     now = System.system_time(:second)
-    exp = now + 3600
+    exp = now + Keyword.get(opts, :ttl, 3600)
 
     header = %{"alg" => "HS256", "typ" => "JWT"}
 
     payload = %{
       "device_id" => device_id,
       "business_id" => business_id,
+      "role" => role,
       "iat" => now,
       "exp" => exp
     }
@@ -152,6 +158,13 @@ defmodule CallsafeSignaling.Auth.JWT do
   defp extract_string(claims, key) do
     case Map.get(claims, key) do
       value when is_binary(value) -> {:ok, value}
+      _ -> {:error, :invalid_token}
+    end
+  end
+
+  defp extract_role(claims) do
+    case Map.get(claims, "role") do
+      role when role in ["customer", "business"] -> {:ok, role}
       _ -> {:error, :invalid_token}
     end
   end

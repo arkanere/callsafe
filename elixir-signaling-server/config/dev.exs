@@ -13,9 +13,12 @@ config :callsafe_signaling,
   max_requests_per_ip: 1000,
   rate_limit_window_seconds: 60,
 
-  # Call timeouts (milliseconds)
+  # Call timeouts (milliseconds) — spec defaults, see protocol.json "timers"
   timeout_ringing: 30_000,
-  timeout_connecting: 10_000,
+  timeout_connecting: 30_000,
+  timeout_escalation: 30_000,
+  timeout_reconnect_grace: 30_000,
+  terminal_retention: 60_000,
   timeout_idle: 300_000,
 
   # TURN servers

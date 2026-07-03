@@ -1,13 +1,13 @@
 defmodule CallsafeSignaling.MediaHandler do
   @moduledoc """
-  Handler for media control messages.
-  Manages media:toggle, call:escalate, call:downgrade.
-  Coordinates media state transitions and peer notifications.
+  Handler for media control and escalation messages (protocol v2).
+  Manages media:toggle, call:escalate, escalation:accept, escalation:reject
+  and call:downgrade. The escalation timer itself lives in CallSession.
   """
 
   require Logger
   alias CallsafeSignaling.CallSession
-  alias CallsafeSignaling.Protocol.{MessageTypes, Enums}
+  alias CallsafeSignaling.Protocol.MessageTypes
 
   @type message :: map()
   @type state :: map()
@@ -20,117 +20,132 @@ defmodule CallsafeSignaling.MediaHandler do
   @spec handle(String.t(), message, state) :: handler_result
   def handle(message_type, message, state)
 
-  # Handle media:toggle
+  # Handle media:toggle — purely informational relay to the peer
   def handle("media:toggle", message, state) do
-    with true <- Map.get(state, :authenticated, false),
-         {:ok, call_id} <- extract_call_id(message),
-         {:ok, action} <- extract_action(message),
-         {:ok, success} <- extract_success(message),
-         {:ok, call_state} <- CallSession.get_state(call_id),
-         :ok <- validate_participant(call_state, state.device_id),
-         :ok <- notify_peer_toggle(call_id, call_state, state.device_id, action, success) do
-      Logger.debug("Media toggle for call #{call_id}: #{action} (#{success})")
+    call_id = message["callAttemptId"]
 
-      # No response needed - notification sent to peer
+    with {:ok, call_state} <- get_call(call_id),
+         {:ok, sender_side} <- participant_side(call_state, state.device_id),
+         :ok <- check_state(call_state, [:connected, :escalation_pending]) do
+      payload = %{
+        "callAttemptId" => call_id,
+        "action" => message["action"],
+        "timestamp" => System.system_time(:millisecond)
+      }
+
+      # Best effort: a momentarily disconnected peer just misses the toggle.
+      relay_to_peer(call_state, sender_side, MessageTypes.media_toggle(), payload)
+
+      Logger.debug("Media toggle for call #{call_id}: #{message["action"]}")
       {:ok, nil, state}
     else
-      false ->
-        {:error, "not_authenticated", "Device must be connected first"}
-
-      {:error, :not_found} ->
-        {:error, "call_not_found", "Call session not found"}
-
-      {:error, :invalid_participant} ->
-        {:error, "invalid_participant", "Device not part of this call"}
-
-      {:error, error_type, error_message} ->
-        {:error, error_type, error_message}
-
-      {:error, reason} when is_atom(reason) ->
-        {:error, "media_toggle_failed", Atom.to_string(reason)}
+      error -> media_error(error)
     end
   end
 
-  # Handle call:escalate (voice -> video)
+  # Handle call:escalate (voice -> video request; peer must consent)
   def handle("call:escalate", message, state) do
-    with true <- Map.get(state, :authenticated, false),
-         {:ok, call_id} <- extract_call_id(message),
-         {:ok, requested_by} <- extract_requested_by(message),
-         {:ok, media_capabilities} <- extract_media_capabilities(message),
-         {:ok, call_state} <- CallSession.get_state(call_id),
-         :ok <- validate_participant(call_state, state.device_id),
-         :ok <- validate_voice_call(call_state),
-         {:ok, _new_state} <- CallSession.set_escalation_pending(call_id),
-         :ok <- update_media_capabilities(call_id, media_capabilities),
-         :ok <- notify_peer_escalation_request(call_id, call_state, state.device_id, requested_by) do
-      Logger.info("Call escalation requested for #{call_id} by #{requested_by}")
+    call_id = message["callAttemptId"]
+    media_capabilities = message["mediaCapabilities"]
 
-      response = %{
-        "type" => "escalation:requested",
+    with {:ok, call_state} <- get_call(call_id),
+         {:ok, sender_side} <- participant_side(call_state, state.device_id),
+         :ok <- check_voice_call(call_state),
+         requested_by <- side_role(sender_side),
+         {:ok, _updated} <-
+           CallSession.set_escalation_pending(call_id, requested_by, media_capabilities) do
+      payload = %{
         "callAttemptId" => call_id,
         "requestedBy" => Atom.to_string(requested_by),
+        "mediaCapabilities" => media_capabilities,
         "timestamp" => System.system_time(:millisecond)
       }
 
-      {:ok, response, state}
+      case relay_to_peer(call_state, sender_side, MessageTypes.escalation_requested(), payload) do
+        :ok ->
+          Logger.info("Call escalation requested for #{call_id} by #{requested_by}")
+          {:ok, nil, state}
+
+        {:error, _} ->
+          # Peer unreachable: revert immediately rather than leave the call hanging.
+          CallSession.resolve_escalation(call_id, :rejected)
+          {:error, "peer_not_connected", "The other participant is not reachable"}
+      end
     else
-      false ->
-        {:error, "not_authenticated", "Device must be connected first"}
-
-      {:error, :not_found} ->
-        {:error, "call_not_found", "Call session not found"}
-
-      {:error, :invalid_participant} ->
-        {:error, "invalid_participant", "Device not part of this call"}
-
-      {:error, :not_voice_call} ->
-        {:error, "invalid_call_type", "Can only escalate voice calls"}
-
-      {:error, error_type, error_message} ->
-        {:error, error_type, error_message}
-
-      {:error, reason} when is_atom(reason) ->
-        {:error, "call_escalate_failed", Atom.to_string(reason)}
+      error -> media_error(error)
     end
   end
 
-  # Handle call:downgrade (video -> voice)
-  def handle("call:downgrade", message, state) do
-    with true <- Map.get(state, :authenticated, false),
-         {:ok, call_id} <- extract_call_id(message),
-         {:ok, requested_by} <- extract_requested_by(message),
-         {:ok, call_state} <- CallSession.get_state(call_id),
-         :ok <- validate_participant(call_state, state.device_id),
-         :ok <- validate_video_call(call_state),
-         :ok <- notify_peer_downgrade(call_id, call_state, state.device_id, requested_by) do
-      Logger.info("Call downgrade requested for #{call_id} by #{requested_by}")
+  # Handle escalation:accept (the peer consents; call becomes video)
+  def handle("escalation:accept", message, state) do
+    call_id = message["callAttemptId"]
+    media_capabilities = message["mediaCapabilities"]
 
-      response = %{
-        "type" => "downgrade:confirmed",
+    with {:ok, call_state} <- get_call(call_id),
+         {:ok, sender_side} <- participant_side(call_state, state.device_id),
+         :ok <- check_escalation_responder(call_state, sender_side),
+         {:ok, _updated} <- CallSession.resolve_escalation(call_id, :accepted) do
+      payload = %{
+        "callAttemptId" => call_id,
+        "mediaCapabilities" => media_capabilities,
+        "timestamp" => System.system_time(:millisecond)
+      }
+
+      # Audience: both participants (sender gets the response copy).
+      relay_to_peer(call_state, sender_side, MessageTypes.escalation_accepted(), payload)
+
+      Logger.info("Call escalation accepted for #{call_id}; call is now video")
+      {:ok, Map.put(payload, "type", MessageTypes.escalation_accepted()), state}
+    else
+      error -> media_error(error)
+    end
+  end
+
+  # Handle escalation:reject (the peer declines; call stays voice)
+  def handle("escalation:reject", message, state) do
+    call_id = message["callAttemptId"]
+
+    with {:ok, call_state} <- get_call(call_id),
+         {:ok, sender_side} <- participant_side(call_state, state.device_id),
+         :ok <- check_escalation_responder(call_state, sender_side),
+         {:ok, _updated} <- CallSession.resolve_escalation(call_id, :rejected) do
+      payload = %{
+        "callAttemptId" => call_id,
+        "reason" => "declined",
+        "timestamp" => System.system_time(:millisecond)
+      }
+
+      # Audience: the requester only.
+      relay_to_peer(call_state, sender_side, MessageTypes.escalation_rejected(), payload)
+
+      Logger.info("Call escalation rejected for #{call_id}")
+      {:ok, nil, state}
+    else
+      error -> media_error(error)
+    end
+  end
+
+  # Handle call:downgrade (video -> voice, unilateral)
+  def handle("call:downgrade", message, state) do
+    call_id = message["callAttemptId"]
+
+    with {:ok, call_state} <- get_call(call_id),
+         {:ok, sender_side} <- participant_side(call_state, state.device_id),
+         requested_by <- side_role(sender_side),
+         {:ok, _updated} <- CallSession.downgrade(call_id, requested_by) do
+      payload = %{
         "callAttemptId" => call_id,
         "requestedBy" => Atom.to_string(requested_by),
         "timestamp" => System.system_time(:millisecond)
       }
 
-      {:ok, response, state}
+      # Audience: both participants (sender gets the response copy).
+      relay_to_peer(call_state, sender_side, MessageTypes.call_downgraded(), payload)
+
+      Logger.info("Call downgraded to voice for #{call_id} by #{requested_by}")
+      {:ok, Map.put(payload, "type", MessageTypes.call_downgraded()), state}
     else
-      false ->
-        {:error, "not_authenticated", "Device must be connected first"}
-
-      {:error, :not_found} ->
-        {:error, "call_not_found", "Call session not found"}
-
-      {:error, :invalid_participant} ->
-        {:error, "invalid_participant", "Device not part of this call"}
-
-      {:error, :not_video_call} ->
-        {:error, "invalid_call_type", "Can only downgrade video calls"}
-
-      {:error, error_type, error_message} ->
-        {:error, error_type, error_message}
-
-      {:error, reason} when is_atom(reason) ->
-        {:error, "call_downgrade_failed", Atom.to_string(reason)}
+      error -> media_error(error)
     end
   end
 
@@ -141,161 +156,71 @@ defmodule CallsafeSignaling.MediaHandler do
 
   # Private helper functions
 
-  defp extract_call_id(%{"callAttemptId" => call_id}) when is_binary(call_id), do: {:ok, call_id}
-  defp extract_call_id(_), do: {:error, "missing_field", "callAttemptId is required"}
+  defp get_call(call_id), do: CallSession.get_state(call_id)
 
-  defp extract_action(%{"action" => action}) when is_binary(action) do
-    if Enums.valid_media_toggle_action?(action) do
-      {:ok, Enums.to_media_toggle_action(action)}
-    else
-      {:error, "invalid_action", "Invalid media toggle action"}
+  defp media_error({:error, :not_found}),
+    do: {:error, "call_not_found", "Call session not found"}
+
+  defp media_error({:error, :not_participant}),
+    do: {:error, "not_call_participant", "Device is not a participant of this call"}
+
+  defp media_error({:error, :invalid_transition}),
+    do: {:error, "invalid_state", "Message not valid in the call's current state"}
+
+  defp media_error({:error, :invalid_state}),
+    do: {:error, "invalid_state", "Message not valid in the call's current state"}
+
+  defp media_error({:error, :not_voice_call}),
+    do: {:error, "validation_error", "Only voice calls can be escalated"}
+
+  defp media_error({:error, :not_responder}),
+    do: {:error, "not_authorized", "Only the escalation's recipient may respond to it"}
+
+  defp media_error({:error, error_type, error_message}),
+    do: {:error, error_type, error_message}
+
+  defp media_error({:error, reason}),
+    do: {:error, "server_error", "Media operation failed: #{inspect(reason)}"}
+
+  defp participant_side(call_state, device_id) do
+    cond do
+      device_id == call_state.caller_id -> {:ok, :caller}
+      device_id == call_state.callee_id -> {:ok, :callee}
+      true -> {:error, :not_participant}
     end
   end
 
-  defp extract_action(_), do: {:error, "missing_field", "action is required"}
+  defp side_role(:caller), do: :customer
+  defp side_role(:callee), do: :business
 
-  defp extract_success(%{"success" => success}) when is_boolean(success), do: {:ok, success}
-  defp extract_success(_), do: {:error, "missing_field", "success is required"}
+  defp check_state(%{state: s}, allowed) do
+    if s in allowed, do: :ok, else: {:error, :invalid_state}
+  end
 
-  defp extract_requested_by(%{"requestedBy" => requested_by}) when is_binary(requested_by) do
-    if Enums.valid_call_initiator?(requested_by) do
-      {:ok, Enums.to_call_initiator(requested_by)}
+  defp check_voice_call(%{state: :connected, call_type: :voice}), do: :ok
+  defp check_voice_call(%{state: :connected}), do: {:error, :not_voice_call}
+  defp check_voice_call(_call_state), do: {:error, :invalid_state}
+
+  # Only the participant who did NOT request the escalation may accept/reject it.
+  defp check_escalation_responder(%{state: :escalation_pending} = call_state, sender_side) do
+    if side_role(sender_side) == call_state.escalation_requested_by do
+      {:error, :not_responder}
     else
-      {:error, "invalid_requested_by", "requestedBy must be 'customer' or 'business'"}
-    end
-  end
-
-  defp extract_requested_by(_), do: {:error, "missing_field", "requestedBy is required"}
-
-  defp extract_media_capabilities(%{"mediaCapabilities" => caps}) when is_map(caps) do
-    {:ok, caps}
-  end
-
-  defp extract_media_capabilities(_),
-    do: {:error, "missing_field", "mediaCapabilities is required"}
-
-  # Validate that device is a participant in the call
-  defp validate_participant(call_state, device_id) do
-    if call_state.caller_id == device_id or call_state.callee_id == device_id do
       :ok
-    else
-      {:error, :invalid_participant}
     end
   end
 
-  # Validate that the call is a voice call
-  defp validate_voice_call(call_state) do
-    if call_state.call_type == :voice do
-      :ok
-    else
-      {:error, :not_voice_call}
-    end
-  end
+  defp check_escalation_responder(_call_state, _sender_side), do: {:error, :invalid_state}
 
-  # Validate that the call is a video call
-  defp validate_video_call(call_state) do
-    if call_state.call_type == :video do
-      :ok
-    else
-      {:error, :not_video_call}
-    end
-  end
-
-  # Update media capabilities in call session
-  defp update_media_capabilities(call_id, capabilities) do
-    case CallSession.update_media_capabilities(call_id, capabilities) do
-      {:ok, _state} -> :ok
-      {:error, reason} -> {:error, reason}
-    end
-  end
-
-  # Notify peer about media toggle
-  defp notify_peer_toggle(call_id, call_state, sender_device_id, action, success) do
-    message = %{
-      "type" => MessageTypes.media_toggle(),
-      "callAttemptId" => call_id,
-      "action" => Atom.to_string(action),
-      "success" => success,
-      "timestamp" => System.system_time(:millisecond)
-    }
-
-    # Send to the other peer
+  defp relay_to_peer(call_state, sender_side, message_type, payload) do
     result =
-      cond do
-        sender_device_id == call_state.caller_id ->
-          CallSession.send_to_callee(call_id, message["type"], message)
-
-        sender_device_id == call_state.callee_id ->
-          CallSession.send_to_caller(call_id, message["type"], message)
-
-        true ->
-          {:error, :invalid_sender}
+      case sender_side do
+        :caller -> CallSession.send_to_callee(call_state.call_id, message_type, payload)
+        :callee -> CallSession.send_to_caller(call_state.call_id, message_type, payload)
       end
 
     case result do
       :ok -> :ok
-      {:error, :caller_not_connected} -> :ok
-      {:error, :callee_not_connected} -> :ok
-      {:error, reason} -> {:error, reason}
-    end
-  end
-
-  # Notify peer about escalation request
-  defp notify_peer_escalation_request(call_id, call_state, sender_device_id, requested_by) do
-    message = %{
-      "type" => MessageTypes.call_escalate(),
-      "callAttemptId" => call_id,
-      "requestedBy" => Atom.to_string(requested_by),
-      "timestamp" => System.system_time(:millisecond)
-    }
-
-    # Send to the other peer
-    result =
-      cond do
-        sender_device_id == call_state.caller_id ->
-          CallSession.send_to_callee(call_id, message["type"], message)
-
-        sender_device_id == call_state.callee_id ->
-          CallSession.send_to_caller(call_id, message["type"], message)
-
-        true ->
-          {:error, :invalid_sender}
-      end
-
-    case result do
-      :ok -> :ok
-      {:error, :caller_not_connected} -> {:error, :peer_not_connected}
-      {:error, :callee_not_connected} -> {:error, :peer_not_connected}
-      {:error, reason} -> {:error, reason}
-    end
-  end
-
-  # Notify peer about downgrade
-  defp notify_peer_downgrade(call_id, call_state, sender_device_id, requested_by) do
-    message = %{
-      "type" => MessageTypes.call_downgrade(),
-      "callAttemptId" => call_id,
-      "requestedBy" => Atom.to_string(requested_by),
-      "timestamp" => System.system_time(:millisecond)
-    }
-
-    # Send to the other peer
-    result =
-      cond do
-        sender_device_id == call_state.caller_id ->
-          CallSession.send_to_callee(call_id, message["type"], message)
-
-        sender_device_id == call_state.callee_id ->
-          CallSession.send_to_caller(call_id, message["type"], message)
-
-        true ->
-          {:error, :invalid_sender}
-      end
-
-    case result do
-      :ok -> :ok
-      {:error, :caller_not_connected} -> :ok
-      {:error, :callee_not_connected} -> :ok
       {:error, reason} -> {:error, reason}
     end
   end

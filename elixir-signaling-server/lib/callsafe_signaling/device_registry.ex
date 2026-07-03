@@ -21,6 +21,7 @@ defmodule CallsafeSignaling.DeviceRegistry do
           business_id: business_id,
           connection_pid: connection_pid | nil,
           device_type: device_type,
+          role: Enums.role(),
           status: device_status,
           connected_at: integer(),
           push_token: String.t() | nil
@@ -44,6 +45,7 @@ defmodule CallsafeSignaling.DeviceRegistry do
           business_id,
           connection_pid | nil,
           device_type,
+          Enums.role(),
           device_status,
           String.t() | nil
         ) ::
@@ -53,12 +55,13 @@ defmodule CallsafeSignaling.DeviceRegistry do
         business_id,
         connection_pid,
         device_type,
+        role,
         status \\ :available,
         push_token \\ nil
       ) do
     GenServer.call(
       __MODULE__,
-      {:register, device_id, business_id, connection_pid, device_type, status, push_token}
+      {:register, device_id, business_id, connection_pid, device_type, role, status, push_token}
     )
   end
 
@@ -163,7 +166,8 @@ defmodule CallsafeSignaling.DeviceRegistry do
 
   @impl true
   def handle_call(
-        {:register, device_id, business_id, connection_pid, device_type, status, push_token},
+        {:register, device_id, business_id, connection_pid, device_type, role, status,
+         push_token},
         _from,
         state
       ) do
@@ -175,6 +179,7 @@ defmodule CallsafeSignaling.DeviceRegistry do
           business_id: business_id,
           connection_pid: connection_pid,
           device_type: device_type,
+          role: role,
           status: status,
           connected_at: System.system_time(:millisecond),
           push_token: push_token
@@ -306,7 +311,12 @@ defmodule CallsafeSignaling.DeviceRegistry do
                 # Mobile devices persist — just clear connection_pid.
                 updated_entry = %{entry | connection_pid: nil}
                 :ets.insert(:device_registry, {{:device, device_id}, updated_entry})
-                :ets.insert(:device_registry, {{:business, business_id, device_id}, updated_entry})
+
+                :ets.insert(
+                  :device_registry,
+                  {{:business, business_id, device_id}, updated_entry}
+                )
+
                 Logger.debug("Mobile device connection DOWN, persisting device: #{device_id}")
 
               :web ->

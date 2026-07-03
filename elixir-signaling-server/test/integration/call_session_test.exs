@@ -28,10 +28,13 @@ defmodule CallsafeSignaling.Integration.CallSessionTest do
       call_id = unique_call_id()
       {:ok, _pid} = CallSession.start_link(call_id, "business_1", "device_1", :voice)
       CallSession.set_caller_pid(call_id, self())
-      CallSession.set_ringing(call_id, "device_2", self())
+      CallSession.set_ringing(call_id)
 
-      # Timer fires at configured timeout (5_000ms in test env).
-      assert_receive {:send_message, "call:timeout", _payload}, 6_000
+      # Timer fires at configured timeout (5_000ms in test env); v2 payload
+      # carries phase and timeoutDuration.
+      assert_receive {:send_message, "call:timeout", payload}, 6_000
+      assert payload["phase"] == "ringing"
+      assert payload["timeoutDuration"] == 5_000
 
       {:ok, state} = CallSession.get_state(call_id)
       assert state.state == :timeout
@@ -40,12 +43,12 @@ defmodule CallsafeSignaling.Integration.CallSessionTest do
     test "is cancelled when state transitions away from :ringing" do
       call_id = unique_call_id()
       {:ok, _pid} = CallSession.start_link(call_id, "business_1", "device_1", :voice)
-      CallSession.set_ringing(call_id, "device_2", self())
+      CallSession.set_ringing(call_id)
 
       {:ok, ringing_state} = CallSession.get_state(call_id)
       assert ringing_state.ringing_timer != nil
 
-      CallSession.set_connecting(call_id)
+      CallSession.set_connecting(call_id, "device_2", self())
 
       {:ok, connecting_state} = CallSession.get_state(call_id)
       assert connecting_state.ringing_timer == nil
@@ -62,10 +65,11 @@ defmodule CallsafeSignaling.Integration.CallSessionTest do
       call_id = unique_call_id()
       {:ok, _pid} = CallSession.start_link(call_id, "business_1", "device_1", :voice)
       CallSession.set_caller_pid(call_id, self())
-      CallSession.set_ringing(call_id, "device_2", self())
-      CallSession.set_connecting(call_id)
+      CallSession.set_ringing(call_id)
+      CallSession.set_connecting(call_id, "device_2", self())
 
-      assert_receive {:send_message, "call:timeout", _payload}, 6_000
+      assert_receive {:send_message, "call:timeout", payload}, 6_000
+      assert payload["phase"] == "connecting"
 
       {:ok, state} = CallSession.get_state(call_id)
       assert state.state == :timeout
@@ -74,8 +78,8 @@ defmodule CallsafeSignaling.Integration.CallSessionTest do
     test "is cancelled when state transitions away from :connecting" do
       call_id = unique_call_id()
       {:ok, _pid} = CallSession.start_link(call_id, "business_1", "device_1", :voice)
-      CallSession.set_ringing(call_id, "device_2", self())
-      CallSession.set_connecting(call_id)
+      CallSession.set_ringing(call_id)
+      CallSession.set_connecting(call_id, "device_2", self())
 
       {:ok, connecting_state} = CallSession.get_state(call_id)
       assert connecting_state.connecting_timer != nil
@@ -88,16 +92,17 @@ defmodule CallsafeSignaling.Integration.CallSessionTest do
   end
 
   # ---------------------------------------------------------------------------
-  # notify_timeout/1
+  # notify_timeout
   # ---------------------------------------------------------------------------
 
   describe "notify_timeout" do
-    test "sends call:timeout to both caller and callee" do
+    test "connecting phase notifies both participants" do
       call_id = unique_call_id()
       {:ok, _pid} = CallSession.start_link(call_id, "business_1", "device_1", :voice)
       # Both PIDs are self() so this process receives two messages.
       CallSession.set_caller_pid(call_id, self())
-      CallSession.set_ringing(call_id, "device_2", self())
+      CallSession.set_ringing(call_id)
+      CallSession.set_connecting(call_id, "device_2", self())
 
       assert_receive {:send_message, "call:timeout", %{"callAttemptId" => ^call_id}}, 6_000
       assert_receive {:send_message, "call:timeout", %{"callAttemptId" => ^call_id}}, 100
@@ -107,20 +112,88 @@ defmodule CallsafeSignaling.Integration.CallSessionTest do
       call_id = unique_call_id()
       {:ok, _pid} = CallSession.start_link(call_id, "business_1", "device_1", :voice)
       # caller_pid intentionally not set — remains nil.
-      CallSession.set_ringing(call_id, "device_2", self())
+      CallSession.set_ringing(call_id)
+      CallSession.set_connecting(call_id, "device_2", self())
 
       assert_receive {:send_message, "call:timeout", %{"callAttemptId" => ^call_id}}, 6_000
     end
+  end
 
-    test "callee_pid nil does not crash, caller still notified" do
+  # ---------------------------------------------------------------------------
+  # Escalation timer
+  # ---------------------------------------------------------------------------
+
+  describe "escalation timer" do
+    test "expiry reverts to :connected and rejects with reason timeout" do
       call_id = unique_call_id()
-      {:ok, pid} = CallSession.start_link(call_id, "business_1", "device_1", :voice)
+      {:ok, _pid} = CallSession.start_link(call_id, "business_1", "device_1", :voice)
       CallSession.set_caller_pid(call_id, self())
-      # Transition to :ringing with callee_pid: nil, bypassing the public API
-      # default, to exercise the nil-guard in notify_timeout/1.
-      GenServer.call(pid, {:transition, :ringing, %{callee_id: "device_2", callee_pid: nil}})
+      CallSession.set_ringing(call_id)
+      CallSession.set_connecting(call_id, "device_2", spawn(fn -> Process.sleep(:infinity) end))
+      CallSession.set_connected(call_id)
 
-      assert_receive {:send_message, "call:timeout", %{"callAttemptId" => ^call_id}}, 6_000
+      caps = %{"canSend" => ["audio", "video"], "canReceive" => ["audio", "video"]}
+      {:ok, _} = CallSession.set_escalation_pending(call_id, :customer, caps)
+
+      # timeout_escalation is 5_000 in test config; requester (customer=caller) is self()
+      assert_receive {:send_message, "escalation:rejected", payload}, 6_000
+      assert payload["reason"] == "timeout"
+
+      {:ok, state} = CallSession.get_state(call_id)
+      assert state.state == :connected
+      assert state.call_type == :voice
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # Reconnect grace
+  # ---------------------------------------------------------------------------
+
+  describe "reconnect grace" do
+    test "participant socket death starts grace; expiry fails the call and notifies survivor" do
+      call_id = unique_call_id()
+      {:ok, _pid} = CallSession.start_link(call_id, "business_1", "device_1", :voice)
+
+      callee_socket = spawn(fn -> Process.sleep(:infinity) end)
+      CallSession.set_caller_pid(call_id, self())
+      CallSession.set_ringing(call_id)
+      CallSession.set_connecting(call_id, "device_2", callee_socket)
+      CallSession.set_connected(call_id)
+
+      # Callee socket dies mid-call
+      Process.exit(callee_socket, :kill)
+
+      # timeout_reconnect_grace is 2_000 in test config
+      assert_receive {:send_message, "call:failed", payload}, 4_000
+      assert payload["reason"] == "peer_disconnected"
+
+      {:ok, state} = CallSession.get_state(call_id)
+      assert state.state == :failed
+      assert state.fail_reason == :peer_disconnected
+    end
+
+    test "reconnect within grace cancels the timer" do
+      call_id = unique_call_id()
+      {:ok, _pid} = CallSession.start_link(call_id, "business_1", "device_1", :voice)
+
+      callee_socket = spawn(fn -> Process.sleep(:infinity) end)
+      CallSession.set_caller_pid(call_id, self())
+      CallSession.set_ringing(call_id)
+      CallSession.set_connecting(call_id, "device_2", callee_socket)
+      CallSession.set_connected(call_id)
+
+      Process.exit(callee_socket, :kill)
+      Process.sleep(100)
+
+      new_socket = spawn(fn -> Process.sleep(:infinity) end)
+      assert {:ok, _} = CallSession.reconnect(call_id, "device_2", new_socket)
+
+      # No failure after the grace window would have expired
+      refute_receive {:send_message, "call:failed", _}, 3_000
+
+      {:ok, state} = CallSession.get_state(call_id)
+      assert state.state == :connected
+      assert state.callee_pid == new_socket
     end
   end
 end

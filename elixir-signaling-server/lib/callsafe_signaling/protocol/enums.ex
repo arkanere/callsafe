@@ -1,169 +1,90 @@
 defmodule CallsafeSignaling.Protocol.Enums do
   @moduledoc """
-  Protocol enum types.
-  Defines all enumerated values used across the protocol as atoms.
+  Protocol enum values, derived at compile time from protocol/protocol.json
+  (via `CallsafeSignaling.Protocol.Spec`).
+
+  String-to-atom conversion only ever maps values that exist in the spec, so
+  unvalidated client input can never create new atoms.
   """
 
-  # CallType enum
+  alias CallsafeSignaling.Protocol.Spec
+
+  @enums Spec.enums()
+  @enum_values Map.new(@enums, fn {name, kv} -> {name, Map.values(kv)} end)
+
+  # Fixed, spec-bounded string => atom table (safe: built at compile time).
+  @value_atoms @enum_values
+               |> Map.values()
+               |> List.flatten()
+               |> Enum.uniq()
+               |> Map.new(&{&1, String.to_atom(&1)})
+
   @type call_type :: :voice | :video
-  @call_types [:voice, :video]
-
-  # DeviceType enum
   @type device_type :: :web | :mobile
-  @device_types [:web, :mobile]
-
-  # DeviceStatus enum
   @type device_status :: :available | :unavailable
-  @device_statuses [:available, :unavailable]
-
-  # CallState enum
-  @type call_state ::
-          :initiated
-          | :ringing
-          | :connecting
-          | :connected
-          | :ended
-          | :failed
-          | :cancelled
-          | :busy
-          | :unavailable
-          | :timeout
-          | :camera_permission_denied
-          | :video_paused_by_user
-          | :video_paused_bandwidth
-          | :escalation_pending
-
-  @call_states [
-    :initiated,
-    :ringing,
-    :connecting,
-    :connected,
-    :ended,
-    :failed,
-    :cancelled,
-    :busy,
-    :unavailable,
-    :timeout,
-    :camera_permission_denied,
-    :video_paused_by_user,
-    :video_paused_bandwidth,
-    :escalation_pending
-  ]
-
-  # CallEndReason enum
-  @type call_end_reason ::
-          :normal
-          | :customer_hangup
-          | :business_hangup
-          | :connection_failed
-          | :timeout
-          | :rejected
-
-  @call_end_reasons [
-    :normal,
-    :customer_hangup,
-    :business_hangup,
-    :connection_failed,
-    :timeout,
-    :rejected
-  ]
-
-  # CallInitiator enum
-  @type call_initiator :: :customer | :business
-  @call_initiators [:customer, :business]
-
-  # MediaTrackType enum
+  @type role :: :customer | :business
   @type media_track_type :: :audio | :video
-  @media_track_types [:audio, :video]
-
-  # MediaToggleAction enum
   @type media_toggle_action ::
           :enable_camera
           | :disable_camera
           | :enable_microphone
           | :disable_microphone
           | :flip_camera
+  @type call_state ::
+          :initiated
+          | :ringing
+          | :connecting
+          | :connected
+          | :escalation_pending
+          | :ended
+          | :failed
+          | :cancelled
+          | :busy
+          | :unavailable
+          | :timeout
+  @type call_end_reason :: :normal | :customer_hangup | :business_hangup
 
-  @media_toggle_actions [
-    :enable_camera,
-    :disable_camera,
-    :enable_microphone,
-    :disable_microphone,
-    :flip_camera
-  ]
+  @doc """
+  Check a value against a spec enum by name (e.g. `valid?("CallType", "voice")`).
+  Accepts strings or atoms.
+  """
+  def valid?(enum_name, value) when is_binary(value),
+    do: value in Map.get(@enum_values, enum_name, [])
 
-  # Public API for validation
+  def valid?(enum_name, value) when is_atom(value),
+    do: valid?(enum_name, Atom.to_string(value))
 
-  def valid_call_type?(type) when is_atom(type), do: type in @call_types
-  def valid_call_type?(type) when is_binary(type), do: String.to_atom(type) in @call_types
-  def valid_call_type?(_), do: false
+  def valid?(_enum_name, _value), do: false
 
-  def valid_device_type?(type) when is_atom(type), do: type in @device_types
-  def valid_device_type?(type) when is_binary(type), do: String.to_atom(type) in @device_types
-  def valid_device_type?(_), do: false
+  @doc """
+  Convert a spec enum string to its atom. Returns nil for values not in the
+  spec (never creates atoms). Atoms pass through unchanged.
+  """
+  def to_atom(value) when is_binary(value), do: Map.get(@value_atoms, value)
+  def to_atom(value) when is_atom(value), do: value
 
-  def valid_device_status?(status) when is_atom(status), do: status in @device_statuses
+  @doc "All valid string values for a spec enum name."
+  def values(enum_name), do: Map.get(@enum_values, enum_name, [])
 
-  def valid_device_status?(status) when is_binary(status),
-    do: String.to_atom(status) in @device_statuses
+  # Named helpers (kept for handler/test readability)
 
-  def valid_device_status?(_), do: false
+  def valid_call_type?(v), do: valid?("CallType", v)
+  def valid_device_type?(v), do: valid?("DeviceType", v)
+  def valid_device_status?(v), do: valid?("DeviceStatus", v)
+  def valid_role?(v), do: valid?("Role", v)
+  def valid_call_state?(v), do: valid?("CallState", v)
+  def valid_call_end_reason?(v), do: valid?("CallEndReason", v)
+  def valid_call_fail_reason?(v), do: valid?("CallFailReason", v)
+  def valid_media_track_type?(v), do: valid?("MediaTrackType", v)
+  def valid_media_toggle_action?(v), do: valid?("MediaToggleAction", v)
+  def valid_error_code?(v), do: valid?("ErrorCode", v)
 
-  def valid_call_state?(state) when is_atom(state), do: state in @call_states
-  def valid_call_state?(state) when is_binary(state), do: String.to_atom(state) in @call_states
-  def valid_call_state?(_), do: false
-
-  def valid_call_end_reason?(reason) when is_atom(reason), do: reason in @call_end_reasons
-
-  def valid_call_end_reason?(reason) when is_binary(reason),
-    do: String.to_atom(reason) in @call_end_reasons
-
-  def valid_call_end_reason?(_), do: false
-
-  def valid_call_initiator?(initiator) when is_atom(initiator), do: initiator in @call_initiators
-
-  def valid_call_initiator?(initiator) when is_binary(initiator),
-    do: String.to_atom(initiator) in @call_initiators
-
-  def valid_call_initiator?(_), do: false
-
-  def valid_media_track_type?(type) when is_atom(type), do: type in @media_track_types
-
-  def valid_media_track_type?(type) when is_binary(type),
-    do: String.to_atom(type) in @media_track_types
-
-  def valid_media_track_type?(_), do: false
-
-  def valid_media_toggle_action?(action) when is_atom(action),
-    do: action in @media_toggle_actions
-
-  def valid_media_toggle_action?(action) when is_binary(action),
-    do: String.to_atom(action) in @media_toggle_actions
-
-  def valid_media_toggle_action?(_), do: false
-
-  # String to atom conversion helpers
-  def to_call_type(value) when is_binary(value), do: String.to_atom(value)
-  def to_call_type(value) when is_atom(value), do: value
-
-  def to_device_type(value) when is_binary(value), do: String.to_atom(value)
-  def to_device_type(value) when is_atom(value), do: value
-
-  def to_device_status(value) when is_binary(value), do: String.to_atom(value)
-  def to_device_status(value) when is_atom(value), do: value
-
-  def to_call_state(value) when is_binary(value), do: String.to_atom(value)
-  def to_call_state(value) when is_atom(value), do: value
-
-  def to_call_end_reason(value) when is_binary(value), do: String.to_atom(value)
-  def to_call_end_reason(value) when is_atom(value), do: value
-
-  def to_call_initiator(value) when is_binary(value), do: String.to_atom(value)
-  def to_call_initiator(value) when is_atom(value), do: value
-
-  def to_media_track_type(value) when is_binary(value), do: String.to_atom(value)
-  def to_media_track_type(value) when is_atom(value), do: value
-
-  def to_media_toggle_action(value) when is_binary(value), do: String.to_atom(value)
-  def to_media_toggle_action(value) when is_atom(value), do: value
+  def to_call_type(v), do: to_atom(v)
+  def to_device_type(v), do: to_atom(v)
+  def to_device_status(v), do: to_atom(v)
+  def to_role(v), do: to_atom(v)
+  def to_call_state(v), do: to_atom(v)
+  def to_call_end_reason(v), do: to_atom(v)
+  def to_call_fail_reason(v), do: to_atom(v)
+  def to_media_toggle_action(v), do: to_atom(v)
 end

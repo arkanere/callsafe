@@ -5,7 +5,7 @@ defmodule CallsafeSignaling.Protocol.MessageTypesTest do
 
   describe "version/0" do
     test "returns protocol version" do
-      assert MessageTypes.version() == "1.0.0"
+      assert MessageTypes.version() == "2.0.0"
     end
   end
 
@@ -20,11 +20,22 @@ defmodule CallsafeSignaling.Protocol.MessageTypesTest do
   end
 
   describe "all/0" do
-    test "returns all 30 message types" do
+    test "returns all 38 message types from protocol.json" do
       all_types = MessageTypes.all()
-      assert length(all_types) == 30
+      assert length(all_types) == 38
       assert "call:initiate" in all_types
       assert "server:shutdown" in all_types
+      # New in v2
+      assert "ping" in all_types
+      assert "pong" in all_types
+      assert "call:initiated" in all_types
+      assert "call:cancel" in all_types
+      assert "call:reconnect" in all_types
+      assert "escalation:accept" in all_types
+      assert "call:downgraded" in all_types
+      # v1 pseudo-messages removed
+      refute "open" in all_types
+      refute "close" in all_types
     end
   end
 

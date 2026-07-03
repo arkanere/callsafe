@@ -67,8 +67,8 @@ defmodule CallsafeSignaling.Integration.TelemetryTest do
       Process.sleep(10)
 
       # Transition to ringing and then connected
-      CallSession.set_ringing(call_id, "device_2", self())
-      CallSession.set_connecting(call_id)
+      CallSession.set_ringing(call_id)
+      CallSession.set_connecting(call_id, "device_2", self())
       CallSession.set_connected(call_id)
 
       # Should receive connected event with duration
@@ -90,15 +90,15 @@ defmodule CallsafeSignaling.Integration.TelemetryTest do
       assert_receive {:telemetry_event, [:callsafe_signaling, :call, :started], _, _}
 
       # Connect the call
-      CallSession.set_ringing(call_id, "device_2", self())
-      CallSession.set_connecting(call_id)
+      CallSession.set_ringing(call_id)
+      CallSession.set_connecting(call_id, "device_2", self())
       CallSession.set_connected(call_id)
 
       # Clear connected event
       assert_receive {:telemetry_event, [:callsafe_signaling, :call, :connected], _, _}
 
       # End the call
-      CallSession.set_ended(call_id, :user_hangup)
+      CallSession.set_ended(call_id, :customer_hangup, :customer)
 
       # Wait for process to terminate (auto-stop after 5 seconds)
       assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 6_000
@@ -120,7 +120,7 @@ defmodule CallsafeSignaling.Integration.TelemetryTest do
       assert_receive {:telemetry_event, [:callsafe_signaling, :call, :started], _, _}
 
       # Fail the call
-      CallSession.set_failed(call_id, "Connection error")
+      CallSession.set_failed(call_id, :connection_failed)
 
       # Should receive failed event
       assert_receive {:telemetry_event, [:callsafe_signaling, :call, :failed], %{count: 1},
@@ -219,8 +219,8 @@ defmodule CallsafeSignaling.Integration.TelemetryTest do
                       %{call_id: ^call_2}}
 
       # Connect first call
-      CallSession.set_ringing(call_1, "device_x", self())
-      CallSession.set_connecting(call_1)
+      CallSession.set_ringing(call_1)
+      CallSession.set_connecting(call_1, "device_2", self())
       CallSession.set_connected(call_1)
 
       # Should only receive connected event for call_1

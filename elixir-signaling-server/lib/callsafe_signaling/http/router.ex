@@ -7,8 +7,12 @@ defmodule CallsafeSignaling.HTTP.Router do
   use Plug.Router
   require Logger
 
-  alias CallsafeSignaling.{Stats, DeviceRegistry}
+  alias CallsafeSignaling.{Config, DeviceRegistry, Stats}
+  alias CallsafeSignaling.Auth.JWT
   alias CallsafeSignaling.HTTP.Middleware.RateLimit
+
+  # Guest tokens are short-lived: enough to complete the device:connect handshake.
+  @guest_token_ttl_seconds 300
 
   # Parse JSON body for POST requests
   plug(Plug.Parsers,
@@ -77,6 +81,43 @@ defmodule CallsafeSignaling.HTTP.Router do
     send_resp(conn, 200, Jason.encode!(stats_data))
   end
 
+  # Guest token for anonymous customers (embed widget). Declared here, before
+  # the /api/v1 forward, so it bypasses the ApiV1Router's Auth plug; the
+  # router-wide RateLimit plug still applies (IP-based for unauthenticated
+  # requests). Claims: device_id = fresh UUIDv4, business_id = handle,
+  # role = customer.
+  get "/api/v1/guest-token" do
+    conn = fetch_query_params(conn)
+    handle = conn.query_params["handle"]
+
+    cond do
+      is_nil(Config.jwt_secret()) ->
+        Logger.error("JWT secret not configured")
+
+        send_json(conn, 500, %{error: "server_error", message: "Server configuration error"})
+
+      not valid_handle?(handle) ->
+        send_json(conn, 400, %{
+          error: "validation_error",
+          message: "handle is required (1-255 characters)"
+        })
+
+      true ->
+        device_id = UUID.uuid4()
+
+        token =
+          JWT.generate(device_id, handle, "customer", Config.jwt_secret(),
+            ttl: @guest_token_ttl_seconds
+          )
+
+        send_json(conn, 200, %{
+          token: token,
+          deviceId: device_id,
+          expiresIn: @guest_token_ttl_seconds
+        })
+    end
+  end
+
   # Protected endpoints (require JWT auth)
 
   forward("/api/v1", to: CallsafeSignaling.HTTP.ApiV1Router)
@@ -93,6 +134,16 @@ defmodule CallsafeSignaling.HTTP.Router do
   end
 
   # Private helpers
+
+  defp valid_handle?(handle) do
+    is_binary(handle) and byte_size(handle) >= 1 and byte_size(handle) <= 255
+  end
+
+  defp send_json(conn, status, body) do
+    conn
+    |> put_resp_content_type("application/json")
+    |> send_resp(status, Jason.encode!(body))
+  end
 
   defp get_uptime_seconds do
     {uptime_ms, _} = :erlang.statistics(:wall_clock)

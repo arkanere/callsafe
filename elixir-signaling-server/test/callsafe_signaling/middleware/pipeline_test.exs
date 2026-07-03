@@ -78,7 +78,7 @@ defmodule CallsafeSignaling.Middleware.PipelineTest do
 
   describe "authenticate_jwt/0" do
     test "authenticates valid token" do
-      token = JWT.generate(@device_id, @business_id, @secret)
+      token = JWT.generate(@device_id, @business_id, "business", @secret)
       context = Pipeline.build_context(token, @ip_address)
 
       middleware = Pipeline.authenticate_jwt()
@@ -110,6 +110,7 @@ defmodule CallsafeSignaling.Middleware.PipelineTest do
       payload = %{
         "device_id" => @device_id,
         "business_id" => @business_id,
+        "role" => "business",
         "iat" => now - 7200,
         "exp" => now - 3600
       }
@@ -236,7 +237,7 @@ defmodule CallsafeSignaling.Middleware.PipelineTest do
 
   describe "standard_pipeline/0" do
     test "authenticates and rate limits" do
-      token = JWT.generate(@device_id, @business_id, @secret)
+      token = JWT.generate(@device_id, @business_id, "business", @secret)
       context = Pipeline.build_context(token, @ip_address)
 
       pipeline = Pipeline.standard_pipeline()
@@ -261,7 +262,7 @@ defmodule CallsafeSignaling.Middleware.PipelineTest do
         RateLimiter.check_device(device_id)
       end
 
-      token = JWT.generate(device_id, @business_id, @secret)
+      token = JWT.generate(device_id, @business_id, "business", @secret)
       context = Pipeline.build_context(token, ip)
 
       pipeline = Pipeline.standard_pipeline()
@@ -272,7 +273,7 @@ defmodule CallsafeSignaling.Middleware.PipelineTest do
   describe "auth_only_pipeline/0" do
     test "authenticates without rate limiting" do
       device_id = "device_#{:rand.uniform(1_000_000)}"
-      token = JWT.generate(device_id, @business_id, @secret)
+      token = JWT.generate(device_id, @business_id, "business", @secret)
 
       # Use up quota
       for _ <- 1..5 do

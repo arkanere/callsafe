@@ -63,7 +63,8 @@ defmodule CallsafeSignaling.Middleware.Pipeline do
                context
                |> Map.put(:claims, claims)
                |> Map.put(:device_id, claims.device_id)
-               |> Map.put(:business_id, claims.business_id)}
+               |> Map.put(:business_id, claims.business_id)
+               |> Map.put(:role, claims.role)}
 
             {:error, reason} ->
               {:error, reason}

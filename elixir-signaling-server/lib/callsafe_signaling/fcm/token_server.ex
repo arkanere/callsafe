@@ -44,7 +44,10 @@ defmodule CallsafeSignaling.FCM.TokenServer do
         {:ok, %{creds: creds, token: nil, expires_at: 0}}
 
       {:error, reason} ->
-        Logger.warning("FCM TokenServer: service account not configured (#{reason}). Push notifications disabled.")
+        Logger.warning(
+          "FCM TokenServer: service account not configured (#{reason}). Push notifications disabled."
+        )
+
         {:ok, %{creds: nil, token: nil, expires_at: 0}}
     end
   end

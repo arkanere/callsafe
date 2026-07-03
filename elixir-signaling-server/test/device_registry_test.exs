@@ -16,7 +16,14 @@ defmodule CallsafeSignaling.DeviceRegistryTest do
       connection_pid = self()
 
       assert {:ok, entry} =
-               DeviceRegistry.register(device_id, business_id, connection_pid, :web, :available)
+               DeviceRegistry.register(
+                 device_id,
+                 business_id,
+                 connection_pid,
+                 :web,
+                 :business,
+                 :available
+               )
 
       assert entry.device_id == device_id
       assert entry.business_id == business_id
@@ -32,10 +39,24 @@ defmodule CallsafeSignaling.DeviceRegistryTest do
       connection_pid = self()
 
       assert {:ok, _entry} =
-               DeviceRegistry.register(device_id, business_id, connection_pid, :web, :available)
+               DeviceRegistry.register(
+                 device_id,
+                 business_id,
+                 connection_pid,
+                 :web,
+                 :business,
+                 :available
+               )
 
       assert {:error, :already_registered} =
-               DeviceRegistry.register(device_id, business_id, connection_pid, :web, :available)
+               DeviceRegistry.register(
+                 device_id,
+                 business_id,
+                 connection_pid,
+                 :web,
+                 :business,
+                 :available
+               )
     end
   end
 
@@ -45,7 +66,16 @@ defmodule CallsafeSignaling.DeviceRegistryTest do
       business_id = "business_1"
       connection_pid = self()
 
-      {:ok, _} = DeviceRegistry.register(device_id, business_id, connection_pid, :web, :available)
+      {:ok, _} =
+        DeviceRegistry.register(
+          device_id,
+          business_id,
+          connection_pid,
+          :web,
+          :business,
+          :available
+        )
+
       assert {:ok, entry} = DeviceRegistry.lookup_by_device(device_id)
       assert entry.device_id == device_id
     end
@@ -60,9 +90,14 @@ defmodule CallsafeSignaling.DeviceRegistryTest do
       business_id = "business_1"
       pid = self()
 
-      {:ok, _} = DeviceRegistry.register("device_1", business_id, pid, :web, :available)
-      {:ok, _} = DeviceRegistry.register("device_2", business_id, pid, :mobile, :available)
-      {:ok, _} = DeviceRegistry.register("device_3", "business_2", pid, :web, :available)
+      {:ok, _} =
+        DeviceRegistry.register("device_1", business_id, pid, :web, :business, :available)
+
+      {:ok, _} =
+        DeviceRegistry.register("device_2", business_id, pid, :mobile, :business, :available)
+
+      {:ok, _} =
+        DeviceRegistry.register("device_3", "business_2", pid, :web, :business, :available)
 
       devices = DeviceRegistry.list_by_business(business_id)
       assert length(devices) == 2
@@ -80,7 +115,16 @@ defmodule CallsafeSignaling.DeviceRegistryTest do
       business_id = "business_1"
       connection_pid = self()
 
-      {:ok, _} = DeviceRegistry.register(device_id, business_id, connection_pid, :web, :available)
+      {:ok, _} =
+        DeviceRegistry.register(
+          device_id,
+          business_id,
+          connection_pid,
+          :web,
+          :business,
+          :available
+        )
+
       assert {:ok, entry} = DeviceRegistry.update_status(device_id, :unavailable)
       assert entry.status == :unavailable
     end
@@ -96,7 +140,16 @@ defmodule CallsafeSignaling.DeviceRegistryTest do
       business_id = "business_1"
       connection_pid = self()
 
-      {:ok, _} = DeviceRegistry.register(device_id, business_id, connection_pid, :web, :available)
+      {:ok, _} =
+        DeviceRegistry.register(
+          device_id,
+          business_id,
+          connection_pid,
+          :web,
+          :business,
+          :available
+        )
+
       assert :ok = DeviceRegistry.unregister(device_id)
       assert {:error, :not_found} = DeviceRegistry.lookup_by_device(device_id)
     end
@@ -112,9 +165,14 @@ defmodule CallsafeSignaling.DeviceRegistryTest do
 
       assert DeviceRegistry.count() == 0
 
-      {:ok, _} = DeviceRegistry.register("device_1", "business_1", pid, :web, :available)
-      {:ok, _} = DeviceRegistry.register("device_2", "business_1", pid, :mobile, :available)
-      {:ok, _} = DeviceRegistry.register("device_3", "business_2", pid, :web, :available)
+      {:ok, _} =
+        DeviceRegistry.register("device_1", "business_1", pid, :web, :business, :available)
+
+      {:ok, _} =
+        DeviceRegistry.register("device_2", "business_1", pid, :mobile, :business, :available)
+
+      {:ok, _} =
+        DeviceRegistry.register("device_3", "business_2", pid, :web, :business, :available)
 
       assert DeviceRegistry.count() == 3
       assert DeviceRegistry.count_by_business("business_1") == 2
@@ -130,7 +188,16 @@ defmodule CallsafeSignaling.DeviceRegistryTest do
       # Spawn a process to act as connection
       connection_pid = spawn(fn -> Process.sleep(:infinity) end)
 
-      {:ok, _} = DeviceRegistry.register(device_id, business_id, connection_pid, :web, :available)
+      {:ok, _} =
+        DeviceRegistry.register(
+          device_id,
+          business_id,
+          connection_pid,
+          :web,
+          :business,
+          :available
+        )
+
       assert {:ok, _entry} = DeviceRegistry.lookup_by_device(device_id)
 
       # Kill the connection process

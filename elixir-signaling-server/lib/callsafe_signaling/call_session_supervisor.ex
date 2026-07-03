@@ -45,18 +45,18 @@ defmodule CallsafeSignaling.CallSessionSupervisor do
             Logger.info("Call session supervised: #{call_id}")
             {:ok, pid}
 
-          {:error, {:already_started, pid}} ->
+          {:error, {:already_started, _pid}} ->
             Logger.warning("Call session already exists: #{call_id}")
-            {:ok, pid}
+            {:error, :already_started}
 
           {:error, reason} ->
             Logger.error("Failed to start call session #{call_id}: #{inspect(reason)}")
             {:error, reason}
         end
 
-      [{pid, _}] ->
+      [{_pid, _}] ->
         Logger.warning("Call session already exists: #{call_id}")
-        {:ok, pid}
+        {:error, :already_started}
     end
   end
 

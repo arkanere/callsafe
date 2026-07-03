@@ -1,22 +1,26 @@
 defmodule CallsafeSignaling.CallHandler do
   @moduledoc """
-  Handler for call lifecycle messages.
-  Manages call:initiate, call:accept, call:reject, call:end.
-  Coordinates CallSession processes and device notifications.
+  Handler for call lifecycle messages (protocol v2).
+  Manages call:initiate, call:cancel, call:accept, call:reject, call:end,
+  call:failed and call:reconnect. Coordinates CallSession processes and
+  device notifications.
+
+  Authentication, schema validation and sender-role gating happen in
+  MessageRouter before messages reach this module.
   """
 
   require Logger
 
   alias CallsafeSignaling.{
-    DeviceRegistry,
     CallSession,
     CallSessionSupervisor,
+    DecisionCapture,
+    DeviceRegistry,
     FCM.PushService,
-    Stats,
-    DecisionCapture
+    Stats
   }
 
-  alias CallsafeSignaling.Protocol.{MessageTypes, Enums}
+  alias CallsafeSignaling.Protocol.{Enums, MessageTypes}
 
   @type message :: map()
   @type state :: map()
@@ -29,155 +33,175 @@ defmodule CallsafeSignaling.CallHandler do
   @spec handle(String.t(), message, state) :: handler_result
   def handle(message_type, message, state)
 
-  # Handle call:initiate
+  # Handle call:initiate (customer only, enforced by router)
   def handle("call:initiate", message, state) do
-    with true <- Map.get(state, :authenticated, false),
-         {:ok, call_id} <- extract_call_id(message),
-         {:ok, _business_handle} <- extract_handle(message),
-         {:ok, call_type} <- extract_call_type(message),
-         {:ok, media_capabilities} <- extract_media_capabilities(message),
-         caller_id <- Map.get(state, :device_id),
-         business_id <- Map.get(state, :business_id),
-         {:ok, devices} <- find_available_devices(business_id, caller_id),
-         {:ok, _session_pid} <-
+    call_id = message["callAttemptId"]
+    handle_name = message["handle"]
+    call_type = Enums.to_call_type(message["callType"])
+    media_capabilities = message["mediaCapabilities"]
+    caller_id = state.device_id
+    business_id = state.business_id
+
+    with :ok <- check_handle_scope(handle_name, business_id),
+         {:ok, _pid} <-
            create_call_session(call_id, business_id, caller_id, call_type, media_capabilities),
-         :ok <- set_caller_connection(call_id, state.connection_pid),
-         :ok <- notify_devices(devices, call_id, caller_id, call_type) do
-      # Track call initiated
+         {:ok, _} <- CallSession.set_caller_pid(call_id, state.connection_pid) do
       Stats.increment_calls_initiated()
 
-      response = %{
-        "type" => MessageTypes.call_incoming(),
-        "callAttemptId" => call_id,
-        "sourceId" => caller_id,
-        "callType" => Atom.to_string(call_type),
-        "timestamp" => System.system_time(:millisecond),
-        "devicesNotified" => length(devices)
-      }
-
-      Logger.info("Call initiated: #{call_id} (#{call_type}) - notified #{length(devices)} devices")
-      {:ok, response, state}
-    else
-      false ->
-        {:error, "not_authenticated", "Device must be connected first"}
-
-      {:error, :no_available_devices} ->
-        {:error, "no_devices", "No available devices found for business"}
-
-      {:error, error_type, error_message} ->
-        {:error, error_type, error_message}
-
-      {:error, reason} when is_atom(reason) ->
-        {:error, "call_initiate_failed", Atom.to_string(reason)}
-    end
-  end
-
-  # Handle call:accept
-  def handle("call:accept", message, state) do
-    with true <- Map.get(state, :authenticated, false),
-         {:ok, call_id} <- extract_call_id(message),
-         {:ok, _device_type} <- extract_device_type(message),
-         {:ok, device_id} <- extract_device_id(message),
-         state_device_id <- Map.get(state, :device_id),
-         true <- state_device_id == device_id,
-         {:ok, call_state} <- CallSession.get_state(call_id),
-         :ok <- validate_accepting_device(call_state, device_id),
-         {:ok, _new_state} <- CallSession.set_ringing(call_id, device_id, state.connection_pid),
-         :ok <- cancel_other_devices(call_id, call_state, device_id),
-         :ok <- notify_caller_accepted(call_id, device_id, call_state.caller_pid) do
-      # Track call accepted
-      Stats.increment_calls_accepted()
-
-      response = %{
-        "type" => MessageTypes.call_accepted(),
-        "callAttemptId" => call_id,
-        "acceptingDevice" => device_id,
-        "timestamp" => System.system_time(:millisecond)
-      }
-
-      Logger.info("Call accepted: #{call_id} by device: #{device_id}")
-      {:ok, response, state}
-    else
-      false ->
-        {:error, "not_authenticated", "Device must be connected first"}
-
-      {:error, :not_found} ->
-        {:error, "call_not_found", "Call session not found"}
-
-      {:error, :invalid_device} ->
-        {:error, "invalid_device", "Device not authorized for this call"}
-
-      {:error, error_type, error_message} ->
-        {:error, error_type, error_message}
-
-      {:error, reason} when is_atom(reason) ->
-        {:error, "call_accept_failed", Atom.to_string(reason)}
-    end
-  end
-
-  # Handle call:reject
-  def handle("call:reject", message, state) do
-    with true <- Map.get(state, :authenticated, false),
-         {:ok, call_id} <- extract_call_id(message),
-         {:ok, _device_type} <- extract_device_type(message),
-         device_id <- Map.get(state, :device_id),
-         {:ok, call_state} <- CallSession.get_state(call_id),
-         {:ok, remaining_devices} <- get_remaining_devices(call_state, device_id) do
-      # Check if there are other devices that can accept
-      case remaining_devices do
+      case find_available_devices(business_id, caller_id) do
         [] ->
-          # No more devices, mark call as unavailable
+          # Terminal immediately: nobody to ring.
           CallSession.set_unavailable(call_id)
-          notify_caller_unavailable(call_id, call_state.caller_pid)
-          Stats.increment_calls_rejected()
-          Logger.info("Call rejected: #{call_id} by #{device_id}, no more devices available")
 
-        _devices ->
-          # Other devices still available
-          Logger.info("Call rejected: #{call_id} by #{device_id}, #{length(remaining_devices)} devices remaining")
+          response = %{
+            "type" => MessageTypes.call_unavailable(),
+            "callAttemptId" => call_id,
+            "reason" => "no_devices_available",
+            "timestamp" => System.system_time(:millisecond)
+          }
+
+          Logger.info("Call #{call_id}: no available devices for business #{business_id}")
+          {:ok, response, state}
+
+        devices ->
+          notify_devices(devices, call_id, caller_id, call_type, media_capabilities)
+          CallSession.add_notified_devices(call_id, Enum.map(devices, & &1.device_id))
+          CallSession.set_ringing(call_id)
+
+          response = %{
+            "type" => MessageTypes.call_initiated(),
+            "callAttemptId" => call_id,
+            "devicesNotified" => length(devices),
+            "timestamp" => System.system_time(:millisecond)
+          }
+
+          Logger.info(
+            "Call initiated: #{call_id} (#{call_type}) - notified #{length(devices)} devices"
+          )
+
+          {:ok, response, state}
       end
+    else
+      {:error, {:already_started, _pid}} ->
+        {:error, "duplicate_call_id", "callAttemptId was already used"}
 
-      response = %{
+      {:error, :already_started} ->
+        {:error, "duplicate_call_id", "callAttemptId was already used"}
+
+      {:error, error_type, error_message} ->
+        {:error, error_type, error_message}
+
+      {:error, reason} ->
+        {:error, "server_error", "Failed to initiate call: #{inspect(reason)}"}
+    end
+  end
+
+  # Handle call:cancel (customer abandons before acceptance)
+  def handle("call:cancel", message, state) do
+    call_id = message["callAttemptId"]
+
+    with {:ok, call_state} <- get_call(call_id),
+         :ok <- check_is_caller(call_state, state.device_id),
+         {:ok, updated_state} <- CallSession.set_cancelled(call_id) do
+      payload = %{
         "type" => MessageTypes.call_cancelled(),
         "callAttemptId" => call_id,
-        "reason" => "rejected",
+        "reason" => "cancelled_by_caller",
         "timestamp" => System.system_time(:millisecond)
       }
 
-      {:ok, response, state}
+      notify_ringing_devices(updated_state, payload)
+
+      Logger.info("Call cancelled by caller: #{call_id}")
+      {:ok, payload, state}
     else
-      false ->
-        {:error, "not_authenticated", "Device must be connected first"}
-
-      {:error, :not_found} ->
-        {:error, "call_not_found", "Call session not found"}
-
-      {:error, error_type, error_message} ->
-        {:error, error_type, error_message}
-
-      {:error, reason} when is_atom(reason) ->
-        {:error, "call_reject_failed", Atom.to_string(reason)}
+      error -> call_error(error)
     end
   end
 
-  # Handle call:end
+  # Handle call:accept (business only, enforced by router)
+  def handle("call:accept", message, state) do
+    call_id = message["callAttemptId"]
+    device_id = state.device_id
+    media_capabilities = message["mediaCapabilities"]
+
+    with {:ok, call_state} <- get_call(call_id),
+         :ok <- check_same_business(call_state, state.business_id),
+         {:ok, updated_state} <-
+           CallSession.set_connecting(
+             call_id,
+             device_id,
+             state.connection_pid,
+             media_capabilities
+           ) do
+      Stats.increment_calls_accepted()
+
+      payload =
+        %{
+          "type" => MessageTypes.call_accepted(),
+          "callAttemptId" => call_id,
+          "acceptingDeviceId" => device_id,
+          "timestamp" => System.system_time(:millisecond)
+        }
+        |> put_optional("mediaCapabilities", media_capabilities)
+
+      # Audience: caller AND accepting device (acceptor gets the response copy).
+      notify_caller(updated_state, payload)
+      cancel_other_devices(updated_state, device_id)
+
+      Logger.info("Call accepted: #{call_id} by device: #{device_id}")
+      {:ok, payload, state}
+    else
+      error -> call_error(error)
+    end
+  end
+
+  # Handle call:reject (business only, enforced by router)
+  def handle("call:reject", message, state) do
+    call_id = message["callAttemptId"]
+    device_id = state.device_id
+
+    with {:ok, call_state} <- get_call(call_id),
+         :ok <- check_same_business(call_state, state.business_id) do
+      case CallSession.record_reject(call_id, device_id) do
+        {:ok, :all_rejected, updated_state} ->
+          Stats.increment_calls_rejected()
+
+          notify_caller(updated_state, %{
+            "type" => MessageTypes.call_unavailable(),
+            "callAttemptId" => call_id,
+            "reason" => "all_devices_rejected",
+            "timestamp" => System.system_time(:millisecond)
+          })
+
+          Logger.info("Call rejected: #{call_id} by #{device_id}, all devices rejected")
+          # No per-reject message is sent to anyone (spec).
+          {:ok, nil, state}
+
+        {:ok, :pending, _updated_state} ->
+          Logger.info("Call rejected: #{call_id} by #{device_id}, still ringing elsewhere")
+          {:ok, nil, state}
+
+        {:error, :not_notified} ->
+          {:error, "not_call_participant", "Device was not ringing for this call"}
+
+        error ->
+          call_error(error)
+      end
+    else
+      error -> call_error(error)
+    end
+  end
+
+  # Handle call:end (either participant hangs up an accepted call)
   def handle("call:end", message, state) do
-    with true <- Map.get(state, :authenticated, false),
-         {:ok, call_id} <- extract_call_id(message),
-         {:ok, initiator} <- extract_initiator(message),
-         {:ok, call_state} <- CallSession.get_state(call_id) do
-      # Determine end reason based on initiator
-      end_reason =
-        case initiator do
-          :customer -> :customer_hangup
-          :business -> :business_hangup
-          _ -> :normal
-        end
+    call_id = message["callAttemptId"]
 
-      # Transition to ended state
-      {:ok, _new_state} = CallSession.set_ended(call_id, end_reason)
-
-      # Calculate duration if call was connected
+    with {:ok, call_state} <- get_call(call_id),
+         :ok <- check_participant(call_state, state.device_id),
+         ended_by <- state.role,
+         end_reason <- end_reason_for_role(ended_by),
+         {:ok, _updated_state} <- CallSession.set_ended(call_id, end_reason, ended_by) do
       duration =
         if call_state.connected_at do
           System.system_time(:millisecond) - call_state.connected_at
@@ -185,33 +209,73 @@ defmodule CallsafeSignaling.CallHandler do
           0
         end
 
-      # Notify other peer
-      notify_peer_ended(call_id, call_state, state.device_id, duration)
-
-      # Track call ended
-      Stats.increment_calls_ended()
-
-      response = %{
+      payload = %{
         "type" => MessageTypes.call_ended(),
         "callAttemptId" => call_id,
         "duration" => duration,
+        "reason" => Atom.to_string(end_reason),
+        "endedBy" => Atom.to_string(ended_by),
         "timestamp" => System.system_time(:millisecond)
       }
 
-      Logger.info("Call ended: #{call_id} by #{initiator}, duration: #{duration}ms")
-      {:ok, response, state}
+      notify_peer(call_state, state.device_id, payload)
+      Stats.increment_calls_ended()
+
+      Logger.info("Call ended: #{call_id} by #{ended_by}, duration: #{duration}ms")
+      {:ok, payload, state}
     else
-      false ->
-        {:error, "not_authenticated", "Device must be connected first"}
+      error -> call_error(error)
+    end
+  end
 
-      {:error, :not_found} ->
-        {:error, "call_not_found", "Call session not found"}
+  # Handle call:failed (participant reports an unrecoverable local failure)
+  def handle("call:failed", message, state) do
+    call_id = message["callAttemptId"]
+    reason = message["reason"]
 
-      {:error, error_type, error_message} ->
-        {:error, error_type, error_message}
+    with {:ok, call_state} <- get_call(call_id),
+         :ok <- check_participant(call_state, state.device_id),
+         {:ok, _updated_state} <-
+           CallSession.set_failed(call_id, Enums.to_call_fail_reason(reason)) do
+      payload = %{
+        "type" => MessageTypes.call_failed(),
+        "callAttemptId" => call_id,
+        "reason" => reason,
+        "timestamp" => System.system_time(:millisecond)
+      }
 
-      {:error, reason} when is_atom(reason) ->
-        {:error, "call_end_failed", Atom.to_string(reason)}
+      # Audience: both participants (sender gets the response copy).
+      notify_peer(call_state, state.device_id, payload)
+
+      Logger.warning("Call failed: #{call_id} (#{reason}) reported by #{state.device_id}")
+      {:ok, payload, state}
+    else
+      error -> call_error(error)
+    end
+  end
+
+  # Handle call:reconnect (participant re-attaches after socket loss)
+  def handle("call:reconnect", message, state) do
+    call_id = message["callAttemptId"]
+
+    case CallSession.reconnect(call_id, state.device_id, state.connection_pid) do
+      {:ok, updated_state} ->
+        response = %{
+          "type" => MessageTypes.call_reconnected(),
+          "callAttemptId" => call_id,
+          "callState" => Atom.to_string(updated_state.state),
+          "callType" => Atom.to_string(updated_state.call_type),
+          "timestamp" => System.system_time(:millisecond)
+        }
+
+        Logger.info("Call reconnected: #{call_id} by #{state.device_id}")
+        {:ok, response, state}
+
+      {:error, :not_participant} ->
+        {:error, "not_call_participant", "Device is not a participant of this call"}
+
+      error ->
+        call_error(error)
     end
   end
 
@@ -220,69 +284,100 @@ defmodule CallsafeSignaling.CallHandler do
     {:error, "unknown_message_type", "Unknown call message type: #{message_type}"}
   end
 
+  @doc """
+  Re-deliver call:incoming for every ringing call of a business to a device
+  that just connected (FCM wake flow: push -> connect -> re-delivered ring).
+  """
+  @spec redeliver_ringing_calls(String.t(), String.t(), pid()) :: :ok
+  def redeliver_ringing_calls(business_id, device_id, connection_pid) do
+    CallSession.list_for_business(business_id)
+    |> Enum.filter(&(&1.state == :ringing))
+    |> Enum.each(fn call_state ->
+      message =
+        incoming_payload(
+          call_state.call_id,
+          call_state.caller_id,
+          call_state.call_type,
+          call_state.media_capabilities
+        )
+
+      send(connection_pid, {:send_message, message["type"], message})
+      CallSession.add_notified_devices(call_state.call_id, [device_id])
+
+      Logger.info("Re-delivered call:incoming for #{call_state.call_id} to #{device_id}")
+    end)
+  end
+
   # Private helper functions
 
-  defp extract_call_id(%{"callAttemptId" => call_id}) when is_binary(call_id), do: {:ok, call_id}
-  defp extract_call_id(_), do: {:error, "missing_field", "callAttemptId is required"}
+  # Common error normalization for CallSession results
+  defp call_error({:error, :not_found}),
+    do: {:error, "call_not_found", "Call session not found"}
 
-  defp extract_handle(%{"handle" => handle}) when is_binary(handle), do: {:ok, handle}
-  defp extract_handle(_), do: {:error, "missing_field", "handle is required"}
+  defp call_error({:error, :invalid_transition}),
+    do: {:error, "invalid_state", "Message not valid in the call's current state"}
 
-  defp extract_call_type(%{"callType" => type}) when is_binary(type) do
-    if Enums.valid_call_type?(type) do
-      {:ok, Enums.to_call_type(type)}
+  defp call_error({:error, error_type, error_message}), do: {:error, error_type, error_message}
+
+  defp call_error({:error, reason}),
+    do: {:error, "server_error", "Call operation failed: #{inspect(reason)}"}
+
+  defp get_call(call_id) do
+    CallSession.get_state(call_id)
+  end
+
+  # The handle in call:initiate must match the token's business scope.
+  defp check_handle_scope(handle_name, business_id) do
+    if handle_name == business_id do
+      :ok
     else
-      {:error, "invalid_call_type", "callType must be 'voice' or 'video'"}
+      {:error, "not_authorized", "handle does not match the token's business scope"}
     end
   end
 
-  defp extract_call_type(_), do: {:error, "missing_field", "callType is required"}
-
-  defp extract_media_capabilities(%{"mediaCapabilities" => caps}) when is_map(caps) do
-    {:ok, caps}
-  end
-
-  defp extract_media_capabilities(_),
-    do: {:error, "missing_field", "mediaCapabilities is required"}
-
-  defp extract_device_type(%{"deviceType" => type}) when is_binary(type) do
-    if Enums.valid_device_type?(type) do
-      {:ok, Enums.to_device_type(type)}
+  defp check_is_caller(call_state, device_id) do
+    if call_state.caller_id == device_id do
+      :ok
     else
-      {:error, "invalid_device_type", "deviceType must be 'web' or 'mobile'"}
+      {:error, "not_call_participant", "Only the caller may cancel a call"}
     end
   end
 
-  defp extract_device_type(_), do: {:error, "missing_field", "deviceType is required"}
-
-  defp extract_device_id(%{"deviceId" => device_id}) when is_binary(device_id) do
-    {:ok, device_id}
-  end
-
-  defp extract_device_id(_), do: {:error, "missing_field", "deviceId is required"}
-
-  defp extract_initiator(%{"initiator" => initiator}) when is_binary(initiator) do
-    if Enums.valid_call_initiator?(initiator) do
-      {:ok, Enums.to_call_initiator(initiator)}
+  defp check_same_business(call_state, business_id) do
+    if call_state.business_id == business_id do
+      :ok
     else
-      {:error, "invalid_initiator", "initiator must be 'customer' or 'business'"}
+      {:error, "not_authorized", "Device does not belong to this call's business"}
     end
   end
 
-  defp extract_initiator(_), do: {:error, "missing_field", "initiator is required"}
+  defp check_participant(call_state, device_id) do
+    if device_id in [call_state.caller_id, call_state.callee_id] do
+      :ok
+    else
+      {:error, "not_call_participant", "Device is not a participant of this call"}
+    end
+  end
 
-  # Find available devices for a business, excluding the caller
+  defp end_reason_for_role(:customer), do: :customer_hangup
+  defp end_reason_for_role(:business), do: :business_hangup
+  defp end_reason_for_role(_), do: :normal
+
+  defp put_optional(map, _key, nil), do: map
+  defp put_optional(map, key, value), do: Map.put(map, key, value)
+
+  # Find available business-role devices to ring (excluding the caller and
+  # devices that are unreachable both via WebSocket and FCM).
   defp find_available_devices(business_id, caller_id) do
     all_devices = DeviceRegistry.list_by_business(business_id)
 
     devices =
-      all_devices
-      |> Enum.filter(fn device ->
-        device.device_id != caller_id and device.status == :available
+      Enum.filter(all_devices, fn device ->
+        device.device_id != caller_id and
+          device.role == :business and
+          device.status == :available and
+          (is_pid(device.connection_pid) or is_binary(device.push_token))
       end)
-
-    # Capture device selection decision (even if none found)
-    selected_device_ids = Enum.map(devices, & &1.device_id)
 
     DecisionCapture.emit(
       :device_selected,
@@ -292,16 +387,13 @@ defmodule CallsafeSignaling.CallHandler do
         business_id: business_id,
         caller_id: caller_id,
         total_devices: length(all_devices),
-        available_devices: selected_device_ids,
+        available_devices: Enum.map(devices, & &1.device_id),
         device_count: length(devices)
       },
-      %{selection_criteria: "available_and_not_caller"}
+      %{selection_criteria: "business_role_available_and_reachable"}
     )
 
-    case devices do
-      [] -> {:error, :no_available_devices}
-      devices -> {:ok, devices}
-    end
+    devices
   end
 
   # Create a new call session
@@ -314,62 +406,43 @@ defmodule CallsafeSignaling.CallHandler do
     CallSessionSupervisor.start_call(call_id, business_id, caller_id, call_type, opts)
   end
 
-  # Set caller connection PID in call session
-  defp set_caller_connection(call_id, connection_pid) do
-    case CallSession.set_caller_pid(call_id, connection_pid) do
-      {:ok, _state} -> :ok
-      {:error, reason} -> {:error, reason}
-    end
-  end
-
-  # Notify devices about incoming call (via WebSocket PID or FCM)
-  defp notify_devices(devices, call_id, caller_id, call_type) do
-    Enum.each(devices, fn device ->
-      notify_device(device, call_id, caller_id, call_type)
-    end)
-
-    :ok
-  end
-
-  defp notify_device(device, call_id, caller_id, call_type) do
-    message = %{
+  defp incoming_payload(call_id, caller_id, call_type, media_capabilities) do
+    %{
       "type" => MessageTypes.call_incoming(),
       "callAttemptId" => call_id,
       "sourceId" => caller_id,
       "callType" => Atom.to_string(call_type),
+      "mediaCapabilities" => media_capabilities,
       "timestamp" => System.system_time(:millisecond)
     }
+  end
 
-    # Capture message routing decision
-    routing_method =
-      if device.connection_pid do
-        "websocket"
-      else
-        "fcm"
+  # Notify devices about incoming call (via WebSocket PID or FCM)
+  defp notify_devices(devices, call_id, caller_id, call_type, media_capabilities) do
+    message = incoming_payload(call_id, caller_id, call_type, media_capabilities)
+
+    Enum.each(devices, fn device ->
+      routing_method = if device.connection_pid, do: "websocket", else: "fcm"
+
+      DecisionCapture.emit_message_routed(
+        call_id,
+        MessageTypes.call_incoming(),
+        "server",
+        device.device_id,
+        %{routing_method: routing_method, device_type: device.device_type}
+      )
+
+      case device.connection_pid do
+        nil ->
+          send_fcm_notification(device, call_id, caller_id, call_type)
+
+        pid when is_pid(pid) ->
+          send(pid, {:send_message, message["type"], message})
+          Logger.debug("Sent call:incoming to device #{device.device_id} via WebSocket")
       end
+    end)
 
-    DecisionCapture.emit_message_routed(
-      call_id,
-      MessageTypes.call_incoming(),
-      "server",
-      device.device_id,
-      %{
-        routing_method: routing_method,
-        device_type: device.device_type
-      }
-    )
-
-    # Try to send via WebSocket first
-    case device.connection_pid do
-      nil ->
-        # Device offline, send FCM push notification
-        send_fcm_notification(device, call_id, caller_id, call_type)
-
-      pid when is_pid(pid) ->
-        # Device online, send WebSocket message
-        send(pid, {:send_message, message["type"], message})
-        Logger.debug("Sent call:incoming to device #{device.device_id} via WebSocket")
-    end
+    :ok
   end
 
   defp send_fcm_notification(device, call_id, caller_id, call_type) do
@@ -388,121 +461,75 @@ defmodule CallsafeSignaling.CallHandler do
     end
   end
 
-  # Validate that the accepting device is part of the business
-  defp validate_accepting_device(call_state, device_id) do
-    case DeviceRegistry.lookup_by_device(device_id) do
-      {:ok, device} ->
-        if device.business_id == call_state.business_id do
+  # Cancel call notification on every other still-ringing device
+  defp cancel_other_devices(call_state, accepting_device_id) do
+    payload = %{
+      "type" => MessageTypes.call_cancelled(),
+      "callAttemptId" => call_state.call_id,
+      "reason" => "answered_elsewhere",
+      "timestamp" => System.system_time(:millisecond)
+    }
+
+    call_state.notified_device_ids
+    |> MapSet.difference(call_state.rejected_device_ids)
+    |> MapSet.delete(accepting_device_id)
+    |> Enum.each(fn device_id ->
+      case DeviceRegistry.lookup_by_device(device_id) do
+        {:ok, %{connection_pid: pid}} when is_pid(pid) ->
+          send(pid, {:send_message, payload["type"], payload})
+
+        _ ->
           :ok
-        else
-          {:error, :invalid_device}
-        end
-
-      {:error, :not_found} ->
-        {:error, :invalid_device}
-    end
-  end
-
-  # Cancel call notifications to other devices
-  defp cancel_other_devices(call_id, call_state, accepting_device_id) do
-    # Get all devices for the business except the accepting one
-    DeviceRegistry.list_by_business(call_state.business_id)
-    |> Enum.reject(fn device ->
-      device.device_id == accepting_device_id or device.device_id == call_state.caller_id
-    end)
-    |> Enum.each(fn device ->
-      send_cancel_notification(device, call_id)
+      end
     end)
 
     :ok
   end
 
-  defp send_cancel_notification(device, call_id) do
-    message = %{
-      "type" => MessageTypes.call_cancelled(),
-      "callAttemptId" => call_id,
-      "reason" => "accepted_by_another_device",
-      "timestamp" => System.system_time(:millisecond)
-    }
+  # Send a payload to every still-ringing notified device
+  defp notify_ringing_devices(call_state, payload) do
+    call_state.notified_device_ids
+    |> MapSet.difference(call_state.rejected_device_ids)
+    |> Enum.each(fn device_id ->
+      case DeviceRegistry.lookup_by_device(device_id) do
+        {:ok, %{connection_pid: pid}} when is_pid(pid) ->
+          send(pid, {:send_message, payload["type"], payload})
 
-    case device.connection_pid do
-      nil -> :ok
-      pid when is_pid(pid) -> send(pid, {:send_message, message["type"], message})
-    end
+        _ ->
+          :ok
+      end
+    end)
+
+    :ok
   end
 
-  # Notify caller that call was accepted
-  defp notify_caller_accepted(call_id, accepting_device_id, caller_pid) do
-    if caller_pid do
-      message = %{
-        "type" => MessageTypes.call_accepted(),
-        "callAttemptId" => call_id,
-        "acceptingDevice" => accepting_device_id,
-        "timestamp" => System.system_time(:millisecond)
-      }
-
-      # Capture message routing decision
+  defp notify_caller(call_state, payload) do
+    if call_state.caller_pid do
       DecisionCapture.emit_message_routed(
-        call_id,
-        MessageTypes.call_accepted(),
-        accepting_device_id,
+        call_state.call_id,
+        payload["type"],
+        "server",
         "caller",
         %{routing_method: "websocket"}
       )
 
-      send(caller_pid, {:send_message, message["type"], message})
+      send(call_state.caller_pid, {:send_message, payload["type"], payload})
     end
 
     :ok
   end
 
-  # Notify caller that no devices are available
-  defp notify_caller_unavailable(call_id, caller_pid) do
-    if caller_pid do
-      message = %{
-        "type" => MessageTypes.call_unavailable(),
-        "callAttemptId" => call_id,
-        "timestamp" => System.system_time(:millisecond)
-      }
-
-      send(caller_pid, {:send_message, message["type"], message})
-    end
-
-    :ok
-  end
-
-  # Get remaining devices that can accept the call
-  defp get_remaining_devices(call_state, rejecting_device_id) do
-    devices =
-      DeviceRegistry.list_by_business(call_state.business_id)
-      |> Enum.filter(fn device ->
-        device.device_id != rejecting_device_id and
-          device.device_id != call_state.caller_id and
-          device.status == :available
-      end)
-
-    {:ok, devices}
-  end
-
-  # Notify the other peer that the call ended
-  defp notify_peer_ended(call_id, call_state, ending_device_id, duration) do
-    message = %{
-      "type" => MessageTypes.call_ended(),
-      "callAttemptId" => call_id,
-      "duration" => duration,
-      "timestamp" => System.system_time(:millisecond)
-    }
-
-    # Determine which peer to notify
+  # Notify the other participant (relative to the sending device)
+  defp notify_peer(call_state, sender_device_id, payload) do
     peer_pid =
       cond do
-        ending_device_id == call_state.caller_id -> call_state.callee_pid
-        ending_device_id == call_state.callee_id -> call_state.caller_pid
+        sender_device_id == call_state.caller_id -> call_state.callee_pid
+        sender_device_id == call_state.callee_id -> call_state.caller_pid
         true -> nil
       end
 
     if peer_pid do
-      send(peer_pid, {:send_message, message["type"], message})
+      send(peer_pid, {:send_message, payload["type"], payload})
     end
 
     :ok

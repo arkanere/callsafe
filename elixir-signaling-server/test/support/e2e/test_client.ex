@@ -43,8 +43,9 @@ defmodule CallsafeSignaling.E2E.TestClient do
 
   def authenticate(client, device_id, business_id, opts \\ []) do
     device_type = Keyword.get(opts, :device_type, "web")
+    role = Keyword.get(opts, :role, "business")
     secret = Keyword.get(opts, :secret, jwt_secret())
-    token = JWT.generate(device_id, business_id, secret)
+    token = JWT.generate(device_id, business_id, role, secret)
 
     :ok =
       send_message(client, %{
@@ -52,7 +53,7 @@ defmodule CallsafeSignaling.E2E.TestClient do
         "deviceId" => device_id,
         "deviceType" => device_type,
         "token" => token,
-        "protocolVersion" => "1.0.0"
+        "protocolVersion" => "2.0.0"
       })
 
     assert_receive_type(client, "device:connected")

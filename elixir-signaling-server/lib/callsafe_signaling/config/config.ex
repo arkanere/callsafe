@@ -88,7 +88,10 @@ defmodule CallsafeSignaling.Config do
   def call_timeouts do
     %{
       ringing: get(:timeout_ringing, 30_000),
-      connecting: get(:timeout_connecting, 10_000),
+      connecting: get(:timeout_connecting, 30_000),
+      escalation: get(:timeout_escalation, 30_000),
+      reconnect_grace: get(:timeout_reconnect_grace, 30_000),
+      terminal_retention: get(:terminal_retention, 60_000),
       idle: get(:timeout_idle, 300_000)
     }
   end

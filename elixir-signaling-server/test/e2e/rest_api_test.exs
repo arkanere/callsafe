@@ -110,30 +110,93 @@ defmodule CallsafeSignaling.E2E.RestApiTest do
   end
 
   # ---------------------------------------------------------------------------
+  # GET /api/v1/guest-token
+  # ---------------------------------------------------------------------------
+
+  describe "GET /api/v1/guest-token" do
+    test "issues a handle-scoped customer token without authentication" do
+      {status, body} = HttpClient.get("/api/v1/guest-token?handle=test_business")
+
+      assert status == 200
+      assert is_binary(body["token"])
+      assert is_binary(body["deviceId"])
+      assert body["expiresIn"] == 300
+
+      # The token verifies with the server secret and carries v2 guest claims
+      assert {:ok, payload} = JWT.decode(body["token"], @secret)
+      assert payload["device_id"] == body["deviceId"]
+      assert payload["business_id"] == "test_business"
+      assert payload["role"] == "customer"
+      assert payload["exp"] - payload["iat"] == 300
+    end
+
+    test "guest token authenticates a WebSocket connection as customer" do
+      {200, body} = HttpClient.get("/api/v1/guest-token?handle=guest_ws_biz")
+
+      {:ok, client} = TestClient.connect()
+
+      :ok =
+        TestClient.send_message(client, %{
+          "type" => "device:connect",
+          "deviceId" => body["deviceId"],
+          "deviceType" => "web",
+          "token" => body["token"],
+          "protocolVersion" => "2.0.0"
+        })
+
+      connected = TestClient.assert_receive_type(client, "device:connected")
+      assert connected["role"] == "customer"
+
+      TestClient.disconnect(client)
+    end
+
+    test "missing handle returns 400" do
+      {status, body} = HttpClient.get("/api/v1/guest-token")
+
+      assert status == 400
+      assert body["error"] == "validation_error"
+    end
+  end
+
+  # ---------------------------------------------------------------------------
   # Phase 2: POST /api/v1/turn/credentials
   # ---------------------------------------------------------------------------
 
   describe "POST /api/v1/turn/credentials" do
     test "valid JWT returns TURN credentials with required fields" do
-      token = JWT.generate("turn_p2_01", "biz_turn", @secret)
-      {status, body} = HttpClient.post("/api/v1/turn/credentials", %{}, token: token)
+      with_turn_config(fn ->
+        token = JWT.generate("turn_p2_01", "biz_turn", "business", @secret)
+        {status, body} = HttpClient.post("/api/v1/turn/credentials", %{}, token: token)
 
-      assert status == 200
-      assert is_list(body["uris"])
-      assert is_binary(body["username"])
-      assert is_binary(body["password"])
-      assert body["ttl"] == 86400
+        assert status == 200
+        assert is_list(body["urls"])
+        assert is_binary(body["username"])
+        assert is_binary(body["credential"])
+        assert body["ttl"] == 86400
+      end)
     end
 
     test "username encodes future expiry timestamp" do
-      token = JWT.generate("turn_p2_02", "biz_turn", @secret)
-      {200, body} = HttpClient.post("/api/v1/turn/credentials", %{}, token: token)
+      with_turn_config(fn ->
+        token = JWT.generate("turn_p2_02", "biz_turn", "business", @secret)
+        {200, body} = HttpClient.post("/api/v1/turn/credentials", %{}, token: token)
 
-      # Username format is "{expiry_unix}:callsafe"
-      [expiry_str, suffix] = String.split(body["username"], ":")
-      assert suffix == "callsafe"
-      expiry = String.to_integer(expiry_str)
-      assert expiry > System.system_time(:second)
+        # Username format is "{expiry_unix}:callsafe"
+        [expiry_str, suffix] = String.split(body["username"], ":")
+        assert suffix == "callsafe"
+        expiry = String.to_integer(expiry_str)
+        assert expiry > System.system_time(:second)
+      end)
+    end
+
+    test "unconfigured TURN returns empty credential set" do
+      token = JWT.generate("turn_p2_04", "biz_turn", "business", @secret)
+      {status, body} = HttpClient.post("/api/v1/turn/credentials", %{}, token: token)
+
+      assert status == 200
+      assert body["urls"] == []
+      assert is_nil(body["username"])
+      assert is_nil(body["credential"])
     end
 
     test "missing Authorization header returns 401" do
@@ -159,7 +222,7 @@ defmodule CallsafeSignaling.E2E.RestApiTest do
     test "connected device registers push token successfully" do
       {:ok, client} = TestClient.connect()
       TestClient.authenticate(client, "fcm_reg_p2_01", "biz_fcm", device_type: "mobile")
-      token = JWT.generate("fcm_reg_p2_01", "biz_fcm", @secret)
+      token = JWT.generate("fcm_reg_p2_01", "biz_fcm", "business", @secret)
 
       {status, body} =
         HttpClient.post("/api/v1/fcm/register", %{push_token: "tok_device_01"}, token: token)
@@ -173,7 +236,7 @@ defmodule CallsafeSignaling.E2E.RestApiTest do
     test "missing push_token body field returns 400" do
       {:ok, client} = TestClient.connect()
       TestClient.authenticate(client, "fcm_reg_p2_02", "biz_fcm", device_type: "mobile")
-      token = JWT.generate("fcm_reg_p2_02", "biz_fcm", @secret)
+      token = JWT.generate("fcm_reg_p2_02", "biz_fcm", "business", @secret)
 
       {status, body} = HttpClient.post("/api/v1/fcm/register", %{}, token: token)
 
@@ -184,7 +247,7 @@ defmodule CallsafeSignaling.E2E.RestApiTest do
     end
 
     test "device not in registry returns 404" do
-      token = JWT.generate("fcm_reg_p2_unknown", "biz_fcm", @secret)
+      token = JWT.generate("fcm_reg_p2_unknown", "biz_fcm", "business", @secret)
 
       {status, body} =
         HttpClient.post("/api/v1/fcm/register", %{push_token: "tok_xyz"}, token: token)
@@ -208,7 +271,7 @@ defmodule CallsafeSignaling.E2E.RestApiTest do
     test "connected device without push token reports has_push_token: false" do
       {:ok, client} = TestClient.connect()
       TestClient.authenticate(client, "fcm_st_p2_01", "biz_fcm_st", device_type: "mobile")
-      token = JWT.generate("fcm_st_p2_01", "biz_fcm_st", @secret)
+      token = JWT.generate("fcm_st_p2_01", "biz_fcm_st", "business", @secret)
 
       {status, body} = HttpClient.get("/api/v1/fcm/status/fcm_st_p2_01", token: token)
 
@@ -222,7 +285,7 @@ defmodule CallsafeSignaling.E2E.RestApiTest do
     test "has_push_token becomes true after FCM registration" do
       {:ok, client} = TestClient.connect()
       TestClient.authenticate(client, "fcm_st_p2_02", "biz_fcm_st", device_type: "mobile")
-      token = JWT.generate("fcm_st_p2_02", "biz_fcm_st", @secret)
+      token = JWT.generate("fcm_st_p2_02", "biz_fcm_st", "business", @secret)
 
       HttpClient.post("/api/v1/fcm/register", %{push_token: "tok_status_02"}, token: token)
 
@@ -237,7 +300,7 @@ defmodule CallsafeSignaling.E2E.RestApiTest do
     test "status response includes device_id and connected_at" do
       {:ok, client} = TestClient.connect()
       TestClient.authenticate(client, "fcm_st_p2_03", "biz_fcm_st", device_type: "mobile")
-      token = JWT.generate("fcm_st_p2_03", "biz_fcm_st", @secret)
+      token = JWT.generate("fcm_st_p2_03", "biz_fcm_st", "business", @secret)
 
       {200, body} = HttpClient.get("/api/v1/fcm/status/fcm_st_p2_03", token: token)
 
@@ -253,7 +316,7 @@ defmodule CallsafeSignaling.E2E.RestApiTest do
       TestClient.authenticate(client_a, "fcm_st_p2_04a", "biz_fcm_st")
       TestClient.authenticate(client_b, "fcm_st_p2_04b", "biz_fcm_st")
 
-      token_a = JWT.generate("fcm_st_p2_04a", "biz_fcm_st", @secret)
+      token_a = JWT.generate("fcm_st_p2_04a", "biz_fcm_st", "business", @secret)
       {status, body} = HttpClient.get("/api/v1/fcm/status/fcm_st_p2_04b", token: token_a)
 
       assert status == 403
@@ -264,7 +327,7 @@ defmodule CallsafeSignaling.E2E.RestApiTest do
     end
 
     test "unknown device_id returns 404" do
-      token = JWT.generate("fcm_st_p2_unknown", "biz_fcm_st", @secret)
+      token = JWT.generate("fcm_st_p2_unknown", "biz_fcm_st", "business", @secret)
       {status, body} = HttpClient.get("/api/v1/fcm/status/fcm_st_p2_unknown", token: token)
 
       assert status == 404
@@ -294,10 +357,15 @@ defmodule CallsafeSignaling.E2E.RestApiTest do
 
       # Inject a fake cached token into the TokenServer so it skips real OAuth2
       :sys.replace_state(CallsafeSignaling.FCM.TokenServer, fn state ->
-        %{state |
-          creds: %{client_email: "test@test.iam.gserviceaccount.com", private_key: "fake", project_id: "test"},
-          token: "test_bearer_token",
-          expires_at: System.system_time(:second) + 3600
+        %{
+          state
+          | creds: %{
+              client_email: "test@test.iam.gserviceaccount.com",
+              private_key: "fake",
+              project_id: "test"
+            },
+            token: "test_bearer_token",
+            expires_at: System.system_time(:second) + 3600
         }
       end)
 
@@ -322,7 +390,7 @@ defmodule CallsafeSignaling.E2E.RestApiTest do
       # Connect mobile agent, register push token, then disconnect
       {:ok, agent} = TestClient.connect()
       TestClient.authenticate(agent, agent_id, biz, device_type: "mobile")
-      token = JWT.generate(agent_id, biz, @secret)
+      token = JWT.generate(agent_id, biz, "business", @secret)
       {200, _} = HttpClient.post("/api/v1/fcm/register", %{push_token: push_token}, token: token)
       TestClient.disconnect(agent)
       # Allow registry to process :DOWN and clear connection_pid
@@ -334,13 +402,14 @@ defmodule CallsafeSignaling.E2E.RestApiTest do
 
       # Caller initiates call to the same business
       {:ok, caller} = TestClient.connect()
-      TestClient.authenticate(caller, caller_id, biz)
+      TestClient.authenticate(caller, caller_id, biz, role: "customer")
       call_id = CallFixtures.call_uuid()
-      :ok = TestClient.send_message(caller, CallFixtures.call_initiate(call_id))
-      # call:incoming is the response to call:initiate when devices are found;
-      # FCM dispatch is synchronous inside the handler so by the time this
-      # response arrives the push has already been sent.
-      TestClient.assert_receive_type(caller, "call:incoming")
+      :ok = TestClient.send_message(caller, CallFixtures.call_initiate(call_id, biz))
+      # call:initiated is the ack when devices are found; FCM dispatch is
+      # synchronous inside the handler so by the time this response arrives
+      # the push has already been sent.
+      init = TestClient.assert_receive_type(caller, "call:initiated")
+      assert init["devicesNotified"] == 1
 
       # Assert mock FCM server captured the push request (v2 envelope)
       assert {:ok, fcm_req} = MockFCMServer.await_request()
@@ -369,16 +438,16 @@ defmodule CallsafeSignaling.E2E.RestApiTest do
 
       {:ok, agent} = TestClient.connect()
       TestClient.authenticate(agent, agent_id, biz, device_type: "mobile")
-      token = JWT.generate(agent_id, biz, @secret)
+      token = JWT.generate(agent_id, biz, "business", @secret)
       {200, _} = HttpClient.post("/api/v1/fcm/register", %{push_token: push_token}, token: token)
       TestClient.disconnect(agent)
       Process.sleep(100)
 
       {:ok, caller} = TestClient.connect()
-      TestClient.authenticate(caller, caller_id, biz)
+      TestClient.authenticate(caller, caller_id, biz, role: "customer")
       call_id = CallFixtures.call_uuid()
-      :ok = TestClient.send_message(caller, CallFixtures.call_initiate(call_id))
-      TestClient.assert_receive_type(caller, "call:incoming")
+      :ok = TestClient.send_message(caller, CallFixtures.call_initiate(call_id, biz))
+      TestClient.assert_receive_type(caller, "call:initiated")
 
       assert {:ok, fcm_req} = MockFCMServer.await_request()
 
@@ -405,10 +474,13 @@ defmodule CallsafeSignaling.E2E.RestApiTest do
       fcm_sent_before = stats_before["fcm"]["sent"]
 
       {:ok, caller} = TestClient.connect()
-      TestClient.authenticate(caller, caller_id, biz)
+      TestClient.authenticate(caller, caller_id, biz, role: "customer")
       call_id = CallFixtures.call_uuid()
-      :ok = TestClient.send_message(caller, CallFixtures.call_initiate(call_id))
-      TestClient.assert_receive_type(caller, "call:incoming")
+      :ok = TestClient.send_message(caller, CallFixtures.call_initiate(call_id, biz))
+      # v2: a mobile device without a push token is unreachable, so it is not
+      # rung at all — with no other devices the call is unavailable.
+      unavailable = TestClient.assert_receive_type(caller, "call:unavailable")
+      assert unavailable["reason"] == "no_devices_available"
 
       # No FCM request should have been sent
       assert {:error, :timeout} = MockFCMServer.await_request(300)
@@ -426,6 +498,29 @@ defmodule CallsafeSignaling.E2E.RestApiTest do
 
   # Builds a syntactically valid JWT signed with the correct secret but with
   # an expiry timestamp set one hour in the past, triggering :expired validation.
+  # Temporarily configure TURN servers + secret (unset in test env by default).
+  defp with_turn_config(fun) do
+    original_servers = Application.get_env(:callsafe_signaling, :turn_servers)
+    original_secret = Application.get_env(:callsafe_signaling, :turn_secret)
+
+    try do
+      Application.put_env(:callsafe_signaling, :turn_servers, [
+        %{urls: ["turn:turn.example.com:3478"]}
+      ])
+
+      Application.put_env(:callsafe_signaling, :turn_secret, "test_turn_secret")
+      fun.()
+    after
+      Application.put_env(:callsafe_signaling, :turn_servers, original_servers || [])
+
+      if original_secret do
+        Application.put_env(:callsafe_signaling, :turn_secret, original_secret)
+      else
+        Application.delete_env(:callsafe_signaling, :turn_secret)
+      end
+    end
+  end
+
   defp build_expired_token(device_id, business_id, secret) do
     now = System.system_time(:second)
 

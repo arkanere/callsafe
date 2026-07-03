@@ -13,11 +13,16 @@ defmodule CallsafeSignaling.WebSocket.Handler do
           protocol_version: String.t() | nil,
           device_type: atom() | nil,
           business_id: String.t() | nil,
+          role: atom() | nil,
           authenticated: boolean(),
           connection_pid: pid(),
           ip_address: String.t(),
           connected_at: DateTime.t()
         }
+
+  # Server closes any connection that has produced no frames for this long
+  # (protocol transport.heartbeat.serverIdleCloseMs; clients ping every 25 s).
+  @idle_timeout_ms 60_000
 
   # WebSocket upgrade callback
   @impl :cowboy_websocket
@@ -33,6 +38,7 @@ defmodule CallsafeSignaling.WebSocket.Handler do
       protocol_version: nil,
       device_type: nil,
       business_id: nil,
+      role: nil,
       authenticated: false,
       connection_pid: nil,
       ip_address: ip_address,
@@ -45,7 +51,7 @@ defmodule CallsafeSignaling.WebSocket.Handler do
     Stats.increment_connections_total()
     Stats.increment_connections_active()
 
-    {:cowboy_websocket, req, state}
+    {:cowboy_websocket, req, state, %{idle_timeout: @idle_timeout_ms}}
   end
 
   # Called in the WebSocket process after the HTTP→WS upgrade completes.
@@ -70,11 +76,9 @@ defmodule CallsafeSignaling.WebSocket.Handler do
         Logger.warning("Invalid JSON received: #{inspect(reason)}")
 
         error_response =
-          Jason.encode!(%{
-            type: "error",
-            error: "invalid_json",
-            message: "Failed to parse message as JSON"
-          })
+          MessageRouter.error_payload("invalid_json", "Failed to parse message as JSON", nil)
+          |> Map.put("type", "error")
+          |> Jason.encode!()
 
         {:reply, {:text, error_response}, state}
     end
@@ -155,14 +159,12 @@ defmodule CallsafeSignaling.WebSocket.Handler do
             {:reply, {:text, response_json}, new_state}
         end
 
-      {:error, error_type, error_message, new_state} ->
-        # Send error response
+      {:error, error_payload, new_state} ->
+        # Send v2 error frame: {type, code, message, relatedType?, callAttemptId?, timestamp}
         error_response =
-          Jason.encode!(%{
-            "type" => "error",
-            "error" => error_type,
-            "message" => error_message
-          })
+          error_payload
+          |> Map.put("type", "error")
+          |> Jason.encode!()
 
         {:reply, {:text, error_response}, new_state}
     end
