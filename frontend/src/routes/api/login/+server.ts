@@ -2,13 +2,7 @@ import { json } from '@sveltejs/kit';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { createPool } from '@vercel/postgres';
-import { POSTGRES_URL } from '$env/static/private';
-
-const JWT_SECRET = process.env.JWT_SECRET;
-
-if (!JWT_SECRET) {
-  throw new Error('FATAL: JWT_SECRET environment variable is not set. Application cannot start.');
-}
+import { POSTGRES_URL, JWT_SECRET } from '$env/static/private';
 
 function createDbPool() {
   return createPool({ connectionString: POSTGRES_URL });

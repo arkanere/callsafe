@@ -30,7 +30,8 @@ config :callsafe_signaling,
   telemetry_enabled: true
 
 # Logger configuration
-config :logger,
-  level: :debug,
+config :logger, level: :debug
+
+config :logger, :default_formatter,
   format: "$time $metadata[$level] $message\n",
   metadata: [:request_id, :device_id, :call_attempt_id, :call_id]

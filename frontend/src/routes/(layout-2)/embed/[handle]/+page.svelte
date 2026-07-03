@@ -2,7 +2,6 @@
   import { page } from '$app/stores';
   import { onMount, onDestroy } from 'svelte';
   import { MessageTypes, MediaToggleAction } from '@callsafe/protocol';
-  import { env } from '$env/dynamic/public';
   import { WsTransport } from '$lib/transport/ws-transport';
   import { WebRTCManager } from '$lib/managers/webrtc-manager';
   import { customerCallState } from '$lib/stores/call-state';
@@ -111,7 +110,7 @@
 
   async function connectToSignalingServer(): Promise<void> {
     console.log('[EMBED PAGE] connectToSignalingServer(): Attempting to connect to signaling server');
-    const serverUrl = env.VITE_SIGNALING_SERVER_URL || 'https://tunnel.callsafe.tech';
+    const serverUrl = import.meta.env.VITE_SIGNALING_SERVER_URL || 'https://tunnel.callsafe.tech';
     const wsUrl = serverUrl.replace(/^https:\/\//, 'wss://').replace(/^http:\/\//, 'ws://') + '/ws';
 
     socket = new WsTransport(wsUrl);

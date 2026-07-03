@@ -322,7 +322,6 @@
     socket.emit(MessageTypes.DEVICE_CONNECT, {
       deviceType: 'web',
       deviceId: generateDeviceId(),
-      pushToken: null,
       protocolVersion: PROTOCOL_VERSION,
       token,
       timestamp: Date.now()

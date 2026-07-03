@@ -1,10 +1,6 @@
 // Authentication utility - pure functions for JWT verification
 import jwt from 'jsonwebtoken';
-
-const JWT_SECRET = process.env.JWT_SECRET;
-if (!JWT_SECRET) {
-    throw new Error('JWT_SECRET environment variable is not configured. Set JWT_SECRET in your environment to enable authentication.');
-}
+import { JWT_SECRET } from '$env/static/private';
 
 /**
  * Extracts Bearer token from Authorization header

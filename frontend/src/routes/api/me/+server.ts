@@ -1,11 +1,6 @@
 import { json } from '@sveltejs/kit';
 import jwt from 'jsonwebtoken';
-
-const JWT_SECRET = process.env.JWT_SECRET;
-
-if (!JWT_SECRET) {
-  throw new Error('FATAL: JWT_SECRET environment variable is not set. Application cannot start.');
-}
+import { JWT_SECRET } from '$env/static/private';
 
 export async function GET({ cookies }) {
   console.log('[ME API] GET request received');

@@ -1,7 +1,6 @@
 import { WsTransport } from '$lib/transport/ws-transport';
 import { MessageTypes } from '@callsafe/protocol';
 import { AuthManager } from './auth-manager';
-import { env } from '$env/dynamic/public';
 
 export class ConnectionManager {
   private transport: WsTransport | null = null;
@@ -9,7 +8,7 @@ export class ConnectionManager {
   async connect(): Promise<WsTransport> {
     console.log('[CONNECTION MANAGER] connect(): Initiating connection');
 
-    const serverUrl = env.VITE_SIGNALING_SERVER_URL || 'https://tunnel.callsafe.tech';
+    const serverUrl = import.meta.env.VITE_SIGNALING_SERVER_URL || 'https://tunnel.callsafe.tech';
     const wsUrl = serverUrl.replace(/^https:\/\//, 'wss://').replace(/^http:\/\//, 'ws://') + '/ws';
     console.log('[CONNECTION MANAGER] connect(): Connecting to', wsUrl);
 

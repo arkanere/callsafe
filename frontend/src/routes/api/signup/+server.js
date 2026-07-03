@@ -1,16 +1,10 @@
 import { createPool } from '@vercel/postgres';
-import { POSTGRES_URL } from '$env/static/private';
+import { POSTGRES_URL, JWT_SECRET } from '$env/static/private';
 import { json } from '@sveltejs/kit';
 import bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
 import jwt from 'jsonwebtoken';
 import validator from 'validator';
-
-const JWT_SECRET = process.env.JWT_SECRET;
-
-if (!JWT_SECRET) {
-  throw new Error('FATAL: JWT_SECRET environment variable is not set. Application cannot start.');
-}
 
 function createDbPool() {
     return createPool({ connectionString: POSTGRES_URL });
@@ -136,10 +130,10 @@ export async function POST({ request, cookies }) {
         console.log('[SIGNUP API] Generated handle:', handle);
 
         const handleResult = await pool.query(
-            `INSERT INTO callsafehandles (user_id, handle_id, handle, is_embedded)
-             VALUES ($1, $2, $3, $4)
+            `INSERT INTO callsafehandles (user_id, handle, is_embedded)
+             VALUES ($1, $2, $3)
              RETURNING *`,
-            [newUser.id, handleId, handle, false]
+            [newUser.id, handle, false]
         );
 
         const newHandle = handleResult.rows[0];

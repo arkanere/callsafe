@@ -40,6 +40,9 @@ logs/
 ehthumbs.db
 Thumbs.db
 
+# Claude Code project instructions
+CLAUDE.md
+
 # IDE files
 .vscode/
 .idea/
