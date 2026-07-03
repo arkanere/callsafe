@@ -1,11 +1,13 @@
 {
   "name": "@callsafe/protocol",
-  "version": "1.0.0",
-  "description": "CallSafe WebRTC Protocol Specification",
+  "version": "2.0.0",
+  "description": "CallSafe WebRTC Signaling Protocol Specification (canonical source: protocol.json)",
   "main": "index.ts",
   "types": "index.ts",
   "scripts": {
-    "generate-json": "node generate-json.js"
+    "generate": "node generate-ts.js && node generate-kotlin.js",
+    "generate-ts": "node generate-ts.js",
+    "generate-kotlin": "node generate-kotlin.js"
   },
   "keywords": [
     "webrtc",

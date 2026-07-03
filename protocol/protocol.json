@@ -1,365 +1,646 @@
 {
-  "version": "1.0.0",
-  "messageTypes": {
-    "CALL_INITIATE": "call:initiate",
-    "CALL_ACCEPT": "call:accept",
-    "CALL_REJECT": "call:reject",
-    "CALL_END": "call:end",
-    "CALL_FAILED": "call:failed",
-    "CALL_INCOMING": "call:incoming",
-    "CALL_ACCEPTED": "call:accepted",
-    "CALL_CANCELLED": "call:cancelled",
-    "CALL_ENDED": "call:ended",
-    "CALL_BUSY": "call:busy",
-    "CALL_UNAVAILABLE": "call:unavailable",
-    "CALL_TIMEOUT": "call:timeout",
-    "WEBRTC_OFFER": "webrtc:offer",
-    "WEBRTC_ANSWER": "webrtc:answer",
-    "WEBRTC_ICE_CANDIDATE": "webrtc:ice-candidate",
-    "DEVICE_CONNECT": "device:connect",
-    "DEVICE_DISCONNECT": "device:disconnect",
-    "DEVICE_STATUS": "device:status",
-    "DEVICE_CONNECTED": "device:connected",
-    "DEVICE_DISCONNECTED": "device:disconnected",
-    "DEVICE_STATUS_UPDATED": "device:status-updated",
-    "MEDIA_TOGGLE": "media:toggle",
-    "CALL_ESCALATE": "call:escalate",
-    "CALL_DOWNGRADE": "call:downgrade",
-    "ESCALATION_ACCEPTED": "escalation:accepted",
-    "ESCALATION_REJECTED": "escalation:rejected",
-    "OPEN": "open",
-    "CLOSE": "close",
-    "ERROR": "error",
-    "SERVER_SHUTDOWN": "server:shutdown"
+  "$comment": "CallSafe WebRTC Signaling Protocol — CANONICAL SPECIFICATION. This file is the single source of truth. index.ts (TypeScript) and Protocol.kt (Kotlin) are GENERATED from this file — do not edit them by hand. Normative prose (transport, auth, routing, flows) lives in README.md alongside this file.",
+  "version": "2.0.0",
+
+  "transport": {
+    "kind": "websocket",
+    "encoding": "json",
+    "framing": "Every protocol message is a single WebSocket text frame containing one JSON object with a required string field \"type\"; all other payload fields are flat siblings of \"type\".",
+    "timestampUnit": "milliseconds since Unix epoch (UTC)",
+    "durationUnit": "milliseconds",
+    "heartbeat": {
+      "clientPingIntervalMs": 25000,
+      "serverIdleCloseMs": 60000,
+      "description": "Clients send {\"type\":\"ping\"} every clientPingIntervalMs; the server replies {\"type\":\"pong\"} immediately. The server closes any connection that has produced no frames for serverIdleCloseMs."
+    }
   },
+
+  "auth": {
+    "scheme": "jwt-hs256",
+    "tokenField": "device:connect.token",
+    "claims": {
+      "device_id": "string — MUST equal the deviceId sent in device:connect (mismatch => error device_mismatch)",
+      "business_id": "string — the business this connection belongs to (for customers: the business being called, resolved from the widget handle at token issuance)",
+      "role": "string — \"customer\" or \"business\"",
+      "iat": "integer — issued-at, seconds since epoch",
+      "exp": "integer — expiry, seconds since epoch"
+    },
+    "acquisition": {
+      "business": "Authenticated dashboard/mobile session exchanges its login session for a socket token over HTTPS (e.g. GET /api/socket-token).",
+      "customer": "The embed widget fetches a short-lived guest token scoped to the business handle over HTTPS (e.g. GET /api/v1/guest-token?handle=<handle>). No login required; issuance is rate-limited per IP."
+    },
+    "rules": [
+      "device:connect MUST be the first protocol message on a connection (ping is also permitted pre-auth).",
+      "Any other message before successful device:connect => error not_authenticated.",
+      "The server derives deviceId, businessId and role from the verified token, never from later message payloads."
+    ]
+  },
+
+  "timers": {
+    "ringing_timeout": { "defaultMs": 30000, "description": "Max time a call may stay in ringing before the server transitions it to timeout and notifies caller and ringing devices with call:timeout (phase=ringing)." },
+    "connecting_timeout": { "defaultMs": 30000, "description": "Max time a call may stay in connecting before the server transitions it to timeout and notifies both participants with call:timeout (phase=connecting)." },
+    "escalation_timeout": { "defaultMs": 30000, "description": "Max time in escalation_pending; on expiry the server reverts to connected and sends escalation:rejected (reason=timeout) to the requester." },
+    "reconnect_grace": { "defaultMs": 30000, "description": "When a participant's socket drops while the call is in connecting/connected/escalation_pending, the server holds the call for this long awaiting call:reconnect; on expiry the call transitions to failed (reason=peer_disconnected) and the remaining participant receives call:failed." },
+    "terminal_retention": { "defaultMs": 60000, "description": "A call session is retained at least this long after reaching a terminal state; call-scoped messages arriving during retention => error invalid_state, after cleanup => error call_not_found." }
+  },
+
   "enums": {
-    "CallType": {
-      "VOICE": "voice",
-      "VIDEO": "video"
-    },
-    "DeviceType": {
-      "WEB": "web",
-      "MOBILE": "mobile"
-    },
-    "DeviceStatus": {
-      "AVAILABLE": "available",
-      "UNAVAILABLE": "unavailable"
-    },
-    "CallState": {
-      "INITIATED": "initiated",
-      "RINGING": "ringing",
-      "CONNECTING": "connecting",
-      "CONNECTED": "connected",
-      "ENDED": "ended",
-      "FAILED": "failed",
-      "CANCELLED": "cancelled",
-      "BUSY": "busy",
-      "UNAVAILABLE": "unavailable",
-      "TIMEOUT": "timeout",
-      "CAMERA_PERMISSION_DENIED": "camera_permission_denied",
-      "VIDEO_PAUSED_BY_USER": "video_paused_by_user",
-      "VIDEO_PAUSED_BANDWIDTH": "video_paused_bandwidth",
-      "ESCALATION_PENDING": "escalation_pending"
-    },
-    "CallEndReason": {
-      "NORMAL": "normal",
-      "CUSTOMER_HANGUP": "customer_hangup",
-      "BUSINESS_HANGUP": "business_hangup",
-      "CONNECTION_FAILED": "connection_failed",
-      "TIMEOUT": "timeout",
-      "REJECTED": "rejected"
-    },
-    "CallInitiator": {
-      "CUSTOMER": "customer",
-      "BUSINESS": "business"
-    },
-    "MediaTrackType": {
-      "AUDIO": "audio",
-      "VIDEO": "video"
-    },
+    "CallType": { "VOICE": "voice", "VIDEO": "video" },
+    "DeviceType": { "WEB": "web", "MOBILE": "mobile" },
+    "DeviceStatus": { "AVAILABLE": "available", "UNAVAILABLE": "unavailable" },
+    "Role": { "CUSTOMER": "customer", "BUSINESS": "business" },
+    "MediaTrackType": { "AUDIO": "audio", "VIDEO": "video" },
     "MediaToggleAction": {
       "ENABLE_CAMERA": "enable_camera",
       "DISABLE_CAMERA": "disable_camera",
       "ENABLE_MICROPHONE": "enable_microphone",
       "DISABLE_MICROPHONE": "disable_microphone",
       "FLIP_CAMERA": "flip_camera"
+    },
+    "CallState": {
+      "INITIATED": "initiated",
+      "RINGING": "ringing",
+      "CONNECTING": "connecting",
+      "CONNECTED": "connected",
+      "ESCALATION_PENDING": "escalation_pending",
+      "ENDED": "ended",
+      "FAILED": "failed",
+      "CANCELLED": "cancelled",
+      "BUSY": "busy",
+      "UNAVAILABLE": "unavailable",
+      "TIMEOUT": "timeout"
+    },
+    "CallEndReason": {
+      "NORMAL": "normal",
+      "CUSTOMER_HANGUP": "customer_hangup",
+      "BUSINESS_HANGUP": "business_hangup"
+    },
+    "CallFailReason": {
+      "MEDIA_PERMISSION_DENIED": "media_permission_denied",
+      "CONNECTION_FAILED": "connection_failed",
+      "PEER_DISCONNECTED": "peer_disconnected",
+      "INTERNAL_ERROR": "internal_error"
+    },
+    "CallCancelReason": {
+      "CANCELLED_BY_CALLER": "cancelled_by_caller",
+      "ANSWERED_ELSEWHERE": "answered_elsewhere"
+    },
+    "CallUnavailableReason": {
+      "NO_DEVICES_AVAILABLE": "no_devices_available",
+      "ALL_DEVICES_REJECTED": "all_devices_rejected"
+    },
+    "CallBusyReason": {
+      "ALL_DEVICES_BUSY": "all_devices_busy"
+    },
+    "TimeoutPhase": { "RINGING": "ringing", "CONNECTING": "connecting" },
+    "EscalationRejectReason": {
+      "DECLINED": "declined",
+      "TIMEOUT": "timeout",
+      "UNSUPPORTED": "unsupported"
+    },
+    "ErrorCode": {
+      "INVALID_JSON": "invalid_json",
+      "INVALID_MESSAGE": "invalid_message",
+      "VALIDATION_ERROR": "validation_error",
+      "UNKNOWN_MESSAGE_TYPE": "unknown_message_type",
+      "NOT_AUTHENTICATED": "not_authenticated",
+      "AUTH_FAILED": "auth_failed",
+      "TOKEN_EXPIRED": "token_expired",
+      "DEVICE_MISMATCH": "device_mismatch",
+      "PROTOCOL_INCOMPATIBLE": "protocol_incompatible",
+      "RATE_LIMITED": "rate_limited",
+      "NOT_AUTHORIZED": "not_authorized",
+      "CALL_NOT_FOUND": "call_not_found",
+      "INVALID_STATE": "invalid_state",
+      "NOT_CALL_PARTICIPANT": "not_call_participant",
+      "DUPLICATE_CALL_ID": "duplicate_call_id",
+      "PEER_NOT_CONNECTED": "peer_not_connected",
+      "DEVICE_NOT_FOUND": "device_not_found",
+      "SERVER_ERROR": "server_error"
     }
   },
-  "messageSchemas": {
-    "call:initiate": {
-      "required": [
-        "callAttemptId",
-        "handle",
-        "callType",
-        "mediaCapabilities"
-      ],
-      "optional": [
-        "sourceId",
-        "timestamp"
-      ],
+
+  "types": {
+    "MediaCapabilities": {
+      "description": "What media tracks a peer can send and receive.",
       "fields": {
-        "callAttemptId": "string (uuid)",
-        "handle": "string",
-        "callType": "CallType",
-        "mediaCapabilities": "MediaCapabilities",
-        "sourceId": "string",
-        "timestamp": "number"
+        "canSend": { "type": "array<enum:MediaTrackType>", "required": true },
+        "canReceive": { "type": "array<enum:MediaTrackType>", "required": true }
       }
     },
-    "call:accept": {
-      "required": [
-        "callAttemptId",
-        "deviceType",
-        "deviceId"
-      ],
-      "optional": [
-        "mediaCapabilities",
-        "timestamp"
-      ],
+    "SessionDescription": {
+      "description": "Mirrors the W3C RTCSessionDescriptionInit; clients pass their native object through unchanged. The server relays it verbatim.",
       "fields": {
-        "callAttemptId": "string (uuid)",
-        "deviceType": "DeviceType",
-        "deviceId": "string",
-        "mediaCapabilities": "MediaCapabilities",
-        "timestamp": "number"
+        "type": { "type": "string", "required": true, "description": "one of: offer | answer | pranswer | rollback" },
+        "sdp": { "type": "string", "required": false }
       }
     },
-    "call:reject": {
-      "required": [
-        "callAttemptId",
-        "deviceType"
-      ],
-      "optional": [
-        "reason",
-        "timestamp"
-      ],
+    "IceCandidate": {
+      "description": "Mirrors the W3C RTCIceCandidateInit. An empty-string candidate signals end-of-candidates. The server relays it verbatim.",
       "fields": {
-        "callAttemptId": "string (uuid)",
-        "deviceType": "DeviceType",
-        "reason": "string",
-        "timestamp": "number"
+        "candidate": { "type": "string", "required": true },
+        "sdpMid": { "type": "string|null", "required": true },
+        "sdpMLineIndex": { "type": "number|null", "required": true },
+        "usernameFragment": { "type": "string|null", "required": false }
+      }
+    }
+  },
+
+  "messages": {
+    "ping": {
+      "constant": "PING",
+      "direction": "c2s",
+      "requiresAuth": false,
+      "description": "Application-level heartbeat. Server replies with pong.",
+      "fields": {
+        "timestamp": { "type": "number", "required": false }
       }
     },
-    "call:end": {
-      "required": [
-        "callAttemptId",
-        "initiator"
-      ],
-      "optional": [
-        "reason",
-        "timestamp"
-      ],
+    "pong": {
+      "constant": "PONG",
+      "direction": "s2c",
+      "audience": "sender of the ping",
+      "description": "Heartbeat reply.",
       "fields": {
-        "callAttemptId": "string (uuid)",
-        "initiator": "CallInitiator",
-        "reason": "CallEndReason",
-        "timestamp": "number"
+        "timestamp": { "type": "number", "required": false }
       }
     },
-    "call:failed": {
-      "required": [
-        "callAttemptId",
-        "reason"
-      ],
-      "optional": [
-        "timestamp"
-      ],
+    "error": {
+      "constant": "ERROR",
+      "direction": "s2c",
+      "audience": "the connection whose message caused the error",
+      "description": "Reports a rejected message or server-side failure. The offending message was NOT processed.",
       "fields": {
-        "callAttemptId": "string (uuid)",
-        "reason": "string",
-        "timestamp": "number"
+        "code": { "type": "enum:ErrorCode", "required": true },
+        "message": { "type": "string", "required": true, "description": "human-readable detail; not for programmatic use" },
+        "relatedType": { "type": "string", "required": false, "description": "the type of the message that caused this error" },
+        "callAttemptId": { "type": "uuid", "required": false },
+        "timestamp": { "type": "number", "required": true }
       }
     },
-    "call:incoming": {
-      "required": [
-        "callAttemptId",
-        "sourceId",
-        "callType",
-        "timestamp"
-      ],
-      "optional": [],
+    "server:shutdown": {
+      "constant": "SERVER_SHUTDOWN",
+      "direction": "s2c",
+      "audience": "all connected devices (broadcast)",
+      "description": "Server is shutting down; clients should reconnect (with backoff) after the socket closes.",
       "fields": {
-        "callAttemptId": "string (uuid)",
-        "sourceId": "string",
-        "callType": "CallType",
-        "timestamp": "number"
+        "message": { "type": "string", "required": true },
+        "gracePeriod": { "type": "number", "required": true, "description": "ms until the server closes connections" },
+        "timestamp": { "type": "number", "required": true }
       }
     },
-    "call:accepted": {
-      "required": [
-        "callAttemptId",
-        "acceptingDevice",
-        "timestamp"
-      ],
-      "optional": [],
-      "fields": {
-        "callAttemptId": "string (uuid)",
-        "acceptingDevice": "DeviceType",
-        "timestamp": "number"
-      }
-    },
-    "call:cancelled": {
-      "required": [
-        "callAttemptId",
-        "reason",
-        "timestamp"
-      ],
-      "optional": [],
-      "fields": {
-        "callAttemptId": "string (uuid)",
-        "reason": "string",
-        "timestamp": "number"
-      }
-    },
-    "call:ended": {
-      "required": [
-        "callAttemptId",
-        "duration",
-        "timestamp"
-      ],
-      "optional": [
-        "reason"
-      ],
-      "fields": {
-        "callAttemptId": "string (uuid)",
-        "duration": "number",
-        "reason": "CallEndReason",
-        "timestamp": "number"
-      }
-    },
+
     "device:connect": {
-      "required": [
-        "deviceType",
-        "deviceId"
-      ],
-      "optional": [
-        "pushToken",
-        "protocolVersion",
-        "timestamp"
-      ],
+      "constant": "DEVICE_CONNECT",
+      "direction": "c2s",
+      "requiresAuth": false,
+      "description": "Authenticates and registers this connection as a device. MUST be the first message (ping excepted). Re-connecting with an existing deviceId supersedes the previous connection.",
       "fields": {
-        "deviceType": "DeviceType",
-        "deviceId": "string",
-        "pushToken": "string",
-        "protocolVersion": "string",
-        "timestamp": "number"
+        "deviceType": { "type": "enum:DeviceType", "required": true },
+        "deviceId": { "type": "string", "required": true, "description": "MUST equal the token's device_id claim" },
+        "token": { "type": "string", "required": true, "description": "JWT, see auth section" },
+        "protocolVersion": { "type": "string", "required": true, "description": "semver; major version must match the server's" },
+        "pushToken": { "type": "string", "required": false, "description": "FCM token; mobile devices only" },
+        "timestamp": { "type": "number", "required": false }
+      }
+    },
+    "device:connected": {
+      "constant": "DEVICE_CONNECTED",
+      "direction": "s2c",
+      "audience": "sender",
+      "description": "Confirms registration. protocolVersion is the negotiated version all further traffic follows.",
+      "fields": {
+        "deviceId": { "type": "string", "required": true },
+        "role": { "type": "enum:Role", "required": true },
+        "protocolVersion": { "type": "string", "required": true },
+        "timestamp": { "type": "number", "required": true }
+      }
+    },
+    "device:disconnect": {
+      "constant": "DEVICE_DISCONNECT",
+      "direction": "c2s",
+      "requiresAuth": true,
+      "description": "Explicitly unregisters this device (logout). Identity comes from the connection; no fields needed. The server confirms with device:disconnected, then the client may close the socket.",
+      "fields": {
+        "timestamp": { "type": "number", "required": false }
+      }
+    },
+    "device:disconnected": {
+      "constant": "DEVICE_DISCONNECTED",
+      "direction": "s2c",
+      "audience": "sender",
+      "description": "Confirms explicit unregistration.",
+      "fields": {
+        "deviceId": { "type": "string", "required": true },
+        "timestamp": { "type": "number", "required": true }
       }
     },
     "device:status": {
-      "required": [
-        "deviceId",
-        "status"
-      ],
-      "optional": [
-        "timestamp"
-      ],
+      "constant": "DEVICE_STATUS",
+      "direction": "c2s",
+      "requiresAuth": true,
+      "senderRole": "business",
+      "description": "Sets this device's availability for receiving calls. Devices register as available by default.",
       "fields": {
-        "deviceId": "string",
-        "status": "DeviceStatus",
-        "timestamp": "number"
+        "status": { "type": "enum:DeviceStatus", "required": true },
+        "timestamp": { "type": "number", "required": false }
       }
     },
-    "media:toggle": {
-      "required": [
-        "callAttemptId",
-        "action",
-        "success"
-      ],
-      "optional": [
-        "timestamp"
-      ],
+    "device:status-updated": {
+      "constant": "DEVICE_STATUS_UPDATED",
+      "direction": "s2c",
+      "audience": "sender",
+      "description": "Confirms the availability change.",
       "fields": {
-        "callAttemptId": "string (uuid)",
-        "action": "MediaToggleAction",
-        "success": "boolean",
-        "timestamp": "number"
+        "deviceId": { "type": "string", "required": true },
+        "status": { "type": "enum:DeviceStatus", "required": true },
+        "timestamp": { "type": "number", "required": true }
+      }
+    },
+
+    "call:initiate": {
+      "constant": "CALL_INITIATE",
+      "direction": "c2s",
+      "requiresAuth": true,
+      "senderRole": "customer",
+      "description": "Places a call to a business. callAttemptId is a client-generated UUIDv4 and must be globally unique (reuse => error duplicate_call_id). handle must match the token's business scope.",
+      "fields": {
+        "callAttemptId": { "type": "uuid", "required": true },
+        "handle": { "type": "string", "required": true, "description": "business handle, 1-255 chars" },
+        "callType": { "type": "enum:CallType", "required": true },
+        "mediaCapabilities": { "type": "object:MediaCapabilities", "required": true },
+        "timestamp": { "type": "number", "required": false }
+      }
+    },
+    "call:initiated": {
+      "constant": "CALL_INITIATED",
+      "direction": "s2c",
+      "audience": "caller",
+      "description": "Acknowledges call:initiate: the call now exists and is ringing on devicesNotified devices.",
+      "fields": {
+        "callAttemptId": { "type": "uuid", "required": true },
+        "devicesNotified": { "type": "number", "required": true },
+        "timestamp": { "type": "number", "required": true }
+      }
+    },
+    "call:incoming": {
+      "constant": "CALL_INCOMING",
+      "direction": "s2c",
+      "audience": "every available business device (WebSocket if connected; FCM data push for offline mobile devices). Also re-delivered to a business device that connects while the call is still ringing.",
+      "description": "Notifies a business device of a ringing call.",
+      "fields": {
+        "callAttemptId": { "type": "uuid", "required": true },
+        "sourceId": { "type": "string", "required": true, "description": "the caller's deviceId" },
+        "callType": { "type": "enum:CallType", "required": true },
+        "mediaCapabilities": { "type": "object:MediaCapabilities", "required": true, "description": "the caller's capabilities" },
+        "timestamp": { "type": "number", "required": true }
+      }
+    },
+    "call:cancel": {
+      "constant": "CALL_CANCEL",
+      "direction": "c2s",
+      "requiresAuth": true,
+      "senderRole": "customer",
+      "validStates": ["initiated", "ringing"],
+      "description": "Caller abandons the call before it is accepted. After acceptance use call:end.",
+      "fields": {
+        "callAttemptId": { "type": "uuid", "required": true },
+        "timestamp": { "type": "number", "required": false }
+      }
+    },
+    "call:cancelled": {
+      "constant": "CALL_CANCELLED",
+      "direction": "s2c",
+      "audience": "reason=cancelled_by_caller: all ringing devices and the caller (as ack); reason=answered_elsewhere: every ringing device except the accepting one",
+      "description": "The ringing call no longer needs this device's attention.",
+      "fields": {
+        "callAttemptId": { "type": "uuid", "required": true },
+        "reason": { "type": "enum:CallCancelReason", "required": true },
+        "timestamp": { "type": "number", "required": true }
+      }
+    },
+    "call:accept": {
+      "constant": "CALL_ACCEPT",
+      "direction": "c2s",
+      "requiresAuth": true,
+      "senderRole": "business",
+      "validStates": ["ringing"],
+      "description": "Accepts a ringing call. First accept wins; the sender must belong to the call's business. Identity comes from the connection.",
+      "fields": {
+        "callAttemptId": { "type": "uuid", "required": true },
+        "mediaCapabilities": { "type": "object:MediaCapabilities", "required": false, "description": "the acceptor's capabilities; assume audio-only if omitted" },
+        "timestamp": { "type": "number", "required": false }
+      }
+    },
+    "call:accepted": {
+      "constant": "CALL_ACCEPTED",
+      "direction": "s2c",
+      "audience": "caller and accepting device",
+      "description": "The call was accepted; the caller must now send webrtc:offer.",
+      "fields": {
+        "callAttemptId": { "type": "uuid", "required": true },
+        "acceptingDeviceId": { "type": "string", "required": true },
+        "mediaCapabilities": { "type": "object:MediaCapabilities", "required": false, "description": "the acceptor's capabilities" },
+        "timestamp": { "type": "number", "required": true }
+      }
+    },
+    "call:reject": {
+      "constant": "CALL_REJECT",
+      "direction": "c2s",
+      "requiresAuth": true,
+      "senderRole": "business",
+      "validStates": ["ringing"],
+      "description": "Declines a ringing call on this device only. The call keeps ringing elsewhere; when every notified device has rejected, the caller receives call:unavailable (reason=all_devices_rejected). No per-reject message is sent to the caller.",
+      "fields": {
+        "callAttemptId": { "type": "uuid", "required": true },
+        "reason": { "type": "string", "required": false },
+        "timestamp": { "type": "number", "required": false }
+      }
+    },
+    "call:unavailable": {
+      "constant": "CALL_UNAVAILABLE",
+      "direction": "s2c",
+      "audience": "caller",
+      "description": "The call cannot be answered: no devices were available at initiate, or all devices rejected. Terminal.",
+      "fields": {
+        "callAttemptId": { "type": "uuid", "required": true },
+        "reason": { "type": "enum:CallUnavailableReason", "required": true },
+        "timestamp": { "type": "number", "required": true }
+      }
+    },
+    "call:busy": {
+      "constant": "CALL_BUSY",
+      "direction": "s2c",
+      "audience": "caller",
+      "description": "All otherwise-available devices are engaged in active calls. Terminal.",
+      "fields": {
+        "callAttemptId": { "type": "uuid", "required": true },
+        "reason": { "type": "enum:CallBusyReason", "required": true },
+        "timestamp": { "type": "number", "required": true }
+      }
+    },
+    "call:end": {
+      "constant": "CALL_END",
+      "direction": "c2s",
+      "requiresAuth": true,
+      "validStates": ["connecting", "connected", "escalation_pending"],
+      "description": "Either participant hangs up an accepted call. The server derives who ended it from the sender's role.",
+      "fields": {
+        "callAttemptId": { "type": "uuid", "required": true },
+        "timestamp": { "type": "number", "required": false }
+      }
+    },
+    "call:ended": {
+      "constant": "CALL_ENDED",
+      "direction": "s2c",
+      "audience": "both participants (the ender receives it as ack)",
+      "description": "The call is over. duration is connected time in ms (0 if never connected).",
+      "fields": {
+        "callAttemptId": { "type": "uuid", "required": true },
+        "duration": { "type": "number", "required": true },
+        "reason": { "type": "enum:CallEndReason", "required": true },
+        "endedBy": { "type": "enum:Role", "required": true },
+        "timestamp": { "type": "number", "required": true }
+      }
+    },
+    "call:failed": {
+      "constant": "CALL_FAILED",
+      "direction": "both",
+      "requiresAuth": true,
+      "validStates": ["connecting", "connected", "escalation_pending"],
+      "audience": "s2c: both participants (or the caller, if the call had no callee yet)",
+      "description": "c2s: a participant reports an unrecoverable local failure (media permission denied, ICE failure after exhausting restarts). s2c: the server declares the call failed (relayed client report, reconnect grace expiry, or internal error). Terminal.",
+      "fields": {
+        "callAttemptId": { "type": "uuid", "required": true },
+        "reason": { "type": "enum:CallFailReason", "required": true },
+        "timestamp": { "type": "number", "required": false, "description": "required in the s2c direction" }
+      }
+    },
+    "call:timeout": {
+      "constant": "CALL_TIMEOUT",
+      "direction": "s2c",
+      "audience": "phase=ringing: caller and all ringing devices; phase=connecting: both participants",
+      "description": "A server timer expired before the call progressed. Terminal.",
+      "fields": {
+        "callAttemptId": { "type": "uuid", "required": true },
+        "phase": { "type": "enum:TimeoutPhase", "required": true },
+        "timeoutDuration": { "type": "number", "required": true, "description": "the timer's configured duration in ms" },
+        "timestamp": { "type": "number", "required": true }
+      }
+    },
+    "call:reconnect": {
+      "constant": "CALL_RECONNECT",
+      "direction": "c2s",
+      "requiresAuth": true,
+      "validStates": ["connecting", "connected", "escalation_pending"],
+      "description": "After re-authenticating (device:connect) within reconnect_grace, a participant re-attaches to its in-flight call. The server re-binds signaling delivery to the new connection.",
+      "fields": {
+        "callAttemptId": { "type": "uuid", "required": true },
+        "timestamp": { "type": "number", "required": false }
+      }
+    },
+    "call:reconnected": {
+      "constant": "CALL_RECONNECTED",
+      "direction": "s2c",
+      "audience": "sender",
+      "description": "Re-attachment succeeded; callState tells the client where the call currently stands.",
+      "fields": {
+        "callAttemptId": { "type": "uuid", "required": true },
+        "callState": { "type": "enum:CallState", "required": true },
+        "callType": { "type": "enum:CallType", "required": true },
+        "timestamp": { "type": "number", "required": true }
+      }
+    },
+
+    "webrtc:offer": {
+      "constant": "WEBRTC_OFFER",
+      "direction": "both",
+      "requiresAuth": true,
+      "validStates": ["connecting", "connected"],
+      "audience": "s2c: the other participant",
+      "description": "SDP offer, relayed verbatim by the server. Initial negotiation: only the caller offers, after receiving call:accepted. Renegotiation: only the participant whose escalation/downgrade request was granted offers. This rule prevents glare.",
+      "fields": {
+        "callAttemptId": { "type": "uuid", "required": true },
+        "offer": { "type": "object:SessionDescription", "required": true },
+        "timestamp": { "type": "number", "required": false }
+      }
+    },
+    "webrtc:answer": {
+      "constant": "WEBRTC_ANSWER",
+      "direction": "both",
+      "requiresAuth": true,
+      "validStates": ["connecting", "connected"],
+      "audience": "s2c: the other participant",
+      "description": "SDP answer, relayed verbatim. Relaying the first answer moves the call to connected.",
+      "fields": {
+        "callAttemptId": { "type": "uuid", "required": true },
+        "answer": { "type": "object:SessionDescription", "required": true },
+        "timestamp": { "type": "number", "required": false }
+      }
+    },
+    "webrtc:ice-candidate": {
+      "constant": "WEBRTC_ICE_CANDIDATE",
+      "direction": "both",
+      "requiresAuth": true,
+      "validStates": ["connecting", "connected"],
+      "audience": "s2c: the other participant",
+      "description": "ICE candidate, relayed verbatim in either direction. Clients MUST buffer candidates that arrive before the remote description is set, and tolerate duplicates.",
+      "fields": {
+        "callAttemptId": { "type": "uuid", "required": true },
+        "candidate": { "type": "object:IceCandidate", "required": true },
+        "timestamp": { "type": "number", "required": false }
+      }
+    },
+
+    "media:toggle": {
+      "constant": "MEDIA_TOGGLE",
+      "direction": "both",
+      "requiresAuth": true,
+      "validStates": ["connected", "escalation_pending"],
+      "audience": "s2c: the other participant",
+      "description": "Informs the peer of a local media state change (mute, camera off, camera flip). Purely informational; does not change call state.",
+      "fields": {
+        "callAttemptId": { "type": "uuid", "required": true },
+        "action": { "type": "enum:MediaToggleAction", "required": true },
+        "timestamp": { "type": "number", "required": false }
       }
     },
     "call:escalate": {
-      "required": [
-        "callAttemptId",
-        "requestedBy",
-        "mediaCapabilities"
-      ],
-      "optional": [
-        "timestamp"
-      ],
+      "constant": "CALL_ESCALATE",
+      "direction": "c2s",
+      "requiresAuth": true,
+      "validStates": ["connected"],
+      "description": "Requests voice-to-video escalation (voice calls only). The peer receives escalation:requested and must answer with escalation:accept or escalation:reject within escalation_timeout.",
       "fields": {
-        "callAttemptId": "string (uuid)",
-        "requestedBy": "CallInitiator",
-        "mediaCapabilities": "MediaCapabilities",
-        "timestamp": "number"
+        "callAttemptId": { "type": "uuid", "required": true },
+        "mediaCapabilities": { "type": "object:MediaCapabilities", "required": true, "description": "the requester's updated capabilities" },
+        "timestamp": { "type": "number", "required": false }
+      }
+    },
+    "escalation:requested": {
+      "constant": "ESCALATION_REQUESTED",
+      "direction": "s2c",
+      "audience": "the other participant",
+      "description": "The peer asked to upgrade the call to video.",
+      "fields": {
+        "callAttemptId": { "type": "uuid", "required": true },
+        "requestedBy": { "type": "enum:Role", "required": true },
+        "mediaCapabilities": { "type": "object:MediaCapabilities", "required": true },
+        "timestamp": { "type": "number", "required": true }
+      }
+    },
+    "escalation:accept": {
+      "constant": "ESCALATION_ACCEPT",
+      "direction": "c2s",
+      "requiresAuth": true,
+      "validStates": ["escalation_pending"],
+      "description": "Accepts the pending escalation. The call's callType becomes video; the original requester then renegotiates via webrtc:offer.",
+      "fields": {
+        "callAttemptId": { "type": "uuid", "required": true },
+        "mediaCapabilities": { "type": "object:MediaCapabilities", "required": true },
+        "timestamp": { "type": "number", "required": false }
+      }
+    },
+    "escalation:reject": {
+      "constant": "ESCALATION_REJECT",
+      "direction": "c2s",
+      "requiresAuth": true,
+      "validStates": ["escalation_pending"],
+      "description": "Declines the pending escalation. The call reverts to connected as a voice call.",
+      "fields": {
+        "callAttemptId": { "type": "uuid", "required": true },
+        "reason": { "type": "string", "required": false },
+        "timestamp": { "type": "number", "required": false }
+      }
+    },
+    "escalation:accepted": {
+      "constant": "ESCALATION_ACCEPTED",
+      "direction": "s2c",
+      "audience": "both participants",
+      "description": "Escalation granted; the call is now a video call. The requester must renegotiate via webrtc:offer.",
+      "fields": {
+        "callAttemptId": { "type": "uuid", "required": true },
+        "mediaCapabilities": { "type": "object:MediaCapabilities", "required": true, "description": "the acceptor's capabilities" },
+        "timestamp": { "type": "number", "required": true }
+      }
+    },
+    "escalation:rejected": {
+      "constant": "ESCALATION_REJECTED",
+      "direction": "s2c",
+      "audience": "the requester",
+      "description": "Escalation declined or timed out; the call remains a voice call.",
+      "fields": {
+        "callAttemptId": { "type": "uuid", "required": true },
+        "reason": { "type": "enum:EscalationRejectReason", "required": true },
+        "timestamp": { "type": "number", "required": true }
       }
     },
     "call:downgrade": {
-      "required": [
-        "callAttemptId",
-        "requestedBy"
-      ],
-      "optional": [
-        "reason",
-        "timestamp"
-      ],
+      "constant": "CALL_DOWNGRADE",
+      "direction": "c2s",
+      "requiresAuth": true,
+      "validStates": ["connected"],
+      "description": "Unilaterally downgrades a video call to voice (no peer consent required). Both participants receive call:downgraded; the requester then renegotiates via webrtc:offer.",
       "fields": {
-        "callAttemptId": "string (uuid)",
-        "requestedBy": "CallInitiator",
-        "reason": "string",
-        "timestamp": "number"
+        "callAttemptId": { "type": "uuid", "required": true },
+        "reason": { "type": "string", "required": false },
+        "timestamp": { "type": "number", "required": false }
+      }
+    },
+    "call:downgraded": {
+      "constant": "CALL_DOWNGRADED",
+      "direction": "s2c",
+      "audience": "both participants",
+      "description": "The call is now a voice call.",
+      "fields": {
+        "callAttemptId": { "type": "uuid", "required": true },
+        "requestedBy": { "type": "enum:Role", "required": true },
+        "timestamp": { "type": "number", "required": true }
       }
     }
   },
-  "stateTransitions": {
-    "initiated": [
-      "ringing",
-      "busy",
-      "unavailable",
-      "cancelled",
-      "failed"
-    ],
-    "ringing": [
-      "connecting",
-      "timeout",
-      "cancelled",
-      "failed"
-    ],
-    "connecting": [
-      "connected",
-      "camera_permission_denied",
-      "failed",
-      "cancelled"
-    ],
-    "connected": [
-      "ended",
-      "failed",
-      "escalation_pending",
-      "video_paused_by_user",
-      "video_paused_bandwidth"
-    ],
-    "escalation_pending": [
-      "connected",
-      "ended",
-      "failed"
-    ],
-    "video_paused_by_user": [
-      "connected",
-      "ended",
-      "failed"
-    ],
-    "video_paused_bandwidth": [
-      "connected",
-      "ended",
-      "failed"
-    ],
-    "camera_permission_denied": [
-      "connected",
-      "ended",
-      "failed"
-    ],
-    "ended": [],
-    "failed": [],
-    "cancelled": [],
-    "busy": [],
-    "unavailable": [],
-    "timeout": []
+
+  "stateMachine": {
+    "description": "One server-authoritative state machine per call (keyed by callAttemptId). Clients never see states directly; they infer progress from messages. Each transition lists the event that triggers it.",
+    "initialState": "initiated",
+    "terminalStates": ["ended", "failed", "cancelled", "busy", "unavailable", "timeout"],
+    "transitions": {
+      "initiated": [
+        { "to": "ringing", "on": "call:incoming dispatched to at least one device" },
+        { "to": "unavailable", "on": "no available devices for the business" },
+        { "to": "busy", "on": "all available devices engaged in active calls" },
+        { "to": "cancelled", "on": "call:cancel from caller" },
+        { "to": "failed", "on": "internal error" }
+      ],
+      "ringing": [
+        { "to": "connecting", "on": "call:accept from a business device" },
+        { "to": "cancelled", "on": "call:cancel from caller" },
+        { "to": "unavailable", "on": "every notified device sent call:reject" },
+        { "to": "timeout", "on": "ringing_timeout expired" },
+        { "to": "failed", "on": "caller disconnected beyond reconnect_grace, or internal error" }
+      ],
+      "connecting": [
+        { "to": "connected", "on": "webrtc:answer relayed to the caller" },
+        { "to": "ended", "on": "call:end from either participant" },
+        { "to": "timeout", "on": "connecting_timeout expired" },
+        { "to": "failed", "on": "call:failed from a participant, or participant disconnected beyond reconnect_grace" }
+      ],
+      "connected": [
+        { "to": "ended", "on": "call:end from either participant" },
+        { "to": "escalation_pending", "on": "call:escalate from a participant (voice calls only)" },
+        { "to": "failed", "on": "call:failed from a participant, or participant disconnected beyond reconnect_grace" }
+      ],
+      "escalation_pending": [
+        { "to": "connected", "on": "escalation:accept, escalation:reject, or escalation_timeout expired" },
+        { "to": "ended", "on": "call:end from either participant" },
+        { "to": "failed", "on": "call:failed from a participant, or participant disconnected beyond reconnect_grace" }
+      ],
+      "ended": [],
+      "failed": [],
+      "cancelled": [],
+      "busy": [],
+      "unavailable": [],
+      "timeout": []
+    }
   }
 }
