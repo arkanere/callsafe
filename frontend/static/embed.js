@@ -1,12 +1,13 @@
 (function() {
   "use strict";
-  const HEARTBEAT_INTERVAL_MS = 3e4;
+  const HEARTBEAT_INTERVAL_MS = 25e3;
   const HEARTBEAT_TIMEOUT_MS = 5e3;
   const BASE_RECONNECT_DELAY_MS = 1e3;
   const MAX_RECONNECT_ATTEMPTS = 5;
   class WsTransport {
-    constructor(url) {
+    constructor(url, options = {}) {
       this.url = url;
+      this.autoReconnect = options.autoReconnect ?? true;
     }
     ws = null;
     handlers = /* @__PURE__ */ new Map();
@@ -14,6 +15,8 @@
     heartbeatTimer = null;
     pongTimer = null;
     intentionallyClosed = false;
+    hasOpenedBefore = false;
+    autoReconnect;
     connect() {
       return new Promise((resolve, reject) => {
         this.intentionallyClosed = false;
@@ -21,13 +24,14 @@
         this.ws.onopen = () => {
           this.reconnectAttempts = 0;
           this.startHeartbeat();
-          this.dispatch("open", {});
+          this.dispatch("open", { reconnected: this.hasOpenedBefore });
+          this.hasOpenedBefore = true;
           resolve();
         };
         this.ws.onclose = (event) => {
           this.stopHeartbeat();
           this.dispatch("close", { code: event.code, reason: event.reason });
-          if (!this.intentionallyClosed) {
+          if (!this.intentionallyClosed && this.autoReconnect) {
             this.scheduleReconnect();
           }
           if (this.reconnectAttempts === 0) {
@@ -55,6 +59,33 @@
     }
     off(type, handler) {
       this.handlers.get(type)?.delete(handler);
+    }
+    /**
+     * Wait for the next message of `type`. Rejects on the first protocol
+     * `error` frame or after `timeoutMs`. Used for the device:connect handshake.
+     */
+    waitFor(type, timeoutMs = 1e4) {
+      return new Promise((resolve, reject) => {
+        const settle = () => {
+          clearTimeout(timer);
+          this.off(type, onMatch);
+          this.off("error", onError);
+        };
+        const onMatch = (data) => {
+          settle();
+          resolve(data);
+        };
+        const onError = (data) => {
+          settle();
+          reject(new Error(`Server error while waiting for ${type}: ${data.code ?? "unknown"}`));
+        };
+        const timer = setTimeout(() => {
+          settle();
+          reject(new Error(`Timed out waiting for ${type}`));
+        }, timeoutMs);
+        this.on(type, onMatch);
+        this.on("error", onError);
+      });
     }
     disconnect() {
       this.intentionallyClosed = true;
@@ -133,86 +164,11 @@
       }, delay);
     }
   }
-  const CallLifecycleMessages = {
-    // Client to Server
-    CALL_INITIATE: "call:initiate",
-    // Customer initiates a call
-    CALL_ACCEPT: "call:accept",
-    // Agent accepts incoming call
-    CALL_REJECT: "call:reject",
-    // Agent rejects incoming call
-    CALL_END: "call:end",
-    // Either party ends active call
-    CALL_FAILED: "call:failed",
-    // Report call failure
-    // Server to Client
-    CALL_INCOMING: "call:incoming",
-    // Notify agent of incoming call
-    CALL_ACCEPTED: "call:accepted",
-    // Confirm call was accepted
-    CALL_CANCELLED: "call:cancelled",
-    // Call was cancelled
-    CALL_ENDED: "call:ended",
-    // Call has ended
-    CALL_BUSY: "call:busy",
-    // All agents busy
-    CALL_UNAVAILABLE: "call:unavailable",
-    // No agents available
-    CALL_TIMEOUT: "call:timeout"
-    // Call timed out
-  };
-  const WebRTCMessages = {
-    WEBRTC_OFFER: "webrtc:offer",
-    // SDP offer
-    WEBRTC_ANSWER: "webrtc:answer",
-    // SDP answer
-    WEBRTC_ICE_CANDIDATE: "webrtc:ice-candidate"
-    // ICE candidate
-  };
-  const DeviceMessages = {
-    // Client to Server
-    DEVICE_CONNECT: "device:connect",
-    // Register device
-    DEVICE_DISCONNECT: "device:disconnect",
-    // Unregister device
-    DEVICE_STATUS: "device:status",
-    // Update availability status
-    // Server to Client
-    DEVICE_CONNECTED: "device:connected",
-    // Device registration confirmed
-    DEVICE_DISCONNECTED: "device:disconnected",
-    // Device logout confirmed
-    DEVICE_STATUS_UPDATED: "device:status-updated"
-    // Status change confirmed
-  };
-  const MediaMessages = {
-    MEDIA_TOGGLE: "media:toggle",
-    // Toggle camera/microphone
-    CALL_ESCALATE: "call:escalate",
-    // Request voice-to-video escalation
-    CALL_DOWNGRADE: "call:downgrade",
-    // Request video-to-voice downgrade
-    ESCALATION_ACCEPTED: "escalation:accepted",
-    // Peer accepted escalation
-    ESCALATION_REJECTED: "escalation:rejected"
-    // Peer rejected escalation
-  };
-  const SystemMessages = {
-    OPEN: "open",
-    // WebSocket connection established
-    CLOSE: "close",
-    // WebSocket connection closed
-    ERROR: "error",
-    // Error notification
-    SERVER_SHUTDOWN: "server:shutdown"
-    // Server shutting down
-  };
   const MessageTypes = {
-    ...CallLifecycleMessages,
-    ...WebRTCMessages,
-    ...DeviceMessages,
-    ...MediaMessages,
-    ...SystemMessages
+    CALL_FAILED: "call:failed",
+    WEBRTC_OFFER: "webrtc:offer",
+    WEBRTC_ANSWER: "webrtc:answer",
+    WEBRTC_ICE_CANDIDATE: "webrtc:ice-candidate"
   };
   const dbg = () => {
   };
@@ -548,6 +504,8 @@
       this.isVideoEnabled = true;
       this.turnCredentials = null;
       this.turnCredentialsFetchPromise = null;
+      this.serverReachable = true;
+      this.serverCheckInterval = null;
       this.init();
     }
     init() {
@@ -581,7 +539,12 @@
         debugLog("turn", "TURN credentials pre-fetched successfully");
         return credentials;
       }).catch((error) => {
-        debugLog("turn", "Failed to pre-fetch TURN credentials (will use STUN only)", { error: error.message });
+        if (error instanceof TypeError) {
+          debugLog("turn", "Server unreachable — disabling widget until server returns", { error: error.message });
+          this.setServerUnavailable();
+        } else {
+          debugLog("turn", "Failed to pre-fetch TURN credentials (will use STUN only)", { error: error.message });
+        }
         return null;
       });
     }
@@ -590,6 +553,20 @@
       if (this.turnCredentialsFetchPromise) return await this.turnCredentialsFetchPromise;
       this.prefetchTurnCredentials();
       return await this.turnCredentialsFetchPromise;
+    }
+    // --------------------------------------------------------------------------
+    // Guest Token (protocol v2 auth)
+    // --------------------------------------------------------------------------
+    // Fetched per call attempt (not prefetched — the token is only valid for
+    // 5 minutes and just needs to be fresh at device:connect time).
+    async fetchGuestToken() {
+      debugLog("auth", "Fetching guest token");
+      const url = `${this.getSignalingServerUrl()}/api/v1/guest-token?handle=${encodeURIComponent(this.config.handle)}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`Guest token request failed: HTTP ${res.status}`);
+      const guest = await res.json();
+      debugLog("auth", "Guest token fetched", { deviceId: guest.deviceId });
+      return guest;
     }
     // --------------------------------------------------------------------------
     // Widget DOM
@@ -897,10 +874,11 @@
           audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
           video: type === "video" ? { width: { ideal: 1280 }, height: { ideal: 720 } } : false
         };
-        debugLog("call", "Requesting media and TURN credentials in parallel");
-        const [localStream, turnCredentials] = await Promise.all([
+        debugLog("call", "Requesting media, TURN credentials and guest token in parallel");
+        const [localStream, turnCredentials, guest] = await Promise.all([
           navigator.mediaDevices.getUserMedia(mediaConstraints),
-          this.getTurnCredentials()
+          this.getTurnCredentials(),
+          this.fetchGuestToken()
         ]);
         if (type === "video") {
           const localVideoEl = this.widgetElement.querySelector("video[data-callsafe-local]");
@@ -912,15 +890,25 @@
           const videoArea = this.widgetElement.querySelector("#callsafe-video-area");
           if (videoArea) videoArea.style.display = "block";
         }
-        this.currentCall = { id: callAttemptId, startTime: Date.now(), state: "connecting", duration: 0 };
+        this.currentCall = { id: callAttemptId, startTime: Date.now(), state: "connecting", duration: 0, accepted: false };
         this.updateButtonState("connecting", "Connecting...");
         this.showModal();
         this.updateStatusMessage("Finding agent... (takes ~10 seconds)");
         const wsUrl = this.getWebSocketUrl();
         debugLog("call", "Connecting to signaling server", { url: wsUrl });
-        this.transport = new WsTransport(wsUrl);
+        this.transport = new WsTransport(wsUrl, { autoReconnect: false });
         this.setupEventHandlers();
         await this.transport.connect();
+        debugLog("call", "Authenticating (device:connect)", { deviceId: guest.deviceId });
+        this.transport.emit("device:connect", {
+          deviceType: "web",
+          deviceId: guest.deviceId,
+          token: guest.token,
+          protocolVersion: "2.0.0",
+          timestamp: Date.now()
+        });
+        await this.transport.waitFor("device:connected");
+        debugLog("call", "Authenticated");
         this.webrtcManager = new WebRTCManager(this.transport);
         this.webrtcManager.onAutoplayBlocked = () => this.showAutoplayPrompt();
         this.webrtcManager.onConnected = () => this.handleCallConnected();
@@ -931,7 +919,6 @@
         const initiateData = {
           callAttemptId: sanitizeInput(callAttemptId),
           handle: sanitizeInput(this.config.handle),
-          sourceId: sanitizeInput(this.config.sourceId),
           callType: type,
           mediaCapabilities: {
             canSend: type === "video" ? ["audio", "video"] : ["audio"],
@@ -985,6 +972,12 @@
     // --------------------------------------------------------------------------
     setupEventHandlers() {
       debugLog("socket", "Setting up WebSocket event handlers");
+      this.transport.on("call:initiated", (data) => {
+        debugLog("socket-event", "call:initiated received", { devicesNotified: data.devicesNotified });
+        if (data.callAttemptId === this.currentCall?.id) {
+          this.updateStatusMessage("Ringing...");
+        }
+      });
       this.transport.on("call:accepted", async (data) => {
         debugLog("socket-event", "call:accepted received", { callAttemptId: data.callAttemptId });
         if (data.callAttemptId === this.currentCall?.id) {
@@ -1024,7 +1017,12 @@
       this.transport.on("call:failed", (data) => {
         debugLog("socket-event", "call:failed received", { reason: data.reason });
         if (data.callAttemptId === this.currentCall?.id) {
-          const message = data?.reason === "connection_timeout" ? "Connection timeout. Please try again." : "Connection failed. Please try again.";
+          let message = "Connection failed. Please try again.";
+          if (data.reason === "media_permission_denied") {
+            message = "The agent could not access their microphone or camera.";
+          } else if (data.reason === "peer_disconnected") {
+            message = "The agent lost their connection.";
+          }
           this.handleCallFailure(message);
         }
       });
@@ -1058,6 +1056,7 @@
       try {
         debugLog("call", "Call accepted by business", { callAttemptId: data.callAttemptId });
         this.updateStatusMessage("Agent accepted, connecting...");
+        this.currentCall.accepted = true;
         this.currentCall.state = "ringing";
         if (this.webrtcManager) {
           debugLog("webrtc", "Creating WebRTC offer for accepted call");
@@ -1209,7 +1208,6 @@
         this.transport.emit("media:toggle", {
           callAttemptId: this.currentCall.id,
           action: isNowDisabled ? "disable_camera" : "enable_camera",
-          success: true,
           timestamp: Date.now()
         });
       }
@@ -1247,13 +1245,19 @@
       debugLog("call", "End call requested", { hasCurrentCall: !!this.currentCall });
       if (!this.currentCall) return;
       if (this.transport) {
-        this.transport.emit("call:end", {
-          callAttemptId: this.currentCall.id,
-          initiator: "customer",
-          reason: "user_action",
-          timestamp: Date.now()
-        });
-        this.setFailsafeCleanup();
+        if (!this.currentCall.accepted) {
+          this.transport.emit("call:cancel", {
+            callAttemptId: this.currentCall.id,
+            timestamp: Date.now()
+          });
+          this.cleanup();
+        } else {
+          this.transport.emit("call:end", {
+            callAttemptId: this.currentCall.id,
+            timestamp: Date.now()
+          });
+          this.setFailsafeCleanup();
+        }
       } else {
         this.cleanup();
       }
@@ -1301,7 +1305,36 @@
       if (button) {
         const textElement = button.querySelector(".callsafe-text");
         if (textElement) textElement.textContent = text;
-        button.disabled = state === "connecting";
+        button.disabled = state === "connecting" || state === "unavailable";
+      }
+    }
+    setServerUnavailable() {
+      if (!this.serverReachable) return;
+      this.serverReachable = false;
+      this.updateButtonState("unavailable", "Calls temporarily unavailable");
+      debugLog("server", "Starting background server reachability check (every 30s)");
+      this.serverCheckInterval = setInterval(() => this.retryServerCheck(), 3e4);
+    }
+    async retryServerCheck() {
+      if (!this.widgetElement) {
+        clearInterval(this.serverCheckInterval);
+        this.serverCheckInterval = null;
+        return;
+      }
+      debugLog("server", "Retrying server reachability");
+      try {
+        const res = await fetch(`${this.getSignalingServerUrl()}/api/turn-credentials`, {
+          signal: AbortSignal.timeout(5e3)
+        });
+        if (res.status < 500) {
+          clearInterval(this.serverCheckInterval);
+          this.serverCheckInterval = null;
+          this.serverReachable = true;
+          this.updateButtonState("idle", this.config.buttonText);
+          debugLog("server", "Signaling server back online — widget re-enabled");
+        }
+      } catch {
+        debugLog("server", "Server still unreachable");
       }
     }
     updateStatusMessage(message) {

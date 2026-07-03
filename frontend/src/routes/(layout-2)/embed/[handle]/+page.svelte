@@ -1,7 +1,7 @@
 <script lang="ts">
   import { page } from '$app/stores';
   import { onMount, onDestroy } from 'svelte';
-  import { MessageTypes, MediaToggleAction } from '@callsafe/protocol';
+  import { MessageTypes, MediaToggleAction, PROTOCOL_VERSION } from '@callsafe/protocol';
   import { WsTransport } from '$lib/transport/ws-transport';
   import { WebRTCManager } from '$lib/managers/webrtc-manager';
   import { customerCallState } from '$lib/stores/call-state';
@@ -17,6 +17,7 @@
 
   // Call state
   let callAttemptId: string | null = null;
+  let accepted = false;
   let callState: 'idle' | 'connecting' | 'ringing' | 'connected' | 'ended' | 'failed' = 'idle';
   let callType: 'voice' | 'video' = 'voice';
   let statusMessage = '';
@@ -80,9 +81,23 @@
         }
       }));
 
+      console.log('[EMBED PAGE] initiateCall(): Fetching guest token');
+      const guest = await fetchGuestToken(getServerUrl(), handle);
+
       console.log('[EMBED PAGE] initiateCall(): Connecting to signaling server');
       await connectToSignalingServer();
       console.log('[EMBED PAGE] initiateCall(): Connected to signaling server');
+
+      console.log('[EMBED PAGE] initiateCall(): Authenticating (device:connect)');
+      socket!.emit(MessageTypes.DEVICE_CONNECT, {
+        deviceType: 'web',
+        deviceId: guest.deviceId,
+        token: guest.token,
+        protocolVersion: PROTOCOL_VERSION,
+        timestamp: Date.now()
+      });
+      await socket!.waitFor(MessageTypes.DEVICE_CONNECTED);
+      console.log('[EMBED PAGE] initiateCall(): Authenticated');
 
       console.log('[EMBED PAGE] initiateCall(): Initializing WebRTC');
       await initializeCustomerWebRTC(callAttemptId, type);
@@ -92,7 +107,6 @@
       socket!.emit(MessageTypes.CALL_INITIATE, {
         callAttemptId,
         handle,
-        sourceId,
         callType: type,
         mediaCapabilities: {
           canSend: type === 'video' ? ['audio', 'video'] : ['audio'],
@@ -104,16 +118,37 @@
 
     } catch (error) {
       console.error('[EMBED PAGE] initiateCall(): Error during call initiation:', error);
-      handleMediaAccessError(error as Error);
+      const err = error as Error;
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        handleMediaAccessError(err);
+      } else {
+        // Guest-token fetch, socket, or auth handshake failure
+        socket?.disconnect();
+        socket = null;
+        handleCallFailure('Unable to connect. Please try again.');
+      }
     }
+  }
+
+  function getServerUrl(): string {
+    return import.meta.env.VITE_SIGNALING_SERVER_URL || 'https://tunnel.callsafe.tech';
+  }
+
+  async function fetchGuestToken(serverUrl: string, businessHandle: string): Promise<{ token: string; deviceId: string }> {
+    const response = await fetch(`${serverUrl}/api/v1/guest-token?handle=${encodeURIComponent(businessHandle)}`);
+    if (!response.ok) {
+      throw new Error(`Guest token request failed: ${response.status}`);
+    }
+    return response.json();
   }
 
   async function connectToSignalingServer(): Promise<void> {
     console.log('[EMBED PAGE] connectToSignalingServer(): Attempting to connect to signaling server');
-    const serverUrl = import.meta.env.VITE_SIGNALING_SERVER_URL || 'https://tunnel.callsafe.tech';
-    const wsUrl = serverUrl.replace(/^https:\/\//, 'wss://').replace(/^http:\/\//, 'ws://') + '/ws';
+    const wsUrl = getServerUrl().replace(/^https:\/\//, 'wss://').replace(/^http:\/\//, 'ws://') + '/ws';
 
-    socket = new WsTransport(wsUrl);
+    // A guest call cannot survive a socket loss (no call:reconnect support),
+    // so a blind reconnect would only produce an unauthenticated socket.
+    socket = new WsTransport(wsUrl, { autoReconnect: false });
     console.log('[EMBED PAGE] connectToSignalingServer(): WsTransport instance created');
 
     setupSocketEventHandlers();
@@ -129,10 +164,28 @@
       return;
     }
 
+    // Call initiated (server ack: business devices are now ringing)
+    socket.on(MessageTypes.CALL_INITIATED, (raw) => {
+      const data = raw as { callAttemptId: string; devicesNotified: number; timestamp: number };
+      if (data.callAttemptId !== callAttemptId) return;
+      console.log('[EMBED PAGE] setupSocketEventHandlers(): Call initiated ack received:', data);
+      statusMessage = 'Ringing...';
+
+      customerCallState.update(state => ({
+        ...state,
+        ui: {
+          ...state.ui,
+          statusMessage: 'Ringing...'
+        }
+      }));
+    });
+
     // Call accepted
     socket.on(MessageTypes.CALL_ACCEPTED, async (raw) => {
-      const data = raw as { callAttemptId: string; timestamp: number };
+      const data = raw as { callAttemptId: string; acceptingDeviceId: string; timestamp: number };
+      if (data.callAttemptId !== callAttemptId) return;
       console.log('[EMBED PAGE] setupSocketEventHandlers(): Call accepted event received:', data);
+      accepted = true;
       callState = 'ringing';
       statusMessage = 'Agent accepted, connecting...';
 
@@ -193,33 +246,52 @@
     });
 
     // Call failures
-    socket.on(MessageTypes.CALL_BUSY, (_data) => {
+    socket.on(MessageTypes.CALL_BUSY, (raw) => {
+      const data = raw as { callAttemptId: string };
+      if (data.callAttemptId !== callAttemptId) return;
       console.log('[EMBED PAGE] setupSocketEventHandlers(): Call busy event received');
       handleCallFailure('All agents are busy. Please try again later.');
     });
 
-    socket.on(MessageTypes.CALL_UNAVAILABLE, (_data) => {
-      console.log('[EMBED PAGE] setupSocketEventHandlers(): Call unavailable event received');
+    socket.on(MessageTypes.CALL_UNAVAILABLE, (raw) => {
+      const data = raw as { callAttemptId: string; reason: string };
+      if (data.callAttemptId !== callAttemptId) return;
+      console.log('[EMBED PAGE] setupSocketEventHandlers(): Call unavailable event received:', data);
       handleCallFailure('No agents available right now.');
     });
 
-    socket.on(MessageTypes.CALL_TIMEOUT, (_data) => {
-      console.log('[EMBED PAGE] setupSocketEventHandlers(): Call timeout event received');
+    socket.on(MessageTypes.CALL_TIMEOUT, (raw) => {
+      const data = raw as { callAttemptId: string; phase: string; timeoutDuration: number };
+      if (data.callAttemptId !== callAttemptId) return;
+      console.log('[EMBED PAGE] setupSocketEventHandlers(): Call timeout event received:', data);
       handleCallFailure('No response from agents. Please try again.');
     });
 
     socket.on(MessageTypes.CALL_FAILED, (raw) => {
-      const data = raw as { reason?: string };
+      const data = raw as { callAttemptId: string; reason?: string };
+      if (data.callAttemptId !== callAttemptId) return;
       console.log('[EMBED PAGE] setupSocketEventHandlers(): Call failed event received:', data);
-      const message = data?.reason === 'connection_timeout'
-        ? 'Connection timeout. Please try again.'
-        : 'Connection failed. Please try again.';
+      let message = 'Connection failed. Please try again.';
+      switch (data.reason) {
+        case 'media_permission_denied':
+          message = 'The agent could not access their microphone or camera.';
+          break;
+        case 'peer_disconnected':
+          message = 'The agent lost their connection.';
+          break;
+        case 'connection_failed':
+        case 'internal_error':
+        default:
+          break;
+      }
       handleCallFailure(message);
     });
 
     // Call ended
-    socket.on(MessageTypes.CALL_ENDED, (_data) => {
-      console.log('[EMBED PAGE] setupSocketEventHandlers(): Call ended event received');
+    socket.on(MessageTypes.CALL_ENDED, (raw) => {
+      const data = raw as { callAttemptId: string; duration: number; reason: string; endedBy: string };
+      if (data.callAttemptId !== callAttemptId) return;
+      console.log('[EMBED PAGE] setupSocketEventHandlers(): Call ended event received:', data);
 
       if (cleanupTimeout) {
         clearTimeout(cleanupTimeout);
@@ -339,17 +411,25 @@
 
   function endCall() {
     if (socket && callAttemptId) {
-      socket.emit(MessageTypes.CALL_END, {
-        callAttemptId,
-        initiator: 'customer',
-        reason: 'user_action',
-        timestamp: Date.now()
-      });
-
-      cleanupTimeout = setTimeout(() => {
-        console.log('[EMBED PAGE] endCall(): Server didn\'t respond to call:end, forcing cleanup');
+      if (!accepted) {
+        // Pre-accept the call is still initiated/ringing: call:end would be
+        // an invalid transition — the caller abandons with call:cancel.
+        socket.emit(MessageTypes.CALL_CANCEL, {
+          callAttemptId,
+          timestamp: Date.now()
+        });
         cleanup();
-      }, 5000);
+      } else {
+        socket.emit(MessageTypes.CALL_END, {
+          callAttemptId,
+          timestamp: Date.now()
+        });
+
+        cleanupTimeout = setTimeout(() => {
+          console.log('[EMBED PAGE] endCall(): Server didn\'t respond to call:end, forcing cleanup');
+          cleanup();
+        }, 5000);
+      }
     } else {
       cleanup();
     }
@@ -387,7 +467,6 @@
       socket.emit(MessageTypes.MEDIA_TOGGLE, {
         callAttemptId,
         action: isDisabled ? MediaToggleAction.DISABLE_CAMERA : MediaToggleAction.ENABLE_CAMERA,
-        success: true,
         timestamp: Date.now()
       });
     }
@@ -396,6 +475,7 @@
   function resetCustomerCallState() {
     callState = 'idle';
     callAttemptId = null;
+    accepted = false;
     callType = 'voice';
     statusMessage = '';
     isMuted = false;

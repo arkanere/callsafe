@@ -46,8 +46,11 @@ export class ConnectionManager {
 
     this.transport!.on(MessageTypes.ERROR, (error) => {
       console.error('[CONNECTION MANAGER] setupEventHandlers(): Error received:', error);
-      if ((error as Record<string, unknown>).code === 'AUTHENTICATION_REQUIRED') {
-        console.log('[CONNECTION MANAGER] setupEventHandlers(): Authentication required, logging out');
+      const code = (error as Record<string, unknown>).code;
+      // Only genuine credential failures warrant a logout; not_authenticated
+      // is a transient ordering condition (message sent before device:connect).
+      if (code === 'auth_failed' || code === 'token_expired') {
+        console.log('[CONNECTION MANAGER] setupEventHandlers(): Auth failure, logging out');
         AuthManager.logout();
       }
     });

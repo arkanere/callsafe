@@ -2,9 +2,11 @@ import { json } from '@sveltejs/kit';
 import jwt from 'jsonwebtoken';
 import { JWT_SECRET } from '$env/static/private';
 
+const UUID_V4_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 // Provides a short-lived token for WebSocket authentication
 // This is necessary because WebSocket cannot read httpOnly cookies directly
-export async function GET({ cookies }) {
+export async function GET({ cookies, url }) {
   console.log('[SOCKET TOKEN API] GET request received');
 
   try {
@@ -16,17 +18,24 @@ export async function GET({ cookies }) {
       return json({ error: 'Not authenticated' }, { status: 401 });
     }
 
+    // The device's persistent id must be baked into the token: the signaling
+    // server enforces deviceId == token.device_id on device:connect.
+    const deviceId = url.searchParams.get('deviceId');
+    if (!deviceId || !UUID_V4_REGEX.test(deviceId)) {
+      return json({ error: 'Invalid deviceId' }, { status: 400 });
+    }
+
     try {
       console.log('[SOCKET TOKEN API] Verifying JWT token');
       const decoded = jwt.verify(token, JWT_SECRET) as any;
       console.log('[SOCKET TOKEN API] Token verified:', { email: decoded.email });
 
-      // Create a short-lived token for WebSocket (5 minutes)
+      // Short-lived socket token (5 minutes) with protocol v2 claims;
+      // business_id is the handle (the server has no business DB).
       const socketTokenPayload = {
-        userId: decoded.userId,
-        email: decoded.email,
-        handle: decoded.handle,
-        sourceId: decoded.sourceId,
+        device_id: deviceId,
+        business_id: decoded.handle,
+        role: 'business',
         exp: Math.floor(Date.now() / 1000) + (5 * 60) // 5 minutes
       };
       const socketToken = jwt.sign(socketTokenPayload, JWT_SECRET);

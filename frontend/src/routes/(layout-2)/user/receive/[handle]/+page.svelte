@@ -205,7 +205,7 @@
 
     // Call ended handler
     socket.on(MessageTypes.CALL_ENDED, (raw) => {
-      const data = raw as { callAttemptId: string; timestamp: number; duration: number };
+      const data = raw as { callAttemptId: string; timestamp: number; duration: number; reason: string; endedBy: string };
       console.log('[CONNECTION] setupSocketEventHandlers(): Call ended:', data);
 
       saveCallToHistory({
@@ -214,11 +214,12 @@
         startTime: currentCallStartTime || data.timestamp,
         endTime: data.timestamp,
         duration: data.duration,
+        endedBy: data.endedBy,
         device: 'web',
         status: 'completed'
       });
 
-      endCall();
+      resetCallUI();
     });
 
     // Call failed handler
@@ -226,11 +227,50 @@
       const data = raw as { reason?: string };
       console.log('[CONNECTION] setupSocketEventHandlers(): Call failed:', data);
 
-      const msg = data.reason === 'connection_timeout'
-        ? 'Call connection timed out. Please try again.'
-        : 'Call connection failed. Please try again.';
+      let msg = 'Call connection failed. Please try again.';
+      switch (data.reason) {
+        case 'media_permission_denied':
+          msg = 'The other party could not access their microphone or camera.';
+          break;
+        case 'peer_disconnected':
+          msg = 'The other party lost their connection.';
+          break;
+        case 'connection_failed':
+        case 'internal_error':
+        default:
+          break;
+      }
 
-      handleCallFailure(msg);
+      // The call is already terminal server-side — reset locally without
+      // echoing call:end back.
+      errorMessage = msg;
+      setTimeout(() => {
+        resetCallUI();
+        errorMessage = '';
+      }, 3000);
+    });
+
+    // Call timeout handler (terminal: ringing or connecting phase expired server-side)
+    socket.on(MessageTypes.CALL_TIMEOUT, (raw) => {
+      const data = raw as { callAttemptId: string; phase: string; timeoutDuration: number; timestamp: number };
+      console.log('[CONNECTION] setupSocketEventHandlers(): Call timeout:', data);
+
+      if (data.phase === 'ringing') {
+        stopIncomingCallSound();
+        incomingCalls = incomingCalls.filter(call => call.callId !== data.callAttemptId);
+        callState.update(state => ({
+          ...state,
+          currentCall: state.currentCall?.callAttemptId === data.callAttemptId ? null : state.currentCall,
+          ui: { ...state.ui, showIncomingCallModal: false }
+        }));
+      } else {
+        resetCallUI();
+      }
+
+      errorMessage = 'Call timed out';
+      setTimeout(() => {
+        errorMessage = '';
+      }, 3000);
     });
 
     // Call cancelled handler
@@ -243,14 +283,11 @@
 
       let statusMessage = '';
       switch (data.reason) {
-        case 'customer_cancelled':
+        case 'cancelled_by_caller':
           statusMessage = 'Customer cancelled the call';
           break;
-        case 'other_device_accepted':
+        case 'answered_elsewhere':
           statusMessage = 'Call answered on another device';
-          break;
-        case 'timeout':
-          statusMessage = 'Call timed out';
           break;
         default:
           statusMessage = 'Call was cancelled';
@@ -272,7 +309,7 @@
         }
       }));
 
-      if (data.reason !== 'other_device_accepted') {
+      if (data.reason !== 'answered_elsewhere') {
         errorMessage = statusMessage;
         setTimeout(() => {
           errorMessage = '';
@@ -295,10 +332,16 @@
     });
 
     // Connection lifecycle events
-    socket.on('open', () => {
+    socket.on('open', (data) => {
       socketConnected = true;
       connectionStatus = 'Connected';
       errorMessage = '';
+
+      // The transport re-opened a fresh socket: the server no longer knows us,
+      // so the device:connect handshake must be redone with a fresh token.
+      if (data.reconnected) {
+        registerDevice();
+      }
     });
 
     socket.on('close', () => {
@@ -311,7 +354,11 @@
   async function registerDevice() {
     if (!socket) return;
 
-    const tokenResponse = await fetch('/api/socket-token', { credentials: 'include' });
+    const deviceId = generateDeviceId();
+
+    // The signaling server enforces deviceId == token.device_id, so the
+    // token must be minted for this device.
+    const tokenResponse = await fetch(`/api/socket-token?deviceId=${deviceId}`, { credentials: 'include' });
     if (!tokenResponse.ok) {
       console.error('[CONNECTION] registerDevice(): Failed to get auth token');
       errorMessage = 'Authentication failed. Please refresh the page.';
@@ -321,14 +368,21 @@
 
     socket.emit(MessageTypes.DEVICE_CONNECT, {
       deviceType: 'web',
-      deviceId: generateDeviceId(),
+      deviceId,
       protocolVersion: PROTOCOL_VERSION,
       token,
       timestamp: Date.now()
     });
 
+    try {
+      await socket.waitFor(MessageTypes.DEVICE_CONNECTED);
+    } catch (error) {
+      console.error('[CONNECTION] registerDevice(): device:connect handshake failed:', error);
+      errorMessage = 'Authentication failed. Please refresh the page.';
+      return;
+    }
+
     socket.emit(MessageTypes.DEVICE_STATUS, {
-      deviceId: generateDeviceId(),
       status: 'available',
       timestamp: Date.now()
     });
@@ -346,7 +400,6 @@
     const newStatus = !isOnline;
 
     socket.emit(MessageTypes.DEVICE_STATUS, {
-      deviceId: generateDeviceId(),
       status: newStatus ? 'available' : 'unavailable',
       timestamp: Date.now()
     });
@@ -383,8 +436,6 @@
 
     socket.emit(MessageTypes.CALL_ACCEPT, {
       callAttemptId: callId,
-      deviceType: 'web',
-      deviceId: generateDeviceId(),
       mediaCapabilities: {
         canSend: callType === 'video' ? ['audio', 'video'] : ['audio'],
         canReceive: callType === 'video' ? ['audio', 'video'] : ['audio']
@@ -412,7 +463,6 @@
 
     socket.emit(MessageTypes.CALL_REJECT, {
       callAttemptId: callId,
-      deviceType: 'web',
       timestamp: Date.now()
     });
 
@@ -432,12 +482,16 @@
     if (getCurrentCall() && socket) {
       socket.emit(MessageTypes.CALL_END, {
         callAttemptId: getCurrentCall()?.callAttemptId,
-        initiator: 'business',
-        reason: 'user_action',
         timestamp: Date.now()
       });
     }
 
+    resetCallUI();
+  }
+
+  // Local-only teardown: safe to run when the call already terminated
+  // server-side (call:ended, call:timeout) without echoing call:end back.
+  function resetCallUI() {
     stopIncomingCallSound();
     incomingCalls = [];
 
@@ -500,7 +554,6 @@
       socket.emit(MessageTypes.MEDIA_TOGGLE, {
         callAttemptId: getCurrentCall()!.callAttemptId,
         action: isDisabled ? MediaToggleAction.DISABLE_CAMERA : MediaToggleAction.ENABLE_CAMERA,
-        success: true,
         timestamp: Date.now()
       });
     }

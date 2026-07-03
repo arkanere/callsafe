@@ -164,6 +164,22 @@ class CallSafeWidget {
   }
 
   // --------------------------------------------------------------------------
+  // Guest Token (protocol v2 auth)
+  // --------------------------------------------------------------------------
+
+  // Fetched per call attempt (not prefetched — the token is only valid for
+  // 5 minutes and just needs to be fresh at device:connect time).
+  async fetchGuestToken() {
+    debugLog('auth', 'Fetching guest token');
+    const url = `${this.getSignalingServerUrl()}/api/v1/guest-token?handle=${encodeURIComponent(this.config.handle)}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Guest token request failed: HTTP ${res.status}`);
+    const guest = await res.json();
+    debugLog('auth', 'Guest token fetched', { deviceId: guest.deviceId });
+    return guest;
+  }
+
+  // --------------------------------------------------------------------------
   // Widget DOM
   // --------------------------------------------------------------------------
 
@@ -495,10 +511,11 @@ class CallSafeWidget {
         video: type === 'video' ? { width: { ideal: 1280 }, height: { ideal: 720 } } : false
       };
 
-      debugLog('call', 'Requesting media and TURN credentials in parallel');
-      const [localStream, turnCredentials] = await Promise.all([
+      debugLog('call', 'Requesting media, TURN credentials and guest token in parallel');
+      const [localStream, turnCredentials, guest] = await Promise.all([
         navigator.mediaDevices.getUserMedia(mediaConstraints),
-        this.getTurnCredentials()
+        this.getTurnCredentials(),
+        this.fetchGuestToken()
       ]);
 
       // For video calls, bind local stream to preview element
@@ -512,18 +529,32 @@ class CallSafeWidget {
         if (videoArea) videoArea.style.display = 'block';
       }
 
-      this.currentCall = { id: callAttemptId, startTime: Date.now(), state: 'connecting', duration: 0 };
+      this.currentCall = { id: callAttemptId, startTime: Date.now(), state: 'connecting', duration: 0, accepted: false };
 
       this.updateButtonState('connecting', 'Connecting...');
       this.showModal();
       this.updateStatusMessage('Finding agent... (takes ~10 seconds)');
 
-      // Connect WebSocket transport
+      // Connect WebSocket transport. No auto-reconnect: a guest call cannot
+      // survive a socket loss, so a blind reconnect would only produce an
+      // unauthenticated socket.
       const wsUrl = this.getWebSocketUrl();
       debugLog('call', 'Connecting to signaling server', { url: wsUrl });
-      this.transport = new WsTransport(wsUrl);
+      this.transport = new WsTransport(wsUrl, { autoReconnect: false });
       this.setupEventHandlers();
       await this.transport.connect();
+
+      // Authenticate: device:connect must be the first protocol message
+      debugLog('call', 'Authenticating (device:connect)', { deviceId: guest.deviceId });
+      this.transport.emit('device:connect', {
+        deviceType: 'web',
+        deviceId: guest.deviceId,
+        token: guest.token,
+        protocolVersion: '2.0.0',
+        timestamp: Date.now()
+      });
+      await this.transport.waitFor('device:connected');
+      debugLog('call', 'Authenticated');
 
       // Initialize WebRTC using shared manager, providing pre-captured stream
       this.webrtcManager = new WebRTCManager(this.transport);
@@ -539,7 +570,6 @@ class CallSafeWidget {
       const initiateData = {
         callAttemptId: sanitizeInput(callAttemptId),
         handle: sanitizeInput(this.config.handle),
-        sourceId: sanitizeInput(this.config.sourceId),
         callType: type,
         mediaCapabilities: {
           canSend: type === 'video' ? ['audio', 'video'] : ['audio'],
@@ -604,6 +634,13 @@ class CallSafeWidget {
   setupEventHandlers() {
     debugLog('socket', 'Setting up WebSocket event handlers');
 
+    this.transport.on('call:initiated', (data) => {
+      debugLog('socket-event', 'call:initiated received', { devicesNotified: data.devicesNotified });
+      if (data.callAttemptId === this.currentCall?.id) {
+        this.updateStatusMessage('Ringing...');
+      }
+    });
+
     this.transport.on('call:accepted', async (data) => {
       debugLog('socket-event', 'call:accepted received', { callAttemptId: data.callAttemptId });
       if (data.callAttemptId === this.currentCall?.id) {
@@ -649,9 +686,12 @@ class CallSafeWidget {
     this.transport.on('call:failed', (data) => {
       debugLog('socket-event', 'call:failed received', { reason: data.reason });
       if (data.callAttemptId === this.currentCall?.id) {
-        const message = data?.reason === 'connection_timeout'
-          ? 'Connection timeout. Please try again.'
-          : 'Connection failed. Please try again.';
+        let message = 'Connection failed. Please try again.';
+        if (data.reason === 'media_permission_denied') {
+          message = 'The agent could not access their microphone or camera.';
+        } else if (data.reason === 'peer_disconnected') {
+          message = 'The agent lost their connection.';
+        }
         this.handleCallFailure(message);
       }
     });
@@ -692,6 +732,7 @@ class CallSafeWidget {
     try {
       debugLog('call', 'Call accepted by business', { callAttemptId: data.callAttemptId });
       this.updateStatusMessage('Agent accepted, connecting...');
+      this.currentCall.accepted = true;
       this.currentCall.state = 'ringing';
 
       if (this.webrtcManager) {
@@ -864,7 +905,6 @@ class CallSafeWidget {
       this.transport.emit('media:toggle', {
         callAttemptId: this.currentCall.id,
         action: isNowDisabled ? 'disable_camera' : 'enable_camera',
-        success: true,
         timestamp: Date.now()
       });
     }
@@ -911,13 +951,21 @@ class CallSafeWidget {
     if (!this.currentCall) return;
 
     if (this.transport) {
-      this.transport.emit('call:end', {
-        callAttemptId: this.currentCall.id,
-        initiator: 'customer',
-        reason: 'user_action',
-        timestamp: Date.now()
-      });
-      this.setFailsafeCleanup();
+      if (!this.currentCall.accepted) {
+        // Pre-accept the call is still initiated/ringing: call:end would be
+        // an invalid transition — the caller abandons with call:cancel.
+        this.transport.emit('call:cancel', {
+          callAttemptId: this.currentCall.id,
+          timestamp: Date.now()
+        });
+        this.cleanup();
+      } else {
+        this.transport.emit('call:end', {
+          callAttemptId: this.currentCall.id,
+          timestamp: Date.now()
+        });
+        this.setFailsafeCleanup();
+      }
     } else {
       this.cleanup();
     }
