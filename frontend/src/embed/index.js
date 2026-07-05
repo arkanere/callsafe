@@ -18,7 +18,7 @@ import { WebRTCManager } from '$lib/managers/webrtc-manager';
 // ============================================================================
 
 const CONFIG = {
-  DEFAULT_SIGNALING_SERVER: 'https://tunnel.callsafe.tech',
+  DEFAULT_SIGNALING_SERVER: 'https://signal.callsafe.tech',
   CONNECTION_TIMEOUT: 30000,
   CLEANUP_DELAY: 5000,
   AUTO_RESET_DELAY: 3000,

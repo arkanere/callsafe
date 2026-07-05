@@ -45,7 +45,7 @@ const isStateMutating = (method: string): boolean => {
 
 // Pure function to generate Content Security Policy directive
 const generateCSP = (pathname: string): string => {
-	const signalingUrl = env.VITE_SIGNALING_SERVER_URL || 'https://tunnel.callsafe.tech';
+	const signalingUrl = env.VITE_SIGNALING_SERVER_URL || 'https://signal.callsafe.tech';
 	const signalingWss = signalingUrl.replace(/^https:\/\//, 'wss://').replace(/^http:\/\//, 'ws://');
 
 	const baseDirectives = [

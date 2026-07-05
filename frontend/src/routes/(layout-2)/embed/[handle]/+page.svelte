@@ -148,7 +148,7 @@
   }
 
   function getServerUrl(): string {
-    return import.meta.env.VITE_SIGNALING_SERVER_URL || 'https://tunnel.callsafe.tech';
+    return import.meta.env.VITE_SIGNALING_SERVER_URL || 'https://signal.callsafe.tech';
   }
 
   async function fetchGuestToken(serverUrl: string, businessHandle: string): Promise<{ token: string; deviceId: string }> {
