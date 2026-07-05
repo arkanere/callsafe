@@ -1,19 +1,37 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
-  import { AuthManager } from '$lib/managers/auth-manager';
-  
+  import { AuthManager, type UserData } from '$lib/managers/auth-manager';
+
   let hasCreatedHandle = true; // Always true since handle is created during signup
   let hasEmbedded = false;
   let callSafeHandle = '';
   let copied = false;
-  let userHandles = [];
+  let userHandles: string[] = [];
   let isLoading = false;
-  let userData = null;
-  
+  let userData: (UserData & { name?: string }) | null = null;
+
   // Helper function to construct full URL from handle
-  function getFullUrl(handle) {
+  function getFullUrl(handle: string) {
     return `https://callsafe.tech/embed/${handle}`;
+  }
+
+  // Built from pieces so the component source never contains a literal
+  // script closing tag, which terminates the Svelte script block early.
+  function getEmbedSnippet(): string {
+    const open = '<' + 'script>';
+    const close = '<' + '/script>';
+    return [
+      open,
+      "  window.addEventListener('load', function() {",
+      "    var script = document.createElement('script');",
+      "    script.src = 'https://callsafe.tech/embed.js';",
+      `    script.setAttribute('data-handle', '${callSafeHandle}');`,
+      "    script.setAttribute('data-source-id', 'PUT_YOUR_PAGE_ID_HERE');",
+      '    document.body.appendChild(script);',
+      '  });',
+      close
+    ].join('\n');
   }
   
   // Check for authentication and load user data
@@ -211,15 +229,7 @@
             <div class="flex items-center justify-between">
               <span class="text-xs text-gray-500">Replace "PUT_YOUR_PAGE_ID_HERE" with your tracking ID</span>
               <button
-                on:click={() => copyToClipboard(`<script>
-  window.addEventListener('load', function() {
-    var script = document.createElement('script');
-    script.src = 'https://callsafe.tech/embed.js';
-    script.setAttribute('data-handle', '${callSafeHandle}');
-    script.setAttribute('data-source-id', 'PUT_YOUR_PAGE_ID_HERE');
-    document.body.appendChild(script);
-  });
-</script>`)}
+                on:click={() => copyToClipboard(getEmbedSnippet())}
                 class="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-sm font-semibold transition-colors duration-200"
               >
                 {copied ? 'Copied!' : 'Copy Embed Code'}

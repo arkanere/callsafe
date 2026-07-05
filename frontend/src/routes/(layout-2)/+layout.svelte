@@ -14,7 +14,7 @@
 	function loadAnalytics() {
 		// Load Hotjar
 		if (typeof window !== 'undefined' && !window.hj) {
-			(function(h:any, o:any, t:any, j:any, a:any, r:any) {
+			(function(h:any, o:any, t:any, j:any, a?:any, r?:any) {
 				h.hj = h.hj || function() {
 					(h.hj.q = h.hj.q || []).push(arguments);
 				};

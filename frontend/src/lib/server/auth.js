@@ -17,14 +17,14 @@ export function extractBearerToken(authHeader) {
 /**
  * Verifies JWT token and returns decoded payload
  * @param {string} token - The JWT token to verify
- * @returns {{ valid: true, payload: object } | { valid: false, error: string }}
+ * @returns {{ valid: true, payload: import('jsonwebtoken').JwtPayload } | { valid: false, error: string }}
  */
 export function verifyJWT(token) {
     try {
-        const payload = jwt.verify(token, JWT_SECRET);
+        const payload = /** @type {import('jsonwebtoken').JwtPayload} */ (jwt.verify(token, JWT_SECRET));
         return { valid: true, payload };
     } catch (error) {
-        return { valid: false, error: error.message };
+        return { valid: false, error: error instanceof Error ? error.message : String(error) };
     }
 }
 
@@ -35,7 +35,7 @@ export function verifyJWT(token) {
  * @returns {boolean}
  */
 export function canAccessUserResource(authenticatedUserId, requestedUserId) {
-    const authId = parseInt(authenticatedUserId);
-    const reqId = parseInt(requestedUserId);
+    const authId = parseInt(String(authenticatedUserId));
+    const reqId = parseInt(String(requestedUserId));
     return !isNaN(authId) && !isNaN(reqId) && authId === reqId;
 }

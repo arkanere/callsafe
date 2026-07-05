@@ -220,7 +220,7 @@ export class WebRTCManager {
     // Server handles WebRTC connection timeout - no frontend timeout needed
   }
 
-  async createOffer(callAttemptId: string): Promise<RTCSessionDescription> {
+  async createOffer(callAttemptId: string): Promise<RTCSessionDescriptionInit> {
     this._isOfferer = true;
     dbg('[WEBRTC MANAGER] createOffer(): Creating offer for call:', callAttemptId);
 

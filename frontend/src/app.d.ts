@@ -8,6 +8,11 @@ declare global {
 		// interface PageState {}
 		// interface Platform {}
 	}
+
+	interface Window {
+		hj?: { (...args: unknown[]): void; q?: unknown[] };
+		_hjSettings?: { hjid: number; hjsv: number };
+	}
 }
 
 export {};

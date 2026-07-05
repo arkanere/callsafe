@@ -10,6 +10,7 @@ function createDbPool() {
     return createPool({ connectionString: POSTGRES_URL });
 }
 
+/** @param {string} email */
 function validateEmail(email) {
     console.log('[SIGNUP API] Validating email:', email);
 
@@ -30,6 +31,7 @@ function validateEmail(email) {
     return isValid;
 }
 
+/** @param {string} password */
 function validatePassword(password) {
     console.log('[SIGNUP API] Validating password length:', password?.length);
     const isValid = password && password.length >= 6;
@@ -177,7 +179,8 @@ export async function POST({ request, cookies }) {
         console.error('[SIGNUP API] Error creating user:', error);
         
         // Handle duplicate email constraint violation
-        if (error.code === '23505' && error.constraint === 'callsafeusers_email_key') {
+        const dbError = /** @type {{ code?: string; constraint?: string }} */ (error);
+        if (dbError.code === '23505' && dbError.constraint === 'callsafeusers_email_key') {
             console.log('[SIGNUP API] Duplicate email constraint violation');
             return json({ 
                 success: false, 
