@@ -77,7 +77,7 @@ const withSecurityHeaders = (response: Response, pathname: string): Response => 
 
 	response.headers.set('X-Content-Type-Options', 'nosniff');
 	response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
-	response.headers.set('Permissions-Policy', 'microphone=(self), camera=()');
+	response.headers.set('Permissions-Policy', 'microphone=(self), camera=(self)');
 
 	if (!dev) {
 		response.headers.set(
