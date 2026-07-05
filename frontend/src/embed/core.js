@@ -1,11 +1,13 @@
 // @ts-nocheck
 /**
- * CallSafe Embed Widget — Entry Point
+ * CallSafe Embed Widget — Calling Core
  *
- * UI layer only. WebSocket transport and WebRTC management are imported from
- * shared modules. Vite bundles this into static/embed.js (IIFE format).
+ * The heavy half of the widget: modal UI, WebSocket transport, and WebRTC.
+ * Lazy-loaded by the loader stub (stub.js → embed.js) on first interaction,
+ * so it lands only for visitors who actually start a call. It does not
+ * self-initialize; the stub calls window.__CallSafeCore(boot) once.
  *
- * Build: npm run build:embed
+ * Build: npm run build:embed  →  static/embed.core.js (IIFE format)
  */
 
 import { WsTransport } from '$lib/transport/ws-transport';
@@ -49,22 +51,8 @@ function sanitizeInput(input) {
     .substring(0, 255);
 }
 
-function validateHandle(handle) {
-  return /^[a-f0-9]{16}$/.test(handle);
-}
-
 function validateCallAttemptId(id) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
-}
-
-function validateSourceId(sourceId) {
-  return /^[a-zA-Z0-9-_]{1,50}$/.test(sourceId);
-}
-
-function escapeHTML(str) {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
 }
 
 // ============================================================================
@@ -72,11 +60,12 @@ function escapeHTML(str) {
 // ============================================================================
 
 class CallSafeWidget {
-  constructor(config, scriptElement) {
+  constructor(config, scriptElement, widgetElement) {
     this.version = '5.0.0';
     this.config = config;
     this.scriptElement = scriptElement;
-    this.widgetElement = null;
+    // Container + button are created by the loader stub; the core owns the modal.
+    this.widgetElement = widgetElement;
 
     // Transport and WebRTC — populated during initiateCall()
     this.transport = null;
@@ -184,16 +173,9 @@ class CallSafeWidget {
   // --------------------------------------------------------------------------
 
   createWidget() {
-    this.widgetElement = document.createElement('div');
-    this.widgetElement.className = `callsafe-widget theme-${this.config.theme} position-${this.config.position}`;
+    // The loader stub already created this.widgetElement and its button and
+    // inserted them into the page. The core only adds the modal and its styles.
     this.widgetElement.setAttribute('data-version', this.version);
-
-    const button = document.createElement('button');
-    button.className = `callsafe-button size-${this.config.size}`;
-    button.innerHTML = this.getButtonHTML();
-    button.onclick = () => this.handleButtonClick();
-    button.setAttribute('aria-label', this.config.buttonText);
-    this.widgetElement.appendChild(button);
 
     const modal = document.createElement('div');
     modal.className = 'callsafe-modal';
@@ -201,31 +183,8 @@ class CallSafeWidget {
     modal.innerHTML = this.getModalHTML();
     this.widgetElement.appendChild(modal);
 
-    if (this.config.position === 'inline') {
-      if (this.scriptElement && this.scriptElement.parentNode) {
-        this.scriptElement.parentNode.insertBefore(this.widgetElement, this.scriptElement.nextSibling);
-      } else {
-        document.body.appendChild(this.widgetElement);
-      }
-    } else {
-      if (document.body) {
-        document.body.appendChild(this.widgetElement);
-      } else {
-        setTimeout(() => document.body && document.body.appendChild(this.widgetElement), 100);
-      }
-    }
-
     this.applyStyles();
     this.attachModalEvents();
-  }
-
-  getButtonHTML() {
-    return `
-      <svg class="callsafe-icon" viewBox="0 0 24 24" width="18" height="18">
-        <path fill="currentColor" d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56-.35-.12-.74-.03-1.01.24l-1.57 1.97c-2.83-1.35-5.48-3.9-6.89-6.83l1.95-1.66c.27-.28.35-.67.24-1.02-.37-1.11-.56-2.3-.56-3.53 0-.54-.45-.99-.99-.99H4.19C3.65 3 3 3.24 3 3.99 3 13.28 10.73 21 20.01 21c.71 0 .99-.63.99-1.18v-3.45c0-.54-.45-.99-.99-.99z"/>
-      </svg>
-      <span class="callsafe-text">${escapeHTML(this.config.buttonText)}</span>
-    `;
   }
 
   getModalHTML() {
@@ -304,44 +263,9 @@ class CallSafeWidget {
   }
 
   getWidgetCSS() {
+    // Button + container styles ship with the loader stub; the core only styles
+    // the modal and call controls.
     return `
-      .callsafe-widget {
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-        z-index: 999999;
-        position: relative;
-      }
-      .callsafe-widget.position-inline { display: inline-block; }
-      .callsafe-widget.position-bottom-right { position: fixed; bottom: 20px; right: 20px; }
-      .callsafe-widget.position-bottom-left { position: fixed; bottom: 20px; left: 20px; }
-      .callsafe-widget.position-top-right { position: fixed; top: 20px; right: 20px; }
-      .callsafe-widget.position-top-left { position: fixed; top: 20px; left: 20px; }
-
-      .callsafe-button {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        border: none;
-        border-radius: 50px;
-        padding: 14px 24px;
-        font-size: 14px;
-        font-weight: 600;
-        cursor: pointer;
-        transition: all 0.3s ease;
-        outline: none;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        text-decoration: none;
-        user-select: none;
-        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
-      }
-      .callsafe-button:focus { box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.3); }
-      .callsafe-button:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5); }
-      .callsafe-button:disabled { opacity: 0.6; cursor: not-allowed; transform: none !important; }
-      .callsafe-button.size-small { padding: 8px 16px; font-size: 12px; }
-      .callsafe-button.size-large { padding: 16px 28px; font-size: 16px; }
-      .callsafe-icon { flex-shrink: 0; }
-      .callsafe-text { white-space: nowrap; }
-
       .callsafe-modal { position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 1000000; font-family: inherit; }
       .callsafe-modal-overlay {
         position: absolute; top: 0; left: 0; right: 0; bottom: 0;
@@ -418,7 +342,6 @@ class CallSafeWidget {
         .callsafe-control-btn { padding: 8px 14px; font-size: 13px; }
       }
       @media (prefers-reduced-motion: reduce) {
-        .callsafe-button { transition: none; }
         .callsafe-control-btn { transition: none; }
       }
     `;
@@ -1235,49 +1158,18 @@ class CallSafeWidget {
 }
 
 // ============================================================================
-// Initialization
+// Core Entry — invoked by the loader stub (embed.js)
 // ============================================================================
 
-function initializeWidget() {
-  const script = document.currentScript || document.querySelector('script[src*="embed"]');
-  if (!script) {
-    console.error('CallSafe: Unable to locate script element');
-    return;
-  }
-
-  const config = {
-    handle: script.getAttribute('data-handle'),
-    sourceId: script.getAttribute('data-source-id') || 'website',
-    buttonText: script.getAttribute('data-button-text') || 'Talk to us instantly',
-    position: script.getAttribute('data-position') || 'bottom-right',
-    theme: script.getAttribute('data-theme') || 'light',
-    language: script.getAttribute('data-language') || 'en',
-    size: script.getAttribute('data-size') || 'medium',
-    offlineMessage: script.getAttribute('data-offline-message') || 'No agents available right now.',
-    debug: script.getAttribute('data-debug') === 'true'
-  };
-
-  if (!config.handle) {
-    console.error('CallSafe: data-handle attribute is required');
-    return;
-  }
-  if (!validateHandle(config.handle)) {
-    console.error('CallSafe: Invalid handle format');
-    return;
-  }
-  if (!validateSourceId(config.sourceId)) {
-    console.error('CallSafe: Invalid source ID format');
-    return;
-  }
-
+// The stub has already parsed + validated config, rendered the button, and
+// inserted the container. It calls this factory once, on first interaction,
+// with { config, widgetElement, scriptElement }. We never self-initialize.
+function bootCore(boot) {
+  const { config, widgetElement, scriptElement } = boot;
   if (config.debug) CONFIG.debug = true;
-
-  const widget = new CallSafeWidget(config, script);
+  const widget = new CallSafeWidget(config, scriptElement, widgetElement);
   if (config.debug) window.CallSafeWidget = widget;
+  return widget;
 }
 
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initializeWidget);
-} else {
-  initializeWidget();
-}
+window.__CallSafeCore = bootCore;
