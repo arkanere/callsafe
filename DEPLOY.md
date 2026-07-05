@@ -128,11 +128,17 @@ complete the ACME HTTP-01 challenge.
 The release must be built **on the droplet** (native amd64). Cross-building on
 Apple Silicon fails — see [Gotchas](#gotchas).
 
+Source is a **git clone of this repo** at `/opt/callsafe/build/repo`. A full
+clone gives the compiler its `protocol/` sibling (read at compile time as
+`../protocol/protocol.json`) for free.
+
 ```sh
-# On the droplet, with the source tree at /opt/callsafe/build/src
-cd /opt/callsafe/build/src
+# On the droplet. Do NOT run `mix deps.get` — OTP 27.2 can't reach hex.pm
+# (see Gotchas). deps/ and _build/ are cached in the clone and reused.
+cd /opt/callsafe/build/repo
+git pull
+cd elixir-signaling-server
 export MIX_ENV=prod
-mix deps.get
 mix release --overwrite
 
 # Swap the release in and restart
@@ -142,9 +148,14 @@ chown -R callsafe:callsafe /opt/callsafe/app
 systemctl restart callsafe-signaling
 ```
 
-> The app reads `protocol/protocol.json` at **compile time** from a sibling
-> directory (`../protocol/` relative to the project root), so that folder must
-> be present in the build tree alongside `elixir-signaling-server/`.
+> **Secrets never come from git.** Runtime config (JWT/TURN secrets, CORS, etc.)
+> lives only in `/opt/callsafe/env`, read by systemd as the service's
+> environment. Edit that file and restart to change credentials.
+>
+> **First-time seeding of `deps/`:** if the clone lacks `deps/` (fresh checkout)
+> and `mix deps.get` can't run under OTP 27.2, copy a cached `deps/` from a
+> prior build (or extract `deps-src.tar.gz`) into `elixir-signaling-server/`
+> before `mix release`.
 
 ## Frontend wiring (Vercel)
 
