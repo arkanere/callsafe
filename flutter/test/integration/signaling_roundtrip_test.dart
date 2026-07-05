@@ -41,7 +41,11 @@ void main() {
       webrtc = MockWebRTCPlatform();
       manager = CallManager(signaling, webrtc);
       await manager
-          .initialize(deviceType: DeviceType.mobile, deviceId: 'device-abc')
+          .initialize(
+            deviceType: DeviceType.mobile,
+            deviceId: 'device-abc',
+            getToken: () async => 'test-token',
+          )
           .run();
     });
 
@@ -72,13 +76,17 @@ void main() {
       expect(caps['canReceive'], ['audio']);
     });
 
-    test('call:accept is flat with callAttemptId and deviceType at root',
+    test('call:accept is flat with callAttemptId at root, no identity fields',
         () async {
       // Simulate incoming call to get a ringing session
       signaling.simulateMessage(MessageTypes.callIncoming, {
         'callAttemptId': 'call-xyz',
         'sourceId': 'web-client',
         'callType': 'voice',
+        'mediaCapabilities': {
+          'canSend': ['audio'],
+          'canReceive': ['audio'],
+        },
         'timestamp': DateTime.now().millisecondsSinceEpoch,
       });
       await Future.delayed(Duration.zero);
@@ -90,8 +98,10 @@ void main() {
       expect(msg!['type'], MessageTypes.callAccept);
       expect(msg.containsKey('payload'), isFalse);
       expect(msg['callAttemptId'], 'call-xyz');
-      expect(msg['deviceId'], 'device-abc');
-      expect(msg['deviceType'], 'mobile');
+      // v2: identity comes from the connection, not the payload
+      expect(msg.containsKey('deviceId'), isFalse);
+      expect(msg.containsKey('deviceType'), isFalse);
+      expect(msg['mediaCapabilities'], isA<Map>());
     });
 
     test('call:reject is flat with callAttemptId at root', () async {
@@ -99,6 +109,10 @@ void main() {
         'callAttemptId': 'call-rej',
         'sourceId': 'web-client',
         'callType': 'voice',
+        'mediaCapabilities': {
+          'canSend': ['audio'],
+          'canReceive': ['audio'],
+        },
         'timestamp': DateTime.now().millisecondsSinceEpoch,
       });
       await Future.delayed(Duration.zero);
@@ -110,14 +124,18 @@ void main() {
       expect(msg!['type'], MessageTypes.callReject);
       expect(msg.containsKey('payload'), isFalse);
       expect(msg['callAttemptId'], 'call-rej');
-      expect(msg['deviceType'], 'mobile');
+      expect(msg.containsKey('deviceType'), isFalse);
     });
 
-    test('call:end is flat with callAttemptId and initiator at root', () async {
+    test('call:end is flat with callAttemptId at root, no initiator', () async {
       signaling.simulateMessage(MessageTypes.callIncoming, {
         'callAttemptId': 'call-end',
         'sourceId': 'web-client',
         'callType': 'voice',
+        'mediaCapabilities': {
+          'canSend': ['audio'],
+          'canReceive': ['audio'],
+        },
         'timestamp': DateTime.now().millisecondsSinceEpoch,
       });
       await Future.delayed(Duration.zero);
@@ -130,7 +148,7 @@ void main() {
       expect(msg!['type'], MessageTypes.callEnd);
       expect(msg.containsKey('payload'), isFalse);
       expect(msg['callAttemptId'], 'call-end');
-      expect(msg['initiator'], isA<String>());
+      expect(msg.containsKey('initiator'), isFalse);
     });
 
     test('webrtc:ice-candidate is flat with callAttemptId and candidate at root',
@@ -139,6 +157,10 @@ void main() {
         'callAttemptId': 'call-ice',
         'sourceId': 'web-client',
         'callType': 'voice',
+        'mediaCapabilities': {
+          'canSend': ['audio'],
+          'canReceive': ['audio'],
+        },
         'timestamp': DateTime.now().millisecondsSinceEpoch,
       });
       await Future.delayed(Duration.zero);
@@ -167,6 +189,7 @@ void main() {
       final payload = DeviceConnectPayload(
         deviceType: DeviceType.mobile,
         deviceId: 'device-abc',
+        token: 'test-token',
         protocolVersion: protocolVersion,
         timestamp: 1000,
       );
@@ -196,7 +219,11 @@ void main() {
       webrtc = MockWebRTCPlatform();
       manager = CallManager(signaling, webrtc);
       await manager
-          .initialize(deviceType: DeviceType.mobile, deviceId: 'device-abc')
+          .initialize(
+            deviceType: DeviceType.mobile,
+            deviceId: 'device-abc',
+            getToken: () async => 'test-token',
+          )
           .run();
     });
 
@@ -209,6 +236,10 @@ void main() {
         'callAttemptId': 'call-in-1',
         'sourceId': 'embed-client',
         'callType': 'voice',
+        'mediaCapabilities': {
+          'canSend': ['audio'],
+          'canReceive': ['audio'],
+        },
         'timestamp': DateTime.now().millisecondsSinceEpoch,
       });
       await Future.delayed(Duration.zero);
@@ -224,6 +255,10 @@ void main() {
         'callAttemptId': 'call-vid',
         'sourceId': 'embed-client',
         'callType': 'video',
+        'mediaCapabilities': {
+          'canSend': ['audio', 'video'],
+          'canReceive': ['audio', 'video'],
+        },
         'timestamp': DateTime.now().millisecondsSinceEpoch,
       });
       await Future.delayed(Duration.zero);
@@ -236,13 +271,17 @@ void main() {
         'callAttemptId': 'call-acc',
         'sourceId': 'embed-client',
         'callType': 'voice',
+        'mediaCapabilities': {
+          'canSend': ['audio'],
+          'canReceive': ['audio'],
+        },
         'timestamp': DateTime.now().millisecondsSinceEpoch,
       });
       await Future.delayed(Duration.zero);
 
       signaling.simulateMessage(MessageTypes.callAccepted, {
         'callAttemptId': 'call-acc',
-        'acceptingDevice': 'mobile',
+        'acceptingDeviceId': 'device-web-1',
         'timestamp': DateTime.now().millisecondsSinceEpoch,
       });
       await Future.delayed(Duration.zero);
@@ -255,13 +294,17 @@ void main() {
         'callAttemptId': 'call-mine',
         'sourceId': 'embed-client',
         'callType': 'voice',
+        'mediaCapabilities': {
+          'canSend': ['audio'],
+          'canReceive': ['audio'],
+        },
         'timestamp': DateTime.now().millisecondsSinceEpoch,
       });
       await Future.delayed(Duration.zero);
 
       signaling.simulateMessage(MessageTypes.callAccepted, {
         'callAttemptId': 'call-other',
-        'acceptingDevice': 'mobile',
+        'acceptingDeviceId': 'device-web-1',
         'timestamp': DateTime.now().millisecondsSinceEpoch,
       });
       await Future.delayed(Duration.zero);
@@ -275,6 +318,10 @@ void main() {
         'callAttemptId': 'call-can',
         'sourceId': 'embed-client',
         'callType': 'voice',
+        'mediaCapabilities': {
+          'canSend': ['audio'],
+          'canReceive': ['audio'],
+        },
         'timestamp': DateTime.now().millisecondsSinceEpoch,
       });
       await Future.delayed(Duration.zero);
@@ -297,6 +344,10 @@ void main() {
         'callAttemptId': 'call-end',
         'sourceId': 'embed-client',
         'callType': 'voice',
+        'mediaCapabilities': {
+          'canSend': ['audio'],
+          'canReceive': ['audio'],
+        },
         'timestamp': DateTime.now().millisecondsSinceEpoch,
       });
       await Future.delayed(Duration.zero);
@@ -305,6 +356,7 @@ void main() {
         'callAttemptId': 'call-end',
         'duration': 45000,
         'reason': 'normal',
+        'endedBy': 'customer',
         'timestamp': DateTime.now().millisecondsSinceEpoch,
       });
       await Future.delayed(Duration.zero);
@@ -318,6 +370,10 @@ void main() {
         'callAttemptId': 'call-busy',
         'sourceId': 'embed-client',
         'callType': 'voice',
+        'mediaCapabilities': {
+          'canSend': ['audio'],
+          'canReceive': ['audio'],
+        },
         'timestamp': DateTime.now().millisecondsSinceEpoch,
       });
       await Future.delayed(Duration.zero);
@@ -338,6 +394,10 @@ void main() {
         'callAttemptId': 'call-unav',
         'sourceId': 'embed-client',
         'callType': 'voice',
+        'mediaCapabilities': {
+          'canSend': ['audio'],
+          'canReceive': ['audio'],
+        },
         'timestamp': DateTime.now().millisecondsSinceEpoch,
       });
       await Future.delayed(Duration.zero);
@@ -358,12 +418,17 @@ void main() {
         'callAttemptId': 'call-to',
         'sourceId': 'embed-client',
         'callType': 'voice',
+        'mediaCapabilities': {
+          'canSend': ['audio'],
+          'canReceive': ['audio'],
+        },
         'timestamp': DateTime.now().millisecondsSinceEpoch,
       });
       await Future.delayed(Duration.zero);
 
       signaling.simulateMessage(MessageTypes.callTimeout, {
         'callAttemptId': 'call-to',
+        'phase': 'ringing',
         'timeoutDuration': 30000,
         'timestamp': DateTime.now().millisecondsSinceEpoch,
       });
@@ -379,6 +444,10 @@ void main() {
         'callAttemptId': 'call-offer',
         'sourceId': 'embed-client',
         'callType': 'voice',
+        'mediaCapabilities': {
+          'canSend': ['audio'],
+          'canReceive': ['audio'],
+        },
         'timestamp': DateTime.now().millisecondsSinceEpoch,
       });
       await Future.delayed(Duration.zero);
@@ -407,6 +476,10 @@ void main() {
         'callAttemptId': 'call-ans',
         'sourceId': 'embed-client',
         'callType': 'voice',
+        'mediaCapabilities': {
+          'canSend': ['audio'],
+          'canReceive': ['audio'],
+        },
         'timestamp': DateTime.now().millisecondsSinceEpoch,
       });
       await Future.delayed(Duration.zero);
@@ -428,6 +501,10 @@ void main() {
         'callAttemptId': 'call-cand',
         'sourceId': 'embed-client',
         'callType': 'voice',
+        'mediaCapabilities': {
+          'canSend': ['audio'],
+          'canReceive': ['audio'],
+        },
         'timestamp': DateTime.now().millisecondsSinceEpoch,
       });
       await Future.delayed(Duration.zero);
@@ -464,7 +541,11 @@ void main() {
       final manager = CallManager(signaling, MockWebRTCPlatform());
 
       await signaling
-          .connect(deviceType: DeviceType.mobile, deviceId: 'dev')
+          .connect(
+            deviceType: DeviceType.mobile,
+            deviceId: 'dev',
+            getToken: () async => 'test-token',
+          )
           .run();
       await Future.delayed(Duration.zero);
 
@@ -477,7 +558,11 @@ void main() {
       final manager = CallManager(signaling, MockWebRTCPlatform());
 
       await signaling
-          .connect(deviceType: DeviceType.mobile, deviceId: 'dev')
+          .connect(
+            deviceType: DeviceType.mobile,
+            deviceId: 'dev',
+            getToken: () async => 'test-token',
+          )
           .run();
       await signaling.disconnect().run();
       await Future.delayed(Duration.zero);

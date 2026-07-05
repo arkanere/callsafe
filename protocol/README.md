@@ -16,14 +16,18 @@ companion (transport, auth, routing, flows).
 `protocol.json` is the **only hand-edited file**. Everything else is derived:
 
 ```
-protocol.json  ──generate-ts.js──────▶  index.ts     (TypeScript, @callsafe/protocol)
-               ──generate-kotlin.js──▶  Protocol.kt  (Kotlin, android-app)
+protocol.json  ──generate-ts.js──────▶  index.ts                 (TypeScript, @callsafe/protocol)
+               ──generate-kotlin.js──▶  Protocol.kt              (Kotlin, flutter/android)
+               ──generate-dart.js────▶  protocol_constants.dart
+                                        + protocol_enums.dart    (Dart, flutter/lib)
+               ──generate-swift.js───▶  Protocol.swift           (Swift, flutter/ios)
 ```
 
-- **Never edit `index.ts` or `Protocol.kt` by hand** — they are overwritten by
+- **Never edit the generated files by hand** — they are overwritten by
   the generators.
 - To change the protocol: edit `protocol.json`, then run `npm run generate`
-  (or `generate-ts` / `generate-kotlin` individually).
+  (or `generate-ts` / `generate-kotlin` / `generate-dart` / `generate-swift`
+  individually).
 - The Elixir signaling server consumes `protocol.json` directly for its
   validator, message metadata, and state-machine data.
 

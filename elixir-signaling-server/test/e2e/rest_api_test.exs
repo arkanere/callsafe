@@ -480,9 +480,9 @@ defmodule CallsafeSignaling.E2E.RestApiTest do
       assert message["token"] == push_token
 
       data = message["data"]
-      assert data["call_id"] == call_id
-      assert data["caller_id"] == caller_id
-      assert data["call_type"] == "voice"
+      assert data["callAttemptId"] == call_id
+      assert data["sourceId"] == caller_id
+      assert data["callType"] == "voice"
       assert is_binary(data["timestamp"])
 
       # Verify fcm_sent stat incremented
@@ -492,7 +492,7 @@ defmodule CallsafeSignaling.E2E.RestApiTest do
       TestClient.disconnect(caller)
     end
 
-    test "FCM request includes notification block with call type in title" do
+    test "FCM request is data-only with high Android priority" do
       biz = CallFixtures.uid("fcm3b_biz")
       agent_id = CallFixtures.uid("fcm3b_agent")
       caller_id = CallFixtures.uid("fcm3b_caller")
@@ -513,10 +513,10 @@ defmodule CallsafeSignaling.E2E.RestApiTest do
 
       assert {:ok, fcm_req} = MockFCMServer.await_request()
 
-      notification = fcm_req["message"]["notification"]
-      assert is_map(notification)
-      assert notification["title"] =~ "voice"
-      assert is_binary(notification["body"])
+      # Data-only: a notification block would land in the system tray in the
+      # background instead of waking onMessageReceived.
+      refute Map.has_key?(fcm_req["message"], "notification")
+      assert fcm_req["message"]["android"] == %{"priority" => "high"}
 
       TestClient.disconnect(caller)
     end

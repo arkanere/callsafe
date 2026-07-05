@@ -65,10 +65,10 @@ void main() {
     test('getMediaCapabilities deserializes response correctly', () async {
       final result = await platform.getMediaCapabilities().run();
 
-      expect(result.canSendAudio, true);
-      expect(result.canSendVideo, true);
-      expect(result.canReceiveAudio, true);
-      expect(result.canReceiveVideo, true);
+      expect(result.canSend, contains('audio'));
+      expect(result.canSend, contains('video'));
+      expect(result.canReceive, contains('audio'));
+      expect(result.canReceive, contains('video'));
     });
   });
 

@@ -1,50 +1,34 @@
 import 'protocol_enums.dart';
 
-/// Valid state transitions
+/// Valid state transitions (protocol v2 state machine)
 /// Maps current state -> allowed next states
 const Map<CallState, List<CallState>> stateTransitions = {
   CallState.initiated: [
     CallState.ringing,
-    CallState.busy,
     CallState.unavailable,
+    CallState.busy,
     CallState.cancelled,
     CallState.failed,
   ],
   CallState.ringing: [
     CallState.connecting,
-    CallState.timeout,
     CallState.cancelled,
+    CallState.unavailable,
+    CallState.timeout,
     CallState.failed,
   ],
   CallState.connecting: [
     CallState.connected,
-    CallState.cameraPermissionDenied,
+    CallState.ended,
+    CallState.timeout,
     CallState.failed,
-    CallState.cancelled,
   ],
   CallState.connected: [
     CallState.ended,
-    CallState.failed,
     CallState.escalationPending,
-    CallState.videoPausedByUser,
-    CallState.videoPausedBandwidth,
+    CallState.failed,
   ],
   CallState.escalationPending: [
-    CallState.connected,
-    CallState.ended,
-    CallState.failed,
-  ],
-  CallState.videoPausedByUser: [
-    CallState.connected,
-    CallState.ended,
-    CallState.failed,
-  ],
-  CallState.videoPausedBandwidth: [
-    CallState.connected,
-    CallState.ended,
-    CallState.failed,
-  ],
-  CallState.cameraPermissionDenied: [
     CallState.connected,
     CallState.ended,
     CallState.failed,

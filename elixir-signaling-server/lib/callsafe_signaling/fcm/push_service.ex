@@ -13,7 +13,7 @@ defmodule CallsafeSignaling.FCM.PushService do
 
   ## Parameters
     - device_token: FCM registration token for the target device
-    - payload: Notification data including call_id, caller_id, call_type
+    - payload: Data payload including callAttemptId, sourceId, callType
 
   ## Returns
     - {:ok, response} on success
@@ -38,11 +38,13 @@ defmodule CallsafeSignaling.FCM.PushService do
   Send incoming call notification to device.
   """
   def notify_incoming_call(device_token, call_id, caller_id, call_type) do
+    # Field names match the v2 protocol's call:incoming payload; timestamps
+    # are ms epoch, consistent with protocol messages.
     payload = %{
-      call_id: call_id,
-      caller_id: caller_id,
-      call_type: to_string(call_type),
-      timestamp: DateTime.utc_now() |> DateTime.to_unix()
+      callAttemptId: call_id,
+      sourceId: caller_id,
+      callType: to_string(call_type),
+      timestamp: System.system_time(:millisecond)
     }
 
     send_notification(device_token, payload)
@@ -64,11 +66,15 @@ defmodule CallsafeSignaling.FCM.PushService do
       {"Content-Type", "application/json"}
     ]
 
+    # Data-only message: on Android a `notification` block would be delivered
+    # to the system tray in the background instead of onMessageReceived, which
+    # breaks the wake -> connect -> re-delivered call:incoming flow. High
+    # priority is required for timely delivery in Doze (ring timeout is 30s).
     body = %{
       message: %{
         token: device_token,
         data: stringify_values(payload),
-        notification: build_notification(payload)
+        android: %{priority: "high"}
       }
     }
 
@@ -83,11 +89,11 @@ defmodule CallsafeSignaling.FCM.PushService do
         :telemetry.execute(
           [:callsafe_signaling, :fcm, :notification, :sent],
           %{duration: duration},
-          %{call_id: payload.call_id, call_type: payload.call_type}
+          %{call_id: payload.callAttemptId, call_type: payload.callType}
         )
 
         Logger.debug("FCM notification sent successfully",
-          call_id: payload.call_id,
+          call_id: payload.callAttemptId,
           duration_ms: duration
         )
 
@@ -99,13 +105,13 @@ defmodule CallsafeSignaling.FCM.PushService do
         Logger.warning("FCM request failed",
           status: status,
           response: inspect(response_body),
-          call_id: payload.call_id
+          call_id: payload.callAttemptId
         )
 
         :telemetry.execute(
           [:callsafe_signaling, :fcm, :notification, :failed],
           %{count: 1},
-          %{status: status, call_id: payload.call_id}
+          %{status: status, call_id: payload.callAttemptId}
         )
 
         {:error, {:fcm_error, status, response_body}}
@@ -115,7 +121,7 @@ defmodule CallsafeSignaling.FCM.PushService do
 
         Logger.error("FCM request error",
           error: inspect(reason),
-          call_id: payload.call_id
+          call_id: payload.callAttemptId
         )
 
         :telemetry.execute(
@@ -126,17 +132,6 @@ defmodule CallsafeSignaling.FCM.PushService do
 
         {:error, reason}
     end
-  end
-
-  defp build_notification(payload) do
-    call_type = Map.get(payload, :call_type, "voice")
-
-    %{
-      title: "Incoming #{call_type} call",
-      body: "Tap to answer",
-      sound: "default",
-      badge: 1
-    }
   end
 
   defp stringify_values(map) do

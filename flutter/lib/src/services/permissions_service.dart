@@ -1,5 +1,6 @@
 import 'package:fpdart/fpdart.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:permission_handler/permission_handler.dart' as permission_handler;
 
 /// Service for handling runtime permissions
 /// Wraps permission_handler with fpdart Task for consistency
@@ -72,7 +73,7 @@ class PermissionsService {
   /// Open app settings so user can manually grant permissions
   Task<bool> openAppSettings() {
     return Task(() async {
-      return await openAppSettings();
+      return await permission_handler.openAppSettings();
     });
   }
 

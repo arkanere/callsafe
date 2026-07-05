@@ -1,4 +1,5 @@
 import 'package:flutter/services.dart';
+import 'package:fpdart/fpdart.dart' show unit;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:callsafe_mobile/src/platform/platform.dart';
 import 'package:callsafe_mobile/src/protocol/protocol.dart';
@@ -53,9 +54,9 @@ void main() {
 
       // Verify offer structure
       expect(offer.type, 'offer');
-      expect(offer.sdp.isNotEmpty, true);
-      expect(offer.sdp.contains('v=0'), true, reason: 'SDP must contain version');
-      expect(offer.sdp.contains('m=audio'),
+      expect(offer.sdp!.isNotEmpty, true);
+      expect(offer.sdp!.contains('v=0'), true, reason: 'SDP must contain version');
+      expect(offer.sdp!.contains('m=audio'),
           anyOf(true, false)); // May or may not have audio line
 
       await platform.closePeerConnection('call-offer-test').run();
@@ -100,7 +101,7 @@ a=rtpmap:111 opus/48000/2
               throw AssertionError('Platform failed to create answer: $e'));
 
       expect(answer.type, 'answer');
-      expect(answer.sdp.isNotEmpty, true);
+      expect(answer.sdp!.isNotEmpty, true);
 
       await platform.closePeerConnection('call-answer-test').run();
     });
@@ -136,14 +137,15 @@ a=rtpmap:111 opus/48000/2
               'Platform failed to get media capabilities: $e'));
 
       // At minimum, mobile devices should support audio
-      expect(caps.canSendAudio || caps.canReceiveAudio, true,
-          reason: 'Mobile device must support audio');
+      expect(
+        caps.canSend.contains('audio') || caps.canReceive.contains('audio'),
+        true,
+        reason: 'Mobile device must support audio',
+      );
 
       // Capabilities should be consistent
-      expect(caps.canSendAudio, isA<bool>());
-      expect(caps.canSendVideo, isA<bool>());
-      expect(caps.canReceiveAudio, isA<bool>());
-      expect(caps.canReceiveVideo, isA<bool>());
+      expect(caps.canSend, isA<List<String>>());
+      expect(caps.canReceive, isA<List<String>>());
     });
 
     test('Platform must handle audio/video enable/disable', () async {
@@ -243,7 +245,7 @@ a=rtpmap:111 opus/48000/2
 
       // Dismiss notification
       await platform
-          .dismissIncomingCallNotification('notification-test')
+          .clearNotification('notification-test')
           .run()
           .catchError((e) => throw AssertionError(
               'Platform failed to dismiss notification: $e'));

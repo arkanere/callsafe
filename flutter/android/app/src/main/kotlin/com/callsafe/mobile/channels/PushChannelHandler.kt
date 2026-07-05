@@ -8,6 +8,7 @@ import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import com.callsafe.mobile.fcm.CallSafeFirebaseMessagingService
+import org.json.JSONObject
 
 /**
  * Push notification platform channel handler
@@ -51,6 +52,9 @@ class PushChannelHandler(
             "getToken" -> {
                 getToken(result)
             }
+            "getInitialMessage" -> {
+                result.success(takePendingCall())
+            }
             "sendTokenToServer" -> {
                 val token = call.argument<String>("token")
                 if (token != null) {
@@ -91,6 +95,41 @@ class PushChannelHandler(
                 Log.e(TAG, "Failed to get FCM token", task.exception)
                 result.error("TOKEN_ERROR", "Failed to get FCM token", task.exception?.message)
             }
+        }
+    }
+
+    /// Return-and-clear the call push cached while the app was killed
+    /// (see CallSafeFirebaseMessagingService). Null if absent or stale.
+    private fun takePendingCall(): Map<String, Any?>? {
+        val prefs = context.getSharedPreferences(
+            CallSafeFirebaseMessagingService.PREFS_NAME, Context.MODE_PRIVATE
+        )
+        // The app is in the foreground now; the wake notification is obsolete.
+        (context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager)
+            .cancel(CallSafeFirebaseMessagingService.NOTIFICATION_ID)
+
+        val json = prefs.getString(CallSafeFirebaseMessagingService.PENDING_CALL_KEY, null)
+            ?: return null
+        val receivedAt =
+            prefs.getLong(CallSafeFirebaseMessagingService.PENDING_CALL_RECEIVED_AT_KEY, 0L)
+
+        prefs.edit()
+            .remove(CallSafeFirebaseMessagingService.PENDING_CALL_KEY)
+            .remove(CallSafeFirebaseMessagingService.PENDING_CALL_RECEIVED_AT_KEY)
+            .apply()
+
+        val age = System.currentTimeMillis() - receivedAt
+        if (age > CallSafeFirebaseMessagingService.PENDING_CALL_MAX_AGE_MS) {
+            Log.d(TAG, "Pending call is stale (${age}ms), ignoring")
+            return null
+        }
+
+        return try {
+            val obj = JSONObject(json)
+            obj.keys().asSequence().associateWith { obj.get(it) }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to parse pending call", e)
+            null
         }
     }
 

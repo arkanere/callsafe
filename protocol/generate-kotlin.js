@@ -7,7 +7,7 @@
  * protocol enum. Everything is derived generically from protocol.json, so
  * adding a message or enum there is automatically reflected here.
  *
- * Output: android-app/app/src/main/java/tech/callsafe/business/protocol/Protocol.kt
+ * Output: flutter/android/app/src/main/kotlin/com/callsafe/mobile/protocol/Protocol.kt
  * To regenerate: node generate-kotlin.js
  */
 
@@ -18,7 +18,7 @@ const protocol = JSON.parse(
   fs.readFileSync(path.join(__dirname, 'protocol.json'), 'utf-8')
 );
 
-let out = `package tech.callsafe.business.protocol
+let out = `package com.callsafe.mobile.protocol
 
 /**
  * CallSafe WebRTC Signaling Protocol Constants
@@ -72,8 +72,8 @@ out += `}
 `;
 
 const outputDir = path.join(
-  __dirname, '..', 'android-app', 'app', 'src', 'main',
-  'java', 'tech', 'callsafe', 'business', 'protocol'
+  __dirname, '..', 'flutter', 'android', 'app', 'src', 'main',
+  'kotlin', 'com', 'callsafe', 'mobile', 'protocol'
 );
 const outputPath = path.join(outputDir, 'Protocol.kt');
 

@@ -8,10 +8,18 @@ void main() {
       expect(MessageTypes.callAccept, 'call:accept');
       expect(MessageTypes.deviceConnect, 'device:connect');
       expect(MessageTypes.webrtcOffer, 'webrtc:offer');
+      // v2 additions
+      expect(MessageTypes.ping, 'ping');
+      expect(MessageTypes.pong, 'pong');
+      expect(MessageTypes.callInitiated, 'call:initiated');
+      expect(MessageTypes.callCancel, 'call:cancel');
+      expect(MessageTypes.callReconnect, 'call:reconnect');
+      expect(MessageTypes.escalationRequested, 'escalation:requested');
+      expect(MessageTypes.callDowngraded, 'call:downgraded');
     });
 
     test('Protocol version is defined', () {
-      expect(protocolVersion, '1.0.0');
+      expect(protocolVersion, '2.0.0');
     });
   });
 
@@ -36,6 +44,25 @@ void main() {
       expect(CallType.fromString('voice'), CallType.voice);
       expect(CallType.fromString('video'), CallType.video);
       expect(() => CallType.fromString('invalid'), throwsArgumentError);
+    });
+
+    test('Role enum values (v2: replaces CallInitiator)', () {
+      expect(Role.customer.value, 'customer');
+      expect(Role.business.value, 'business');
+    });
+
+    test('v2 reason enums', () {
+      expect(CallCancelReason.answeredElsewhere.value, 'answered_elsewhere');
+      expect(CallUnavailableReason.allDevicesRejected.value,
+          'all_devices_rejected');
+      expect(TimeoutPhase.ringing.value, 'ringing');
+      expect(ErrorCode.deviceMismatch.value, 'device_mismatch');
+    });
+
+    test('CallState video-pause states removed in v2', () {
+      expect(() => CallState.fromString('video_paused_by_user'),
+          throwsArgumentError);
+      expect(CallState.escalationPending.value, 'escalation_pending');
     });
   });
 

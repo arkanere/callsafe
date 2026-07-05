@@ -23,7 +23,7 @@ class SignalingError {
   String toString() => 'SignalingError: $message${code != null ? ' (code: $code)' : ''}';
 }
 
-const _heartbeatInterval = Duration(seconds: 30);
+const _heartbeatInterval = Duration(seconds: 25);
 const _heartbeatTimeout = Duration(seconds: 5);
 const _maxReconnectAttempts = 5;
 const _baseReconnectDelay = Duration(seconds: 1);
@@ -51,6 +51,7 @@ class SignalingClient {
   DeviceType? _deviceType;
   String? _deviceId;
   String? _pushToken;
+  Future<String> Function()? _getToken;
 
   SignalingClient(this.serverUrl);
 
@@ -60,9 +61,12 @@ class SignalingClient {
   Stream<SignalingError> get errorStream => _errorController.stream;
 
   /// Connect to signaling server
+  /// [getToken] is invoked on every (re)connection attempt so the short-lived
+  /// auth token is always fresh.
   Task<Unit> connect({
     required DeviceType deviceType,
     required String deviceId,
+    required Future<String> Function() getToken,
     String? pushToken,
   }) {
     return Task(() async {
@@ -71,6 +75,7 @@ class SignalingClient {
       _deviceType = deviceType;
       _deviceId = deviceId;
       _pushToken = pushToken;
+      _getToken = getToken;
       _intentionallyClosed = false;
 
       await _connect();
@@ -82,6 +87,8 @@ class SignalingClient {
     _updateState(SignalingState.connecting);
 
     try {
+      final token = await _getToken!();
+
       _channel = WebSocketChannel.connect(Uri.parse(serverUrl));
       await _channel!.ready;
 
@@ -94,7 +101,7 @@ class SignalingClient {
       _reconnectAttempts = 0;
       _updateState(SignalingState.connected);
       _startHeartbeat();
-      _sendDeviceConnect();
+      _sendDeviceConnect(token);
     } catch (e) {
       _updateState(SignalingState.error);
       _errorController.add(SignalingError(e.toString()));
@@ -102,26 +109,26 @@ class SignalingClient {
     }
   }
 
-  void _sendDeviceConnect() {
+  void _sendDeviceConnect(String token) {
     if (_deviceType == null || _deviceId == null) return;
     final payload = DeviceConnectPayload(
       deviceType: _deviceType!,
       deviceId: _deviceId!,
-      pushToken: _pushToken,
+      token: token,
       protocolVersion: protocolVersion,
+      pushToken: _pushToken,
       timestamp: DateTime.now().millisecondsSinceEpoch,
     );
     emit(MessageTypes.deviceConnect, payload.toJson());
   }
 
   /// Disconnect from signaling server
-  Task<Unit> disconnect({String? deviceId}) {
+  Task<Unit> disconnect() {
     return Task(() async {
       _intentionallyClosed = true;
 
-      if (deviceId != null && _currentState == SignalingState.connected) {
+      if (_currentState == SignalingState.connected) {
         final payload = DeviceDisconnectPayload(
-          deviceId: deviceId,
           timestamp: DateTime.now().millisecondsSinceEpoch,
         );
         emit(MessageTypes.deviceDisconnect, payload.toJson());
@@ -155,6 +162,21 @@ class SignalingClient {
     if (type == 'pong') {
       _onPong();
       return;
+    }
+
+    if (type == MessageTypes.error) {
+      final code = msg['code'] as String?;
+      _errorController.add(
+        SignalingError(msg['message'] as String? ?? 'server error', code: code),
+      );
+      // Fatal auth/version errors: reconnecting with the same credentials
+      // cannot succeed, so stop trying.
+      const fatalCodes = {'auth_failed', 'device_mismatch', 'protocol_incompatible'};
+      if (fatalCodes.contains(code)) {
+        _intentionallyClosed = true;
+        _close();
+        return;
+      }
     }
 
     final payload = Map<String, dynamic>.from(msg)..remove('type');
@@ -252,6 +274,7 @@ class MockSignalingClient extends SignalingClient {
   Task<Unit> connect({
     required DeviceType deviceType,
     required String deviceId,
+    required Future<String> Function() getToken,
     String? pushToken,
   }) {
     return Task(() async {
@@ -268,7 +291,7 @@ class MockSignalingClient extends SignalingClient {
   }
 
   @override
-  Task<Unit> disconnect({String? deviceId}) {
+  Task<Unit> disconnect() {
     return Task(() async {
       _mockState = SignalingState.disconnected;
       _mockStateController.add(_mockState);

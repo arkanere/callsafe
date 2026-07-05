@@ -40,6 +40,7 @@ class CallManager extends StateNotifier<CallManagerState> {
   Task<Unit> initialize({
     required DeviceType deviceType,
     required String deviceId,
+    required Future<String> Function() getToken,
     String? pushToken,
   }) {
     return Task(() async {
@@ -55,6 +56,7 @@ class CallManager extends StateNotifier<CallManagerState> {
           .connect(
             deviceType: deviceType,
             deviceId: deviceId,
+            getToken: getToken,
             pushToken: pushToken,
           )
           .run();
@@ -103,7 +105,6 @@ class CallManager extends StateNotifier<CallManagerState> {
       final payload = CallInitiatePayload(
         callAttemptId: callAttemptId,
         handle: handle,
-        sourceId: state.deviceId,
         callType: callType,
         mediaCapabilities: capabilities,
         timestamp: DateTime.now().millisecondsSinceEpoch,
@@ -132,17 +133,30 @@ class CallManager extends StateNotifier<CallManagerState> {
 
       final session = state.currentCall!;
 
+      // Incoming sessions have no local capabilities yet; derive them from
+      // the call type (server assumes audio-only if omitted).
+      final capabilities = session.localCapabilities ??
+          MediaCapabilities(
+            canSend: session.callType == CallType.video
+                ? ['audio', 'video']
+                : ['audio'],
+            canReceive: session.callType == CallType.video
+                ? ['audio', 'video']
+                : ['audio'],
+          );
+
       // Update state to connecting
       state = state.copyWith(
-        currentCall: session.copyWith(state: CallState.connecting),
+        currentCall: session.copyWith(
+          state: CallState.connecting,
+          localCapabilities: capabilities,
+        ),
       );
 
       // Send call:accept message
       final payload = CallAcceptPayload(
         callAttemptId: session.callAttemptId,
-        deviceType: state.deviceType!,
-        deviceId: state.deviceId!,
-        mediaCapabilities: session.localCapabilities,
+        mediaCapabilities: capabilities,
         timestamp: DateTime.now().millisecondsSinceEpoch,
       );
 
@@ -175,7 +189,6 @@ class CallManager extends StateNotifier<CallManagerState> {
       // Send call:reject message
       final payload = CallRejectPayload(
         callAttemptId: session.callAttemptId,
-        deviceType: state.deviceType!,
         reason: reason,
         timestamp: DateTime.now().millisecondsSinceEpoch,
       );
@@ -190,6 +203,8 @@ class CallManager extends StateNotifier<CallManagerState> {
   }
 
   /// End active call
+  /// An outgoing call that has not been accepted yet is cancelled
+  /// (call:cancel); anything else is ended (call:end).
   Task<Unit> endCall({CallEndReason? reason}) {
     return Task(() async {
       final session = state.currentCall;
@@ -197,25 +212,35 @@ class CallManager extends StateNotifier<CallManagerState> {
         throw const CallError('No active call to end');
       }
 
-      // Send call:end message
-      final payload = CallEndPayload(
-        callAttemptId: session.callAttemptId,
-        initiator: state.deviceType == DeviceType.mobile
-            ? CallInitiator.customer
-            : CallInitiator.business,
-        reason: reason,
-        timestamp: DateTime.now().millisecondsSinceEpoch,
-      );
+      final isOutgoingPreAccept = session.sourceId == state.deviceId &&
+          (session.state == CallState.initiated ||
+              session.state == CallState.ringing);
 
-      _signaling.emit(MessageTypes.callEnd, payload.toJson());
+      if (isOutgoingPreAccept) {
+        _signaling.emit(
+          MessageTypes.callCancel,
+          CallCancelPayload(
+            callAttemptId: session.callAttemptId,
+            timestamp: DateTime.now().millisecondsSinceEpoch,
+          ).toJson(),
+        );
+      } else {
+        _signaling.emit(
+          MessageTypes.callEnd,
+          CallEndPayload(
+            callAttemptId: session.callAttemptId,
+            timestamp: DateTime.now().millisecondsSinceEpoch,
+          ).toJson(),
+        );
+      }
 
       // Close WebRTC connection
       await _webrtc.closePeerConnection(session.callAttemptId).run();
 
-      // Update state
+      // Update state (reason is kept for local call history only)
       state = _endCall(
         session.copyWith(endReason: reason),
-        CallState.ended,
+        isOutgoingPreAccept ? CallState.cancelled : CallState.ended,
       );
 
       return unit;
@@ -243,7 +268,6 @@ class CallManager extends StateNotifier<CallManagerState> {
       _signaling.emit(MessageTypes.mediaToggle, MediaTogglePayload(
         callAttemptId: session.callAttemptId,
         action: action,
-        success: true,
         timestamp: DateTime.now().millisecondsSinceEpoch,
       ).toJson());
 
@@ -262,7 +286,6 @@ class CallManager extends StateNotifier<CallManagerState> {
       _signaling.emit(MessageTypes.mediaToggle, MediaTogglePayload(
         callAttemptId: session.callAttemptId,
         action: MediaToggleAction.flipCamera,
-        success: true,
         timestamp: DateTime.now().millisecondsSinceEpoch,
       ).toJson());
 
@@ -374,6 +397,7 @@ class CallManager extends StateNotifier<CallManagerState> {
   /// Setup message handlers
   void _setupMessageHandlers() {
     _webrtc.onConnectionStateChange((callAttemptId, connectionState) {
+      if (!mounted) return;
       final session = state.currentCall;
       if (session?.callAttemptId != callAttemptId) return;
 
@@ -392,8 +416,14 @@ class CallManager extends StateNotifier<CallManagerState> {
         case MessageTypes.callIncoming:
           _handleCallIncoming(CallIncomingPayload.fromJson(payload));
           break;
+        case MessageTypes.callInitiated:
+          _handleCallInitiated(CallInitiatedPayload.fromJson(payload));
+          break;
         case MessageTypes.callAccepted:
           _handleCallAccepted(CallAcceptedPayload.fromJson(payload));
+          break;
+        case MessageTypes.callFailed:
+          _handleCallFailed(CallFailedPayload.fromJson(payload));
           break;
         case MessageTypes.callCancelled:
           _handleCallCancelled(CallCancelledPayload.fromJson(payload));
@@ -445,10 +475,31 @@ class CallManager extends StateNotifier<CallManagerState> {
       callType: payload.callType,
       state: CallState.ringing,
       sourceId: payload.sourceId,
+      remoteCapabilities: payload.mediaCapabilities,
       startTime: DateTime.fromMillisecondsSinceEpoch(payload.timestamp),
     );
 
     state = state.copyWith(currentCall: session);
+  }
+
+  /// Handle call initiated ack (outgoing call: devices are now ringing)
+  void _handleCallInitiated(CallInitiatedPayload payload) {
+    final session = state.currentCall;
+    if (session?.callAttemptId != payload.callAttemptId) return;
+    if (session!.state != CallState.initiated) return;
+
+    state = state.copyWith(
+      currentCall: session.copyWith(state: CallState.ringing),
+    );
+  }
+
+  /// Handle call failed message
+  void _handleCallFailed(CallFailedPayload payload) {
+    final session = state.currentCall;
+    if (session?.callAttemptId != payload.callAttemptId) return;
+
+    _webrtc.closePeerConnection(session!.callAttemptId).run();
+    state = _endCall(session, CallState.failed);
   }
 
   /// Handle call accepted message
@@ -457,7 +508,10 @@ class CallManager extends StateNotifier<CallManagerState> {
     if (session?.callAttemptId != payload.callAttemptId) return;
 
     state = state.copyWith(
-      currentCall: session!.copyWith(state: CallState.connecting),
+      currentCall: session!.copyWith(
+        state: CallState.connecting,
+        remoteCapabilities: payload.mediaCapabilities ?? session.remoteCapabilities,
+      ),
     );
 
     // Caller creates and sends WebRTC offer now that callee has accepted

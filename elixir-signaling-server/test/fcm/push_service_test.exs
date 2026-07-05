@@ -13,16 +13,16 @@ defmodule CallsafeSignaling.FCM.PushServiceTest do
       # TokenServer starts without FCM_SERVICE_ACCOUNT_JSON in test env
       result =
         PushService.send_notification("device_token_123", %{
-          call_id: "call_123",
-          caller_id: "device_456",
-          call_type: "voice"
+          callAttemptId: "call_123",
+          sourceId: "device_456",
+          callType: "voice"
         })
 
       assert result == {:error, :fcm_not_configured}
     end
 
     test "validates device token is a string" do
-      payload = %{call_id: "call_123", caller_id: "device_456", call_type: "voice"}
+      payload = %{callAttemptId: "call_123", sourceId: "device_456", callType: "voice"}
 
       # Should raise FunctionClauseError with nil token
       assert_raise FunctionClauseError, fn ->

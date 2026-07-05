@@ -11,6 +11,7 @@ class PushMethodChannel implements PushPlatform {
       EventChannel('com.callsafe.push.events');
 
   void Function(Map<String, dynamic>)? _notificationCallback;
+  void Function(String)? _tokenRefreshCallback;
   StreamSubscription<dynamic>? _eventSubscription;
 
   @override
@@ -37,7 +38,24 @@ class PushMethodChannel implements PushPlatform {
     _setupEventChannel();
   }
 
+  @override
+  void onTokenRefresh(void Function(String token) callback) {
+    _tokenRefreshCallback = callback;
+    _setupEventChannel();
+  }
+
+  @override
+  Task<Map<String, dynamic>?> getInitialMessage() {
+    return Task(() async {
+      final result =
+          await _channel.invokeMethod<Map<dynamic, dynamic>>('getInitialMessage');
+      if (result == null) return null;
+      return result.map((key, value) => MapEntry(key.toString(), value));
+    });
+  }
+
   void _setupEventChannel() {
+    if (_eventSubscription != null) return;
     _eventSubscription = _eventChannel.receiveBroadcastStream().listen(
       (dynamic event) {
         if (event is Map) {
@@ -57,11 +75,11 @@ class PushMethodChannel implements PushPlatform {
               _notificationCallback?.call(stringMap);
             }
           } else if (type == 'tokenRefresh') {
-            // Token refresh event
+            // Surface to the app: it re-registers by reconnecting with the
+            // new pushToken on device:connect.
             final token = event['token'] as String?;
             if (token != null) {
-              // Send token to server
-              _channel.invokeMethod('sendTokenToServer', {'token': token});
+              _tokenRefreshCallback?.call(token);
             }
           }
         }
@@ -104,5 +122,6 @@ class PushMethodChannel implements PushPlatform {
     _eventSubscription?.cancel();
     _eventSubscription = null;
     _notificationCallback = null;
+    _tokenRefreshCallback = null;
   }
 }

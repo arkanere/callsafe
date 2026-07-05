@@ -56,3 +56,6 @@ ios/Flutter/ephemeral/
 *.freezed.dart
 *.g.dart
 *.mocks.dart
+
+# Gradle build cache
+android/.gradle/

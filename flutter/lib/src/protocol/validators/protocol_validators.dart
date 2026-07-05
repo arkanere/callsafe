@@ -64,11 +64,11 @@ class ProtocolValidators {
     }
   }
 
-  /// Call initiator validation
-  static bool isValidCallInitiator(dynamic value) {
+  /// Role validation
+  static bool isValidRole(dynamic value) {
     if (value is! String) return false;
     try {
-      CallInitiator.fromString(value);
+      Role.fromString(value);
       return true;
     } catch (_) {
       return false;
@@ -121,7 +121,7 @@ class ValidationResult {
 class MessageSchemas {
   static const callInitiate = MessageSchema(
     required: ['callAttemptId', 'handle', 'callType', 'mediaCapabilities'],
-    optional: ['sourceId', 'timestamp'],
+    optional: ['timestamp'],
     validators: {
       'callAttemptId': ProtocolValidators.isValidUuid,
       'handle': ProtocolValidators.isValidHandle,
@@ -129,16 +129,15 @@ class MessageSchemas {
   );
 
   static const callAccept = MessageSchema(
-    required: ['callAttemptId', 'deviceType', 'deviceId'],
+    required: ['callAttemptId'],
     optional: ['mediaCapabilities', 'timestamp'],
     validators: {
       'callAttemptId': ProtocolValidators.isValidUuid,
-      'deviceId': ProtocolValidators.isValidDeviceId,
     },
   );
 
   static const callReject = MessageSchema(
-    required: ['callAttemptId', 'deviceType'],
+    required: ['callAttemptId'],
     optional: ['reason', 'timestamp'],
     validators: {
       'callAttemptId': ProtocolValidators.isValidUuid,
@@ -146,39 +145,49 @@ class MessageSchemas {
   );
 
   static const callEnd = MessageSchema(
-    required: ['callAttemptId', 'initiator'],
-    optional: ['reason', 'timestamp'],
+    required: ['callAttemptId'],
+    optional: ['timestamp'],
+    validators: {
+      'callAttemptId': ProtocolValidators.isValidUuid,
+    },
+  );
+
+  static const callCancel = MessageSchema(
+    required: ['callAttemptId'],
+    optional: ['timestamp'],
     validators: {
       'callAttemptId': ProtocolValidators.isValidUuid,
     },
   );
 
   static const deviceConnect = MessageSchema(
-    required: ['deviceType', 'deviceId'],
-    optional: ['pushToken', 'protocolVersion', 'timestamp'],
+    required: ['deviceType', 'deviceId', 'token', 'protocolVersion'],
+    optional: ['pushToken', 'timestamp'],
     validators: {
       'deviceId': ProtocolValidators.isValidDeviceId,
+      'protocolVersion': ProtocolValidators.isValidProtocolVersion,
     },
   );
 
   static const deviceStatus = MessageSchema(
-    required: ['deviceId', 'status'],
+    required: ['status'],
     optional: ['timestamp'],
     validators: {
-      'deviceId': ProtocolValidators.isValidDeviceId,
+      'status': ProtocolValidators.isValidDeviceStatus,
     },
   );
 
   static const mediaToggle = MessageSchema(
-    required: ['callAttemptId', 'action', 'success'],
+    required: ['callAttemptId', 'action'],
     optional: ['timestamp'],
     validators: {
       'callAttemptId': ProtocolValidators.isValidUuid,
+      'action': ProtocolValidators.isValidMediaToggleAction,
     },
   );
 
   static const callEscalate = MessageSchema(
-    required: ['callAttemptId', 'requestedBy', 'mediaCapabilities'],
+    required: ['callAttemptId', 'mediaCapabilities'],
     optional: ['timestamp'],
     validators: {
       'callAttemptId': ProtocolValidators.isValidUuid,
@@ -186,7 +195,7 @@ class MessageSchemas {
   );
 
   static const callDowngrade = MessageSchema(
-    required: ['callAttemptId', 'requestedBy'],
+    required: ['callAttemptId'],
     optional: ['reason', 'timestamp'],
     validators: {
       'callAttemptId': ProtocolValidators.isValidUuid,
@@ -204,6 +213,8 @@ class MessageSchemas {
         return callReject;
       case 'call:end':
         return callEnd;
+      case 'call:cancel':
+        return callCancel;
       case 'device:connect':
         return deviceConnect;
       case 'device:status':

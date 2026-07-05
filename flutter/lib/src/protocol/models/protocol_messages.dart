@@ -56,7 +56,6 @@ class CallInitiatePayload with _$CallInitiatePayload {
   const factory CallInitiatePayload({
     required String callAttemptId,
     required String handle,
-    String? sourceId,
     required CallType callType,
     required MediaCapabilities mediaCapabilities,
     int? timestamp,
@@ -70,8 +69,6 @@ class CallInitiatePayload with _$CallInitiatePayload {
 class CallAcceptPayload with _$CallAcceptPayload {
   const factory CallAcceptPayload({
     required String callAttemptId,
-    required DeviceType deviceType,
-    required String deviceId,
     MediaCapabilities? mediaCapabilities,
     int? timestamp,
   }) = _CallAcceptPayload;
@@ -84,7 +81,6 @@ class CallAcceptPayload with _$CallAcceptPayload {
 class CallRejectPayload with _$CallRejectPayload {
   const factory CallRejectPayload({
     required String callAttemptId,
-    required DeviceType deviceType,
     String? reason,
     int? timestamp,
   }) = _CallRejectPayload;
@@ -97,8 +93,6 @@ class CallRejectPayload with _$CallRejectPayload {
 class CallEndPayload with _$CallEndPayload {
   const factory CallEndPayload({
     required String callAttemptId,
-    required CallInitiator initiator,
-    CallEndReason? reason,
     int? timestamp,
   }) = _CallEndPayload;
 
@@ -119,11 +113,35 @@ class CallFailedPayload with _$CallFailedPayload {
 }
 
 @freezed
+class CallInitiatedPayload with _$CallInitiatedPayload {
+  const factory CallInitiatedPayload({
+    required String callAttemptId,
+    required int devicesNotified,
+    required int timestamp,
+  }) = _CallInitiatedPayload;
+
+  factory CallInitiatedPayload.fromJson(Map<String, dynamic> json) =>
+      _$CallInitiatedPayloadFromJson(json);
+}
+
+@freezed
+class CallCancelPayload with _$CallCancelPayload {
+  const factory CallCancelPayload({
+    required String callAttemptId,
+    int? timestamp,
+  }) = _CallCancelPayload;
+
+  factory CallCancelPayload.fromJson(Map<String, dynamic> json) =>
+      _$CallCancelPayloadFromJson(json);
+}
+
+@freezed
 class CallIncomingPayload with _$CallIncomingPayload {
   const factory CallIncomingPayload({
     required String callAttemptId,
     required String sourceId,
     required CallType callType,
+    required MediaCapabilities mediaCapabilities,
     required int timestamp,
   }) = _CallIncomingPayload;
 
@@ -135,7 +153,8 @@ class CallIncomingPayload with _$CallIncomingPayload {
 class CallAcceptedPayload with _$CallAcceptedPayload {
   const factory CallAcceptedPayload({
     required String callAttemptId,
-    required DeviceType acceptingDevice,
+    required String acceptingDeviceId,
+    MediaCapabilities? mediaCapabilities,
     required int timestamp,
   }) = _CallAcceptedPayload;
 
@@ -160,7 +179,8 @@ class CallEndedPayload with _$CallEndedPayload {
   const factory CallEndedPayload({
     required String callAttemptId,
     required int duration,
-    CallEndReason? reason,
+    required CallEndReason reason,
+    required Role endedBy,
     required int timestamp,
   }) = _CallEndedPayload;
 
@@ -196,6 +216,7 @@ class CallUnavailablePayload with _$CallUnavailablePayload {
 class CallTimeoutPayload with _$CallTimeoutPayload {
   const factory CallTimeoutPayload({
     required String callAttemptId,
+    required TimeoutPhase phase,
     required int timeoutDuration,
     required int timestamp,
   }) = _CallTimeoutPayload;
@@ -253,8 +274,9 @@ class DeviceConnectPayload with _$DeviceConnectPayload {
   const factory DeviceConnectPayload({
     required DeviceType deviceType,
     required String deviceId,
+    required String token,
+    required String protocolVersion,
     String? pushToken,
-    String? protocolVersion,
     int? timestamp,
   }) = _DeviceConnectPayload;
 
@@ -265,7 +287,6 @@ class DeviceConnectPayload with _$DeviceConnectPayload {
 @freezed
 class DeviceDisconnectPayload with _$DeviceDisconnectPayload {
   const factory DeviceDisconnectPayload({
-    required String deviceId,
     int? timestamp,
   }) = _DeviceDisconnectPayload;
 
@@ -276,7 +297,6 @@ class DeviceDisconnectPayload with _$DeviceDisconnectPayload {
 @freezed
 class DeviceStatusPayload with _$DeviceStatusPayload {
   const factory DeviceStatusPayload({
-    required String deviceId,
     required DeviceStatus status,
     int? timestamp,
   }) = _DeviceStatusPayload;
@@ -289,6 +309,8 @@ class DeviceStatusPayload with _$DeviceStatusPayload {
 class DeviceConnectedPayload with _$DeviceConnectedPayload {
   const factory DeviceConnectedPayload({
     required String deviceId,
+    required Role role,
+    required String protocolVersion,
     required int timestamp,
   }) = _DeviceConnectedPayload;
 
@@ -328,7 +350,6 @@ class MediaTogglePayload with _$MediaTogglePayload {
   const factory MediaTogglePayload({
     required String callAttemptId,
     required MediaToggleAction action,
-    required bool success,
     int? timestamp,
   }) = _MediaTogglePayload;
 
@@ -340,7 +361,6 @@ class MediaTogglePayload with _$MediaTogglePayload {
 class CallEscalatePayload with _$CallEscalatePayload {
   const factory CallEscalatePayload({
     required String callAttemptId,
-    required CallInitiator requestedBy,
     required MediaCapabilities mediaCapabilities,
     int? timestamp,
   }) = _CallEscalatePayload;
@@ -353,7 +373,6 @@ class CallEscalatePayload with _$CallEscalatePayload {
 class CallDowngradePayload with _$CallDowngradePayload {
   const factory CallDowngradePayload({
     required String callAttemptId,
-    required CallInitiator requestedBy,
     String? reason,
     int? timestamp,
   }) = _CallDowngradePayload;
@@ -366,7 +385,6 @@ class CallDowngradePayload with _$CallDowngradePayload {
 class EscalationAcceptedPayload with _$EscalationAcceptedPayload {
   const factory EscalationAcceptedPayload({
     required String callAttemptId,
-    required CallInitiator acceptedBy,
     required MediaCapabilities mediaCapabilities,
     int? timestamp,
   }) = _EscalationAcceptedPayload;
@@ -379,8 +397,7 @@ class EscalationAcceptedPayload with _$EscalationAcceptedPayload {
 class EscalationRejectedPayload with _$EscalationRejectedPayload {
   const factory EscalationRejectedPayload({
     required String callAttemptId,
-    required CallInitiator rejectedBy,
-    String? reason,
+    required String reason,
     int? timestamp,
   }) = _EscalationRejectedPayload;
 
@@ -397,6 +414,8 @@ class ErrorPayload with _$ErrorPayload {
   const factory ErrorPayload({
     required String code,
     required String message,
+    String? relatedType,
+    String? callAttemptId,
     required int timestamp,
   }) = _ErrorPayload;
 

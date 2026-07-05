@@ -1,11 +1,14 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../auth/auth_service.dart';
 import '../../call/call_manager.dart';
 import '../../call/call_state.dart';
+import '../../protocol/protocol.dart';
 import '../../signaling/signaling_client.dart';
 import '../../platform/platform.dart';
 import '../../storage/call_history_service.dart';
+import 'permissions_providers.dart';
 
 // Server URL injected at build time via --dart-define=SIGNALING_SERVER_URL=ws://...
 const _signalingUrl = String.fromEnvironment(
@@ -24,6 +27,14 @@ const _apiBaseUrl = String.fromEnvironment(
 const _apiAuthToken = String.fromEnvironment(
   'API_AUTH_TOKEN',
   defaultValue: '',
+);
+
+// SvelteKit dashboard origin (login + socket-token endpoints) —
+// injected via --dart-define=DASHBOARD_BASE_URL=https://...
+// Distinct from API_BASE_URL, which is the Elixir signaling server.
+const _dashboardBaseUrl = String.fromEnvironment(
+  'DASHBOARD_BASE_URL',
+  defaultValue: 'http://localhost:5173',
 );
 
 /// Derive HTTP base URL from WebSocket URL when API_BASE_URL is not explicitly set.
@@ -63,6 +74,21 @@ Future<List<Map<String, dynamic>>?> _fetchTurnServers() async {
   }
 }
 
+/// Auth service provider (login, deviceId, socket-token exchange)
+final authServiceProvider = Provider<AuthService>((ref) {
+  return AuthService(_dashboardBaseUrl);
+});
+
+/// Whether the user is logged in. null = not yet determined (startup).
+final authStateProvider = StateProvider<bool?>((ref) => null);
+
+/// Push platform provider (FCM via native channel)
+final pushPlatformProvider = Provider<PushPlatform>((ref) {
+  final platform = PushMethodChannel();
+  ref.onDispose(platform.dispose);
+  return platform;
+});
+
 /// Signaling client provider
 final signalingClientProvider = Provider<SignalingClient>((ref) {
   return SignalingClient(_signalingUrl);
@@ -92,6 +118,70 @@ final callManagerProvider =
   final signaling = ref.watch(signalingClientProvider);
   final webrtc = ref.watch(webrtcPlatformProvider);
   return CallManager(signaling, webrtc, fetchTurnServers: _fetchTurnServers);
+});
+
+/// App startup: determine auth state and, when logged in, register the
+/// device (push permission + FCM token + signaling connect). Safe to
+/// re-run (invalidate) after login; SignalingClient.connect is a no-op
+/// while already connected.
+final appStartupProvider = FutureProvider<void>((ref) async {
+  final auth = ref.watch(authServiceProvider);
+
+  final loggedIn = await auth.isLoggedIn();
+  ref.read(authStateProvider.notifier).state = loggedIn;
+  if (!loggedIn) return;
+
+  final push = ref.watch(pushPlatformProvider);
+  final callManager = ref.read(callManagerProvider.notifier);
+  final deviceId = await auth.getDeviceId();
+
+  // Android 13+ needs the runtime POST_NOTIFICATIONS permission for the
+  // full-screen incoming-call notification (FCM wake path).
+  await ref
+      .read(permissionsServiceProvider)
+      .requestNotificationPermission()
+      .run();
+  await push.requestPermissions().run();
+
+  String? pushToken;
+  try {
+    final token = await push.getToken().run();
+    if (token.isNotEmpty) pushToken = token;
+  } catch (_) {
+    // No FCM available (e.g. emulator without Play services) — connect anyway.
+  }
+
+  Future<void> connect() => callManager
+      .initialize(
+        deviceType: DeviceType.mobile,
+        deviceId: deviceId,
+        getToken: auth.fetchSocketToken,
+        pushToken: pushToken,
+      )
+      .run();
+
+  // FCM wake path: a data push means a call is ringing. Ensure the socket is
+  // connected; the server re-delivers call:incoming to newly connected
+  // devices while the call rings, which drives the UI. The push payload
+  // itself never drives UI directly.
+  push.onNotification((data) {
+    if (data['callAttemptId'] != null) {
+      connect();
+    }
+  });
+
+  // On token rotation, reconnect so device:connect carries the new pushToken.
+  push.onTokenRefresh((newToken) async {
+    pushToken = newToken;
+    await ref.read(signalingClientProvider).disconnect().run();
+    await connect();
+  });
+
+  // If the app was cold-started by a call push, this is redundant with the
+  // connect below (the server re-delivers on connect) — just drain the flag.
+  await push.getInitialMessage().run();
+
+  await connect();
 });
 
 /// Call history persistence listener

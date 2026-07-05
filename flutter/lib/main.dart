@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'src/storage/call_history_entry.dart';
+import 'src/ui/providers/call_providers.dart';
 import 'src/ui/router/app_router.dart';
 
 void main() async {
@@ -39,6 +40,8 @@ class CallSafeApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Kick off auth check + device registration (connects the socket).
+    ref.watch(appStartupProvider);
     final router = ref.watch(routerProvider);
 
     return MaterialApp.router(

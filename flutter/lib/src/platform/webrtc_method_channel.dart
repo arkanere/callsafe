@@ -267,10 +267,8 @@ class WebRTCMethodChannel implements WebRTCPlatform {
   Task<MediaCapabilities> getMediaCapabilities() {
     return Task(() async {
       return const MediaCapabilities(
-        canSendAudio: true,
-        canSendVideo: true,
-        canReceiveAudio: true,
-        canReceiveVideo: true,
+        canSend: ['audio', 'video'],
+        canReceive: ['audio', 'video'],
       );
     });
   }

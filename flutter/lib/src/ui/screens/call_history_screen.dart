@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../storage/call_history_entry.dart';
 import '../providers/call_history_providers.dart';
+import '../providers/call_providers.dart';
 import '../widgets/call_card.dart';
 
 /// Call history screen

@@ -210,10 +210,8 @@ void main() {
       iosCaps = await platform.getMediaCapabilities().run();
 
       // Verify identical structure
-      expect(androidCaps.canSendAudio, iosCaps.canSendAudio);
-      expect(androidCaps.canSendVideo, iosCaps.canSendVideo);
-      expect(androidCaps.canReceiveAudio, iosCaps.canReceiveAudio);
-      expect(androidCaps.canReceiveVideo, iosCaps.canReceiveVideo);
+      expect(androidCaps.canSend, iosCaps.canSend);
+      expect(androidCaps.canReceive, iosCaps.canReceive);
     });
 
     test('setAudioEnabled sends identical boolean argument', () async {
@@ -524,23 +522,17 @@ void main() {
 
     test('MediaCapabilities serialization is consistent', () {
       const caps = MediaCapabilities(
-        canSendAudio: true,
-        canSendVideo: false,
-        canReceiveAudio: true,
-        canReceiveVideo: false,
+        canSend: ['audio'],
+        canReceive: ['audio'],
       );
 
       final json = caps.toJson();
-      expect(json['canSendAudio'], true);
-      expect(json['canSendVideo'], false);
-      expect(json['canReceiveAudio'], true);
-      expect(json['canReceiveVideo'], false);
+      expect(json['canSend'], ['audio']);
+      expect(json['canReceive'], ['audio']);
 
       final restored = MediaCapabilities.fromJson(json);
-      expect(restored.canSendAudio, caps.canSendAudio);
-      expect(restored.canSendVideo, caps.canSendVideo);
-      expect(restored.canReceiveAudio, caps.canReceiveAudio);
-      expect(restored.canReceiveVideo, caps.canReceiveVideo);
+      expect(restored.canSend, caps.canSend);
+      expect(restored.canReceive, caps.canReceive);
     });
   });
 }

@@ -5,9 +5,11 @@
   "main": "index.ts",
   "types": "index.ts",
   "scripts": {
-    "generate": "node generate-ts.js && node generate-kotlin.js",
+    "generate": "node generate-ts.js && node generate-kotlin.js && node generate-dart.js && node generate-swift.js",
     "generate-ts": "node generate-ts.js",
-    "generate-kotlin": "node generate-kotlin.js"
+    "generate-kotlin": "node generate-kotlin.js",
+    "generate-dart": "node generate-dart.js",
+    "generate-swift": "node generate-swift.js"
   },
   "keywords": [
     "webrtc",

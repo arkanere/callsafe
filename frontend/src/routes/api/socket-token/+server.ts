@@ -5,13 +5,17 @@ import { JWT_SECRET } from '$env/static/private';
 const UUID_V4_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 // Provides a short-lived token for WebSocket authentication
-// This is necessary because WebSocket cannot read httpOnly cookies directly
-export async function GET({ cookies, url }) {
+// This is necessary because WebSocket cannot read httpOnly cookies directly.
+// Accepts the auth token from the session cookie (dashboard) or an
+// Authorization: Bearer header (mobile app, which has no cookie jar).
+export async function GET({ cookies, url, request }) {
   console.log('[SOCKET TOKEN API] GET request received');
 
   try {
-    const token = cookies.get('auth_token');
-    console.log('[SOCKET TOKEN API] Cookie token present:', !!token);
+    const token =
+      cookies.get('auth_token') ??
+      request.headers.get('authorization')?.match(/^Bearer (.+)$/)?.[1];
+    console.log('[SOCKET TOKEN API] Auth token present:', !!token);
 
     if (!token) {
       console.log('[SOCKET TOKEN API] No token found');

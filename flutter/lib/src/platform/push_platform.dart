@@ -14,6 +14,14 @@ abstract class PushPlatform {
     void Function(Map<String, dynamic> data) callback,
   );
 
+  /// Handle push token refresh (device should re-register with the server)
+  void onTokenRefresh(void Function(String token) callback);
+
+  /// Pending call push received while no Flutter engine was running
+  /// (app woken via full-screen notification). Returns the data map once,
+  /// or null if there is none (or it went stale).
+  Task<Map<String, dynamic>?> getInitialMessage();
+
   /// Display incoming call notification
   Task<Unit> showIncomingCallNotification({
     required String callAttemptId,
@@ -31,6 +39,7 @@ abstract class PushPlatform {
 /// Mock implementation for testing (Phase 2)
 class MockPushPlatform implements PushPlatform {
   void Function(Map<String, dynamic>)? _notificationCallback;
+  void Function(String)? _tokenRefreshCallback;
   final String _token = 'mock-push-token';
 
   @override
@@ -48,6 +57,16 @@ class MockPushPlatform implements PushPlatform {
     void Function(Map<String, dynamic> data) callback,
   ) {
     _notificationCallback = callback;
+  }
+
+  @override
+  void onTokenRefresh(void Function(String token) callback) {
+    _tokenRefreshCallback = callback;
+  }
+
+  @override
+  Task<Map<String, dynamic>?> getInitialMessage() {
+    return Task(() async => null);
   }
 
   @override
@@ -70,10 +89,16 @@ class MockPushPlatform implements PushPlatform {
   @override
   void dispose() {
     _notificationCallback = null;
+    _tokenRefreshCallback = null;
   }
 
   /// Simulate incoming notification (for testing)
   void simulateIncomingNotification(Map<String, dynamic> data) {
     _notificationCallback?.call(data);
+  }
+
+  /// Simulate token refresh (for testing)
+  void simulateTokenRefresh(String token) {
+    _tokenRefreshCallback?.call(token);
   }
 }
