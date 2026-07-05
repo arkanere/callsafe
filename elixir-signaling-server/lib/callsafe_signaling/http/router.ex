@@ -122,6 +122,14 @@ defmodule CallsafeSignaling.HTTP.Router do
     end
   end
 
+  # TURN credentials for embed guests. Public (like guest-token) so the widget
+  # can fetch relay credentials before it has authenticated. Declared before the
+  # /api/v1 forward so it bypasses the ApiV1Router Auth plug. The shared TURN
+  # secret is never exposed — only ephemeral, derived credentials.
+  get "/api/turn-credentials" do
+    send_resp(conn, 200, Jason.encode!(CallsafeSignaling.Turn.Credentials.generate()))
+  end
+
   # Protected endpoints (require JWT auth)
 
   forward("/api/v1", to: CallsafeSignaling.HTTP.ApiV1Router)

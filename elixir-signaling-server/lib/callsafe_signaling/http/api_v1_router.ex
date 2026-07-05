@@ -6,7 +6,7 @@ defmodule CallsafeSignaling.HTTP.ApiV1Router do
   use Plug.Router
   require Logger
 
-  alias CallsafeSignaling.{DeviceRegistry, Config}
+  alias CallsafeSignaling.DeviceRegistry
   alias CallsafeSignaling.HTTP.Middleware.Auth
 
   plug(:match)
@@ -16,26 +16,10 @@ defmodule CallsafeSignaling.HTTP.ApiV1Router do
 
   plug(:dispatch)
 
-  # TURN credentials endpoint
+  # TURN credentials endpoint (authenticated — app + mobile). Guests use the
+  # public GET /api/turn-credentials; both share Turn.Credentials.generate/0.
   post "/turn/credentials" do
-    turn_servers = Config.turn_servers()
-    turn_secret = Config.turn_secret()
-
-    credentials =
-      if turn_servers == [] or is_nil(turn_secret) do
-        %{ttl: 86400, urls: [], username: nil, credential: nil}
-      else
-        username = generate_turn_username()
-
-        %{
-          ttl: 86400,
-          urls: Enum.flat_map(turn_servers, &Map.get(&1, :urls, [])),
-          username: username,
-          credential: generate_turn_credential(username, turn_secret)
-        }
-      end
-
-    send_resp(conn, 200, Jason.encode!(credentials))
+    send_resp(conn, 200, Jason.encode!(CallsafeSignaling.Turn.Credentials.generate()))
   end
 
   # FCM token registration endpoint
@@ -126,17 +110,5 @@ defmodule CallsafeSignaling.HTTP.ApiV1Router do
         message: "Unknown API endpoint"
       })
     )
-  end
-
-  # Private helpers
-
-  defp generate_turn_username do
-    expiry = System.system_time(:second) + 86400
-    "#{expiry}:#{Config.turn_username()}"
-  end
-
-  defp generate_turn_credential(username, secret) do
-    :crypto.mac(:hmac, :sha256, secret, username)
-    |> Base.encode64()
   end
 end

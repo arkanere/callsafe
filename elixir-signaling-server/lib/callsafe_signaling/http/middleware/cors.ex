@@ -14,6 +14,13 @@ defmodule CallsafeSignaling.HTTP.Middleware.CORS do
 
   @preflight_max_age_seconds "3600"
 
+  # Endpoints designed to be embedded on any third-party website. They always
+  # allow cross-origin access, independent of the configured allowlist: guest
+  # tokens are already public and short-lived, and TURN credentials are
+  # ephemeral (the shared secret never leaves the server). Authenticated
+  # endpoints stay protected by their JWT regardless of CORS.
+  @public_embed_paths ["/api/v1/guest-token", "/api/turn-credentials"]
+
   def init(opts), do: opts
 
   def call(conn, _opts) do
@@ -27,6 +34,7 @@ defmodule CallsafeSignaling.HTTP.Middleware.CORS do
     allowed = Config.cors_allowed_origins()
 
     cond do
+      conn.request_path in @public_embed_paths -> put_cors_headers(conn, "*")
       "*" in allowed -> put_cors_headers(conn, "*")
       origin in allowed -> put_cors_headers(conn, origin)
       true -> conn

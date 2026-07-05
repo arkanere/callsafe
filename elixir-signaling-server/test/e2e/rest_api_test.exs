@@ -215,6 +215,44 @@ defmodule CallsafeSignaling.E2E.RestApiTest do
   end
 
   # ---------------------------------------------------------------------------
+  # Public embed: GET /api/turn-credentials (no auth — used by the widget guest)
+  # ---------------------------------------------------------------------------
+
+  describe "GET /api/turn-credentials (public)" do
+    test "no auth required — returns TURN credentials when configured" do
+      with_turn_config(fn ->
+        {status, body} = HttpClient.get("/api/turn-credentials")
+
+        assert status == 200
+        assert is_list(body["urls"])
+        assert is_binary(body["username"])
+        assert is_binary(body["credential"])
+        assert body["ttl"] == 86400
+      end)
+    end
+
+    test "unconfigured TURN returns empty credential set (STUN fallback)" do
+      {status, body} = HttpClient.get("/api/turn-credentials")
+
+      assert status == 200
+      assert body["urls"] == []
+      assert is_nil(body["credential"])
+    end
+
+    test "allows cross-origin access from any site (embeddable widget)" do
+      {:ok, resp} =
+        Req.request(
+          method: :get,
+          url: "http://localhost:4001/api/turn-credentials",
+          headers: %{"origin" => "https://some-customer-site.example"}
+        )
+
+      assert resp.status == 200
+      assert Req.Response.get_header(resp, "access-control-allow-origin") == ["*"]
+    end
+  end
+
+  # ---------------------------------------------------------------------------
   # Phase 2: POST /api/v1/fcm/register
   # ---------------------------------------------------------------------------
 
