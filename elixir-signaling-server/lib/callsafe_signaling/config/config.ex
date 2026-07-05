@@ -72,6 +72,14 @@ defmodule CallsafeSignaling.Config do
   end
 
   @doc """
+  Get the list of origins allowed to make cross-origin HTTP requests.
+  An entry of "*" allows any origin.
+  """
+  def cors_allowed_origins do
+    get(:cors_allowed_origins, [])
+  end
+
+  @doc """
   Get rate limit configuration.
   """
   def rate_limits do

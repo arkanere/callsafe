@@ -8,6 +8,9 @@ config :callsafe_signaling,
   log_validation_failures: true,
   reject_invalid_messages: false,
 
+  # CORS — local frontend dev servers (Vite dev + preview)
+  cors_allowed_origins: ["http://localhost:5173", "http://localhost:4173"],
+
   # Rate limiting
   max_requests_per_device: 100,
   max_requests_per_ip: 1000,

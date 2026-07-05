@@ -9,10 +9,14 @@ defmodule CallsafeSignaling.HTTP.Router do
 
   alias CallsafeSignaling.{Config, DeviceRegistry, Stats}
   alias CallsafeSignaling.Auth.JWT
-  alias CallsafeSignaling.HTTP.Middleware.RateLimit
+  alias CallsafeSignaling.HTTP.Middleware.{CORS, RateLimit}
 
   # Guest tokens are short-lived: enough to complete the device:connect handshake.
   @guest_token_ttl_seconds 300
+
+  # CORS runs first so preflight OPTIONS requests are answered before
+  # matching/dispatch (there are no explicit OPTIONS routes).
+  plug(CORS)
 
   # Parse JSON body for POST requests
   plug(Plug.Parsers,

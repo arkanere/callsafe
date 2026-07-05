@@ -12,6 +12,20 @@ turn_urls =
 
 turn_servers = if turn_urls == [], do: [], else: [%{urls: turn_urls}]
 
+# CORS allowlist — comma-separated origins, e.g.
+# "https://app.callsafe.tech,https://widget.callsafe.tech" (or "*" for any).
+# Only overrides the compile-time config when the env var is set, so dev
+# defaults from dev.exs survive.
+case System.get_env("CORS_ALLOWED_ORIGINS") do
+  origins when is_binary(origins) and origins != "" ->
+    config :callsafe_signaling,
+      cors_allowed_origins:
+        origins |> String.split(",") |> Enum.map(&String.trim/1) |> Enum.reject(&(&1 == ""))
+
+  _ ->
+    :ok
+end
+
 # Application configuration
 config :callsafe_signaling,
   http_port: String.to_integer(System.get_env("PORT") || "4000"),
