@@ -239,6 +239,30 @@ defmodule CallsafeSignaling.E2E.RestApiTest do
       assert is_nil(body["credential"])
     end
 
+    test "static provider credentials are served verbatim when configured" do
+      original_servers = Application.get_env(:callsafe_signaling, :turn_servers)
+
+      try do
+        Application.put_env(:callsafe_signaling, :turn_servers, [
+          %{urls: ["turn:standard.relay.example.com:443"]}
+        ])
+
+        Application.put_env(:callsafe_signaling, :turn_static_username, "static_user_123")
+        Application.put_env(:callsafe_signaling, :turn_static_credential, "static_cred_abc")
+
+        {status, body} = HttpClient.get("/api/turn-credentials")
+
+        assert status == 200
+        assert body["username"] == "static_user_123"
+        assert body["credential"] == "static_cred_abc"
+        assert body["urls"] == ["turn:standard.relay.example.com:443"]
+      after
+        Application.put_env(:callsafe_signaling, :turn_servers, original_servers || [])
+        Application.delete_env(:callsafe_signaling, :turn_static_username)
+        Application.delete_env(:callsafe_signaling, :turn_static_credential)
+      end
+    end
+
     test "allows cross-origin access from any site (embeddable widget)" do
       {:ok, resp} =
         Req.request(

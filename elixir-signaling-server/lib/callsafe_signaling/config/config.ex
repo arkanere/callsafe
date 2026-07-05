@@ -72,6 +72,22 @@ defmodule CallsafeSignaling.Config do
   end
 
   @doc """
+  Static TURN username, for providers that issue long-lived credentials
+  (e.g. Metered) instead of the coturn HMAC shared-secret scheme. When set
+  (with turn_static_credential), it takes precedence over HMAC generation.
+  """
+  def turn_static_username do
+    get(:turn_static_username, nil)
+  end
+
+  @doc """
+  Static TURN credential paired with turn_static_username/0.
+  """
+  def turn_static_credential do
+    get(:turn_static_credential, nil)
+  end
+
+  @doc """
   Get the list of origins allowed to make cross-origin HTTP requests.
   An entry of "*" allows any origin.
   """

@@ -13,26 +13,34 @@ defmodule CallsafeSignaling.Turn.Credentials do
   @ttl_seconds 86_400
 
   @doc """
-  Returns a credentials map ready to JSON-encode. When TURN is not configured
-  (no servers or secret), returns empty urls so callers fall back to STUN.
+  Returns a credentials map ready to JSON-encode.
+
+  Precedence: static provider credentials (Metered-style long-lived
+  username/credential) → coturn HMAC shared-secret → empty (STUN fallback).
   """
   def generate do
-    turn_servers = Config.turn_servers()
-    turn_secret = Config.turn_secret()
+    urls = Config.turn_servers() |> Enum.flat_map(&Map.get(&1, :urls, []))
+    static_username = Config.turn_static_username()
+    static_credential = Config.turn_static_credential()
+    secret = Config.turn_secret()
 
-    if turn_servers == [] or is_nil(turn_secret) do
-      %{ttl: @ttl_seconds, urls: [], username: nil, credential: nil}
-    else
-      username = generate_username()
+    cond do
+      urls == [] ->
+        empty()
 
-      %{
-        ttl: @ttl_seconds,
-        urls: Enum.flat_map(turn_servers, &Map.get(&1, :urls, [])),
-        username: username,
-        credential: generate_credential(username, turn_secret)
-      }
+      is_binary(static_username) and is_binary(static_credential) ->
+        %{ttl: @ttl_seconds, urls: urls, username: static_username, credential: static_credential}
+
+      is_binary(secret) ->
+        username = generate_username()
+        %{ttl: @ttl_seconds, urls: urls, username: username, credential: generate_credential(username, secret)}
+
+      true ->
+        empty()
     end
   end
+
+  defp empty, do: %{ttl: @ttl_seconds, urls: [], username: nil, credential: nil}
 
   defp generate_username do
     expiry = System.system_time(:second) + @ttl_seconds

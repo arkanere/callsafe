@@ -32,4 +32,6 @@ config :callsafe_signaling,
   env: String.to_atom(System.get_env("MIX_ENV") || "dev"),
   turn_servers: turn_servers,
   turn_secret: System.get_env("TURN_SECRET"),
-  turn_username: System.get_env("TURN_USERNAME") || "callsafe"
+  turn_username: System.get_env("TURN_USERNAME") || "callsafe",
+  turn_static_username: System.get_env("TURN_STATIC_USERNAME"),
+  turn_static_credential: System.get_env("TURN_STATIC_CREDENTIAL")
