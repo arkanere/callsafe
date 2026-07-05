@@ -33,8 +33,8 @@
 	<script>
 		window.addEventListener('load', function() {
 			var script = document.createElement('script');
-			script.src = 'https://callsafe.tech/embed.js';
-			script.setAttribute('data-handle', '25831dee9a0b76f8');
+			script.src = '/embed.js';
+			script.setAttribute('data-handle', 'eb37507909fa43ff');
 			script.setAttribute('data-source-id', 'callsafe');
 			document.body.appendChild(script);
 		});
