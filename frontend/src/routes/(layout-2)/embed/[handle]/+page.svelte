@@ -28,6 +28,23 @@
   let cleanupTimeout: any = null;
   let autoplayBlocked = false;
 
+  // Streams held in state so the video elements re-bind whenever Svelte
+  // recreates them on call-state transitions (ringing -> connected re-renders
+  // a fresh <video>, which would otherwise lose its srcObject).
+  let remoteVideoStream: MediaStream | null = null;
+  let localVideoStream: MediaStream | null = null;
+
+  function attachStream(node: HTMLVideoElement, stream: MediaStream | null) {
+    const set = (s: MediaStream | null) => {
+      if (node.srcObject !== s) {
+        node.srcObject = s;
+        if (s) node.play().catch(() => { autoplayBlocked = true; });
+      }
+    };
+    set(stream);
+    return { update: set };
+  }
+
   onMount(() => {
     console.log('[EMBED PAGE] onMount(): Component mounted');
     console.log('[EMBED PAGE] onMount(): Handle:', handle);
@@ -308,18 +325,19 @@
     webrtcManager = new WebRTCManager(socket!);
     webrtcManager.onAutoplayBlocked = () => { autoplayBlocked = true; };
 
+    // For video calls, route streams through component state (attachStream
+    // action) instead of one-shot DOM queries; voice keeps the manager's
+    // default audio-element handling.
+    if (type === 'video') {
+      webrtcManager.onRemoteStream = (stream) => {
+        remoteVideoStream = stream;
+      };
+    }
+
     await webrtcManager.initialize(callId, type);
 
-    // For video calls, bind local stream to the preview element
     if (type === 'video') {
-      const localVideoEl = document.querySelector('video[data-local]') as HTMLVideoElement;
-      if (localVideoEl) {
-        const localStream = webrtcManager.getLocalStream();
-        if (localStream) {
-          localVideoEl.srcObject = localStream;
-          localVideoEl.play().catch(() => {});
-        }
-      }
+      localVideoStream = webrtcManager.getLocalStream();
     }
 
     const checkConnection = () => {
@@ -506,6 +524,8 @@
 
   function cleanup() {
     autoplayBlocked = false;
+    remoteVideoStream = null;
+    localVideoStream = null;
 
     if (cleanupTimeout) {
       clearTimeout(cleanupTimeout);
@@ -607,8 +627,8 @@
         <!-- Video preview area (video calls only) -->
         {#if callType === 'video'}
           <div class="relative rounded-xl overflow-hidden bg-gray-900 mb-4" style="min-height: 200px;">
-            <video data-remote autoplay playsinline class="w-full h-full object-cover"></video>
-            <video data-local autoplay playsinline muted class="absolute bottom-2 right-2 w-24 rounded-lg object-cover bg-gray-800 border border-gray-600"></video>
+            <video data-remote use:attachStream={remoteVideoStream} autoplay playsinline class="w-full h-full object-cover"></video>
+            <video data-local use:attachStream={localVideoStream} autoplay playsinline muted class="absolute bottom-2 right-2 w-24 rounded-lg object-cover bg-gray-800 border border-gray-600"></video>
           </div>
         {/if}
 
@@ -684,8 +704,8 @@
         <!-- Video area (video calls only) -->
         {#if callType === 'video'}
           <div class="relative rounded-xl overflow-hidden bg-gray-900 mb-4" style="min-height: 200px;">
-            <video data-remote autoplay playsinline class="w-full h-full object-cover"></video>
-            <video data-local autoplay playsinline muted class="absolute bottom-2 right-2 w-24 rounded-lg object-cover bg-gray-800 border border-gray-600"></video>
+            <video data-remote use:attachStream={remoteVideoStream} autoplay playsinline class="w-full h-full object-cover"></video>
+            <video data-local use:attachStream={localVideoStream} autoplay playsinline muted class="absolute bottom-2 right-2 w-24 rounded-lg object-cover bg-gray-800 border border-gray-600"></video>
           </div>
         {/if}
 

@@ -37,6 +37,23 @@
   let isCameraEnabled = true;
   let autoplayBlocked = false;
 
+  // Streams held in state so the video elements re-bind whenever Svelte
+  // recreates them on phase transitions (the 'active' branch mounts a fresh
+  // <video> after remote tracks have already arrived during 'connecting').
+  let remoteVideoStream: MediaStream | null = null;
+  let localVideoStream: MediaStream | null = null;
+
+  function attachStream(node: HTMLVideoElement, stream: MediaStream | null) {
+    const set = (s: MediaStream | null) => {
+      if (node.srcObject !== s) {
+        node.srcObject = s;
+        if (s) node.play().catch(() => { autoplayBlocked = true; });
+      }
+    };
+    set(stream);
+    return { update: set };
+  }
+
   onMount(async () => {
     const isAuthenticated = await AuthManager.isAuthenticated();
     if (!isAuthenticated) {
@@ -141,18 +158,6 @@
       if (webrtcManager) {
         try {
           await webrtcManager.createAnswer(data.offer, data.callAttemptId);
-
-          // For video calls, bind local stream after answer is created
-          if (currentCallType === 'video') {
-            const localVideoEl = document.querySelector('video[data-local]') as HTMLVideoElement;
-            if (localVideoEl) {
-              const localStream = webrtcManager.getLocalStream();
-              if (localStream) {
-                localVideoEl.srcObject = localStream;
-                localVideoEl.play().catch(() => {});
-              }
-            }
-          }
 
           currentPhase = 'active';
           startCallTimer();
@@ -297,6 +302,8 @@
         webrtcManager.cleanup();
         webrtcManager = null;
       }
+      remoteVideoStream = null;
+      localVideoStream = null;
 
       callState.update(state => ({
         ...state,
@@ -427,7 +434,18 @@
     try {
       webrtcManager = new WebRTCManager(socket);
       webrtcManager.onAutoplayBlocked = () => { autoplayBlocked = true; };
+      // For video calls, route streams through component state (attachStream
+      // action) — the manager's default DOM query runs while the 'active'
+      // branch (and its <video> elements) doesn't exist yet.
+      if (callType === 'video') {
+        webrtcManager.onRemoteStream = (stream) => {
+          remoteVideoStream = stream;
+        };
+      }
       await webrtcManager.initialize(callId, callType);
+      if (callType === 'video') {
+        localVideoStream = webrtcManager.getLocalStream();
+      }
     } catch (error) {
       console.error('[CONNECTION] acceptCall(): WebRTC initialization failed:', error);
       handleCallFailure(callType === 'video' ? 'Failed to initialize camera/audio' : 'Failed to initialize audio');
@@ -494,6 +512,8 @@
   function resetCallUI() {
     stopIncomingCallSound();
     incomingCalls = [];
+    remoteVideoStream = null;
+    localVideoStream = null;
 
     if (webrtcManager) {
       webrtcManager.cleanup();
@@ -659,6 +679,8 @@
 
   function cleanup() {
     autoplayBlocked = false;
+    remoteVideoStream = null;
+    localVideoStream = null;
 
     if (durationInterval) {
       clearInterval(durationInterval);
@@ -842,8 +864,8 @@
             <!-- Video area (video calls only) -->
             {#if currentCallType === 'video'}
               <div class="relative rounded-xl overflow-hidden bg-gray-900 mb-4" style="min-height: 200px;">
-                <video data-remote autoplay playsinline class="w-full h-full object-cover"></video>
-                <video data-local autoplay playsinline muted class="absolute bottom-2 right-2 w-24 rounded-lg object-cover bg-gray-800 border border-gray-600"></video>
+                <video data-remote use:attachStream={remoteVideoStream} autoplay playsinline class="w-full h-full object-cover"></video>
+                <video data-local use:attachStream={localVideoStream} autoplay playsinline muted class="absolute bottom-2 right-2 w-24 rounded-lg object-cover bg-gray-800 border border-gray-600"></video>
               </div>
             {/if}
 
