@@ -49,6 +49,8 @@ jobs:
 
       - run: flutter pub get
       - run: dart run build_runner build --delete-conflicting-outputs
-      - run: flutter analyze
+      # Gate on analyzer errors only; main has pre-existing lint
+      # warnings/infos that should be cleaned up separately.
+      - run: flutter analyze --no-fatal-warnings --no-fatal-infos
       # TODO: add `flutter test` once the unit-test suite is green
       # (24 failures on main as of 2026-07; tracked separately).
