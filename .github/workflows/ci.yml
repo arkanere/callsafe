@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  signaling-server:
+    name: Elixir signaling server
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: elixir-signaling-server
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: '27.3'
+          elixir-version: '1.19.5'
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            elixir-signaling-server/deps
+            elixir-signaling-server/_build
+          key: mix-${{ runner.os }}-${{ hashFiles('elixir-signaling-server/mix.lock') }}
+          restore-keys: mix-${{ runner.os }}-
+
+      - run: mix deps.get
+      - run: mix compile --warnings-as-errors
+      - run: mix test
+
+  flutter:
+    name: Flutter mobile client
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: flutter
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+      - run: dart run build_runner build --delete-conflicting-outputs
+      - run: flutter analyze
+      # TODO: add `flutter test` once the unit-test suite is green
+      # (24 failures on main as of 2026-07; tracked separately).

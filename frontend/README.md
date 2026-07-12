@@ -1,38 +1,34 @@
-# sv
+# CallSafe Frontend
 
-Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
+SvelteKit app deployed on Vercel at [callsafe.tech](https://callsafe.tech).
+It serves three roles for [CallSafe](../README.md):
 
-## Creating a project
+- **Marketing site + business dashboard** — sign-up, call handling in the
+  browser, widget configuration.
+- **Embeddable call widget** — a tiny loader stub (`src/embed/`) that
+  lazy-loads the call core on demand, so a host page pays almost nothing
+  until a visitor starts a call.
+- **Identity provider** — signs the socket JWTs (HS256, shared `JWT_SECRET`
+  with the signaling server) and issues short-lived guest tokens for
+  anonymous embed visitors.
 
-If you're seeing this, you've probably already done this step. Congrats!
+System design: [`../ARCHITECTURE.md`](../ARCHITECTURE.md).
 
-```sh
-# create a new project in the current directory
-npx sv create
-
-# create a new project in my-app
-npx sv create my-app
-```
-
-## Developing
-
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
+## Development
 
 ```sh
-npm run dev
-
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
+npm install
+npm run dev        # local dev server
+npm run check      # svelte-check
+npm run lint       # prettier + eslint
+npm run build      # production build
 ```
 
-## Building
+## Configuration
 
-To create a production version of your app:
+- `VITE_SIGNALING_SERVER_URL` — HTTPS base of the signaling server (the code
+  derives `wss://…/ws` from it). Inlined at build time.
+- `JWT_SECRET` — must equal the signaling server's secret, or the
+  `device:connect` handshake fails with `invalid_signature`.
 
-```sh
-npm run build
-```
-
-You can preview the production build with `npm run preview`.
-
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
+See [`../DEPLOY.md`](../DEPLOY.md) for the full frontend↔server wiring.
