@@ -42,7 +42,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     } on NotAuthenticatedException catch (e) {
       setState(() => _error = e.message);
     } catch (e) {
-      setState(() => _error = 'Could not reach the server');
+      setState(() => _error = 'Could not reach the server: $e');
     } finally {
       if (mounted) setState(() => _busy = false);
     }

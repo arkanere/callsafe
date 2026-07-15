@@ -87,10 +87,16 @@ class SignalingClient {
     _updateState(SignalingState.connecting);
 
     try {
+      // ignore: avoid_print
+      print('[SIG] connecting to $serverUrl');
       final token = await _getToken!();
+      // ignore: avoid_print
+      print('[SIG] got socket token (len=${token.length}), opening ws');
 
       _channel = WebSocketChannel.connect(Uri.parse(serverUrl));
       await _channel!.ready;
+      // ignore: avoid_print
+      print('[SIG] ws ready; sending device:connect (deviceId=$_deviceId, type=$_deviceType, push=${_pushToken != null})');
 
       _channelSubscription = _channel!.stream.listen(
         _onMessage,
@@ -158,6 +164,11 @@ class SignalingClient {
 
     final type = msg['type'];
     if (type is! String) return;
+
+    if (type != 'pong') {
+      // ignore: avoid_print
+      print('[SIG] recv <- $type ${msg['code'] != null ? '(code=${msg['code']}, msg=${msg['message']})' : ''}');
+    }
 
     if (type == 'pong') {
       _onPong();
