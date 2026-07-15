@@ -1,6 +1,8 @@
 package com.callsafe.mobile.channels
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import com.google.firebase.messaging.FirebaseMessaging
 import io.flutter.plugin.common.BinaryMessenger
@@ -21,6 +23,10 @@ class PushChannelHandler(
     private val channel = MethodChannel(messenger, CHANNEL_NAME)
     private val eventChannel = EventChannel(messenger, EVENT_CHANNEL_NAME)
     private var eventSink: EventChannel.EventSink? = null
+
+    // FCM callbacks arrive on a Firebase worker thread; EventChannel sinks
+    // must be driven from the main thread.
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     companion object {
         private const val TAG = "PushChannelHandler"
@@ -147,18 +153,22 @@ class PushChannelHandler(
         CallSafeFirebaseMessagingService.fcmListener = object : CallSafeFirebaseMessagingService.Companion.FCMListener {
             override fun onMessageReceived(data: Map<String, String>) {
                 Log.d(TAG, "FCM message received, forwarding to Flutter")
-                eventSink?.success(mapOf(
-                    "type" to "message",
-                    "data" to data
-                ))
+                mainHandler.post {
+                    eventSink?.success(mapOf(
+                        "type" to "message",
+                        "data" to data
+                    ))
+                }
             }
 
             override fun onTokenRefreshed(token: String) {
                 Log.d(TAG, "FCM token refreshed, forwarding to Flutter")
-                eventSink?.success(mapOf(
-                    "type" to "tokenRefresh",
-                    "token" to token
-                ))
+                mainHandler.post {
+                    eventSink?.success(mapOf(
+                        "type" to "tokenRefresh",
+                        "token" to token
+                    ))
+                }
             }
         }
     }
