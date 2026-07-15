@@ -7,10 +7,13 @@
 #   make flutter-ios-build LOCAL_IP=192.168.1.42
 #   make server-health LOCAL_IP=192.168.1.42 # verify server is reachable
 
-LOCAL_IP    ?= localhost
-SERVER_PORT ?= 4000
-WS_URL      ?= ws://$(LOCAL_IP):$(SERVER_PORT)/ws
-HTTP_URL    ?= http://$(LOCAL_IP):$(SERVER_PORT)
+LOCAL_IP      ?= localhost
+SERVER_PORT   ?= 4000
+WS_URL        ?= ws://$(LOCAL_IP):$(SERVER_PORT)/ws
+HTTP_URL      ?= http://$(LOCAL_IP):$(SERVER_PORT)
+# SvelteKit dashboard origin (login + socket-token endpoints).
+# For prod testing: make flutter-apk WS_URL=wss://signal.callsafe.tech/ws DASHBOARD_URL=https://www.callsafe.tech
+DASHBOARD_URL ?= http://$(LOCAL_IP):5173
 
 .PHONY: help server-up server-logs server-health preflight web-up flutter-apk flutter-ios-build
 
@@ -58,11 +61,13 @@ web-up:
 
 flutter-apk:
 	cd flutter && flutter build apk --debug \
-		--dart-define=SIGNALING_SERVER_URL=$(WS_URL)
+		--dart-define=SIGNALING_SERVER_URL=$(WS_URL) \
+		--dart-define=DASHBOARD_BASE_URL=$(DASHBOARD_URL)
 	@echo "APK: flutter/build/app/outputs/flutter-apk/app-debug.apk"
 	@echo "Install: adb install flutter/build/app/outputs/flutter-apk/app-debug.apk"
 
 flutter-ios-build:
 	cd flutter && flutter build ios --debug --no-codesign \
-		--dart-define=SIGNALING_SERVER_URL=$(WS_URL)
+		--dart-define=SIGNALING_SERVER_URL=$(WS_URL) \
+		--dart-define=DASHBOARD_BASE_URL=$(DASHBOARD_URL)
 	@echo "iOS build complete. Install via Xcode or ios-deploy."
