@@ -66,6 +66,17 @@ class PushChannelHandler(
                     result.error("INVALID_ARGS", "Missing token", null)
                 }
             }
+            "showIncomingCallNotification" -> {
+                val isVideo = call.argument<Boolean>("isVideo") ?: false
+                CallSafeFirebaseMessagingService.showIncomingCallNotification(
+                    context, if (isVideo) "video" else "voice"
+                )
+                result.success(null)
+            }
+            "clearNotification" -> {
+                CallSafeFirebaseMessagingService.cancelIncomingCallNotification(context)
+                result.success(null)
+            }
             else -> result.notImplemented()
         }
     }
@@ -105,8 +116,7 @@ class PushChannelHandler(
             CallSafeFirebaseMessagingService.PREFS_NAME, Context.MODE_PRIVATE
         )
         // The app is in the foreground now; the wake notification is obsolete.
-        (context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager)
-            .cancel(CallSafeFirebaseMessagingService.NOTIFICATION_ID)
+        CallSafeFirebaseMessagingService.cancelIncomingCallNotification(context)
 
         val json = prefs.getString(CallSafeFirebaseMessagingService.PENDING_CALL_KEY, null)
             ?: return null

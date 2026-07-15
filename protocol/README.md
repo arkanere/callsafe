@@ -126,7 +126,7 @@ Every server-to-client message has a defined audience (the `audience` field in
 | `device:disconnected` | Sender |
 | `device:status-updated` | Sender |
 | `call:initiated` | Caller |
-| `call:incoming` | Every available business device (WebSocket if connected; FCM data push for offline mobile devices). Also re-delivered to a business device that connects while the call is still ringing. |
+| `call:incoming` | Every available business device (WebSocket if connected; FCM data push for offline mobile devices). Mobile devices with a push token receive **both** the WebSocket delivery and the FCM data push — a backgrounded app's socket may be half-open without the server knowing. Also re-delivered to a business device that connects while the call is still ringing. |
 | `call:cancelled` | reason `cancelled_by_caller`: all ringing devices and the caller (as ack); reason `answered_elsewhere`: every ringing device except the accepting one |
 | `call:accepted` | Caller and accepting device |
 | `call:unavailable` | Caller |
@@ -160,6 +160,10 @@ Every server-to-client message has a defined audience (the `audience` field in
   so clients pass their native objects through unchanged. An empty-string
   `candidate` signals end-of-candidates. Clients MUST buffer candidates that
   arrive before the remote description is set, and tolerate duplicates.
+- **Clients MUST tolerate duplicate ring delivery**: the same `call:incoming`
+  `callAttemptId` may arrive more than once (WebSocket + FCM dual-path, or
+  re-delivery on reconnect). A device already handling that call ignores the
+  duplicate.
 - **First accept wins**: other ringing devices receive
   `call:cancelled` (reason `answered_elsewhere`). When every notified device
   has rejected, the caller receives `call:unavailable`

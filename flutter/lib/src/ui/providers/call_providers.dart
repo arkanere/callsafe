@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../auth/auth_service.dart';
 import '../../call/call_manager.dart';
@@ -120,6 +121,42 @@ final callManagerProvider =
   return CallManager(signaling, webrtc, fetchTurnServers: _fetchTurnServers);
 });
 
+/// Ring received over the WebSocket while the app is backgrounded: the Dart
+/// side keeps running but nothing is visible, so post the full-screen
+/// incoming-call notification; clear it when the ring ends for any reason
+/// (accept, reject, cancel, end, timeout).
+final incomingCallNotificationProvider = Provider<void>((ref) {
+  final push = ref.watch(pushPlatformProvider);
+
+  bool isIncomingRinging(CallManagerState s) {
+    final call = s.currentCall;
+    return call != null &&
+        call.state == CallState.ringing &&
+        call.sourceId != s.deviceId;
+  }
+
+  ref.listen<CallManagerState>(callManagerProvider, (previous, next) {
+    final wasRinging = previous != null && isIncomingRinging(previous);
+    final isRinging = isIncomingRinging(next);
+
+    if (isRinging && !wasRinging) {
+      final lifecycle = WidgetsBinding.instance.lifecycleState;
+      if (lifecycle != AppLifecycleState.resumed) {
+        final call = next.currentCall!;
+        push
+            .showIncomingCallNotification(
+              callAttemptId: call.callAttemptId,
+              callerName: call.sourceId ?? 'Unknown',
+              isVideo: call.callType == CallType.video,
+            )
+            .run();
+      }
+    } else if (wasRinging && !isRinging) {
+      push.clearNotification(previous.currentCall!.callAttemptId).run();
+    }
+  });
+});
+
 /// App startup: determine auth state and, when logged in, register the
 /// device (push permission + FCM token + signaling connect). Safe to
 /// re-run (invalidate) after login; SignalingClient.connect is a no-op
@@ -134,6 +171,10 @@ final appStartupProvider = FutureProvider<void>((ref) async {
   final push = ref.watch(pushPlatformProvider);
   final callManager = ref.read(callManagerProvider.notifier);
   final deviceId = await auth.getDeviceId();
+
+  // Background-ring notification (socket-delivered call:incoming while the
+  // app is not resumed).
+  ref.watch(incomingCallNotificationProvider);
 
   // Android 13+ needs the runtime POST_NOTIFICATIONS permission for the
   // full-screen incoming-call notification (FCM wake path).

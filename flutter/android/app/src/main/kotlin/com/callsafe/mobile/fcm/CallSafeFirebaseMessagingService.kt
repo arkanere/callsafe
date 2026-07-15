@@ -47,6 +47,57 @@ class CallSafeFirebaseMessagingService : FirebaseMessagingService() {
         // Static listener that PushChannelHandler will set
         @Volatile
         var fcmListener: FCMListener? = null
+
+        /// Post the full-screen incoming-call notification. Also called from
+        /// PushChannelHandler when a ring arrives over the WebSocket while
+        /// the app is backgrounded.
+        fun showIncomingCallNotification(context: Context, callType: String) {
+            val notificationManager =
+                context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val channel = NotificationChannel(
+                    CHANNEL_ID,
+                    "Incoming calls",
+                    NotificationManager.IMPORTANCE_HIGH
+                ).apply {
+                    setSound(
+                        RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE),
+                        AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                            .build()
+                    )
+                }
+                notificationManager.createNotificationChannel(channel)
+            }
+
+            val intent = Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            }
+            val pendingIntent = PendingIntent.getActivity(
+                context, 0, intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.sym_call_incoming)
+                .setContentTitle("Incoming $callType call")
+                .setContentText("Tap to answer")
+                .setPriority(NotificationCompat.PRIORITY_MAX)
+                .setCategory(NotificationCompat.CATEGORY_CALL)
+                .setAutoCancel(true)
+                .setTimeoutAfter(PENDING_CALL_MAX_AGE_MS)
+                .setContentIntent(pendingIntent)
+                .setFullScreenIntent(pendingIntent, true)
+                .build()
+
+            notificationManager.notify(NOTIFICATION_ID, notification)
+        }
+
+        fun cancelIncomingCallNotification(context: Context) {
+            (context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
+                .cancel(NOTIFICATION_ID)
+        }
     }
 
     override fun onMessageReceived(remoteMessage: RemoteMessage) {
@@ -63,10 +114,19 @@ class CallSafeFirebaseMessagingService : FirebaseMessagingService() {
         if (listener != null) {
             // Flutter engine running — forward directly
             listener.onMessageReceived(remoteMessage.data)
+
+            // Backgrounded (engine alive, no resumed activity): the Dart
+            // layer can't wake the screen, so post the full-screen
+            // notification here too.
+            if (!MainActivity.isInForeground &&
+                remoteMessage.data.containsKey("callAttemptId")
+            ) {
+                showIncomingCallNotification(this, remoteMessage.data["callType"] ?: "voice")
+            }
         } else if (remoteMessage.data.containsKey("callAttemptId")) {
             // App killed: cache the call and wake the user
             cachePendingCall(remoteMessage.data)
-            showIncomingCallNotification(remoteMessage.data)
+            showIncomingCallNotification(this, remoteMessage.data["callType"] ?: "voice")
         }
     }
 
@@ -90,47 +150,4 @@ class CallSafeFirebaseMessagingService : FirebaseMessagingService() {
             .apply()
     }
 
-    private fun showIncomingCallNotification(data: Map<String, String>) {
-        val notificationManager =
-            getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "Incoming calls",
-                NotificationManager.IMPORTANCE_HIGH
-            ).apply {
-                setSound(
-                    RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE),
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
-                        .build()
-                )
-            }
-            notificationManager.createNotificationChannel(channel)
-        }
-
-        val intent = Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-        }
-        val pendingIntent = PendingIntent.getActivity(
-            this, 0, intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val callType = data["callType"] ?: "voice"
-        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.sym_call_incoming)
-            .setContentTitle("Incoming $callType call")
-            .setContentText("Tap to answer")
-            .setPriority(NotificationCompat.PRIORITY_MAX)
-            .setCategory(NotificationCompat.CATEGORY_CALL)
-            .setAutoCancel(true)
-            .setTimeoutAfter(PENDING_CALL_MAX_AGE_MS)
-            .setContentIntent(pendingIntent)
-            .setFullScreenIntent(pendingIntent, true)
-            .build()
-
-        notificationManager.notify(NOTIFICATION_ID, notification)
-    }
 }

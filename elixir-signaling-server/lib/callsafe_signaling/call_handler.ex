@@ -422,7 +422,14 @@ defmodule CallsafeSignaling.CallHandler do
     message = incoming_payload(call_id, caller_id, call_type, media_capabilities)
 
     Enum.each(devices, fn device ->
-      routing_method = if device.connection_pid, do: "websocket", else: "fcm"
+      has_push_token = is_binary(device.push_token)
+
+      routing_method =
+        cond do
+          is_pid(device.connection_pid) and has_push_token -> "websocket+fcm"
+          is_pid(device.connection_pid) -> "websocket"
+          true -> "fcm"
+        end
 
       DecisionCapture.emit_message_routed(
         call_id,
@@ -439,6 +446,14 @@ defmodule CallsafeSignaling.CallHandler do
         pid when is_pid(pid) ->
           send(pid, {:send_message, message["type"], message})
           Logger.debug("Sent call:incoming to device #{device.device_id} via WebSocket")
+
+          # Never trust a mobile socket to be alive: Android freezes a
+          # backgrounded app's WebSocket without the server noticing, so the
+          # ring is sent via FCM as well. Clients dedupe by callAttemptId
+          # (see protocol/README.md, duplicate ring delivery).
+          if has_push_token do
+            send_fcm_notification(device, call_id, caller_id, call_type)
+          end
       end
     end)
 
