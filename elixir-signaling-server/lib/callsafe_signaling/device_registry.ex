@@ -3,6 +3,12 @@ defmodule CallsafeSignaling.DeviceRegistry do
   ETS-based device connection registry.
   Provides O(1) lookups by device_id and business_id.
   Implemented as a GenServer managing an ETS table.
+
+  Mobile registrations with a push token are additionally mirrored to a DETS
+  file (when `DEVICE_REGISTRY_FILE` / `:device_registry_file` is configured)
+  and restored at startup with `connection_pid: nil` — otherwise a server
+  restart forgets every push token and killed phones stay unreachable until
+  the app is next opened.
   """
 
   use GenServer
@@ -157,11 +163,17 @@ defmodule CallsafeSignaling.DeviceRegistry do
       write_concurrency: false
     ])
 
+    # Trap exits so terminate/2 runs on shutdown and the DETS file closes cleanly.
+    Process.flag(:trap_exit, true)
+
+    dets = open_persistence()
+    load_persisted_devices(dets)
+
     Logger.info("DeviceRegistry started")
     # monitors: %{reference() => device_id} — used to identify which device a :DOWN belongs to.
     # Keying on the monitor ref (not the PID) avoids false matches when PIDs are reused by
     # the BEAM after short-lived test connections exhaust the 15-bit PID counter range.
-    {:ok, %{monitors: %{}}}
+    {:ok, %{monitors: %{}, dets: dets}}
   end
 
   @impl true
@@ -199,6 +211,8 @@ defmodule CallsafeSignaling.DeviceRegistry do
             state.monitors
           end
 
+        persist_entry(state.dets, entry)
+
         Logger.debug("Device registered: #{device_id} for business: #{business_id}")
         {:reply, {:ok, entry}, %{state | monitors: new_monitors}}
 
@@ -218,6 +232,8 @@ defmodule CallsafeSignaling.DeviceRegistry do
         # Cancel outstanding monitor so no stale :DOWN arrives later.
         new_monitors = cancel_monitor_for_device(device_id, state.monitors)
 
+        unpersist_entry(state.dets, device_id)
+
         Logger.debug("Device unregistered: #{device_id}")
         {:reply, :ok, %{state | monitors: new_monitors}}
 
@@ -236,6 +252,8 @@ defmodule CallsafeSignaling.DeviceRegistry do
         :ets.insert(:device_registry, {{:device, device_id}, updated_entry})
         :ets.insert(:device_registry, {{:business, business_id, device_id}, updated_entry})
 
+        persist_entry(state.dets, updated_entry)
+
         Logger.debug("Device status updated: #{device_id} -> #{status}")
         {:reply, {:ok, updated_entry}, state}
 
@@ -253,6 +271,8 @@ defmodule CallsafeSignaling.DeviceRegistry do
 
         :ets.insert(:device_registry, {{:device, device_id}, updated_entry})
         :ets.insert(:device_registry, {{:business, business_id, device_id}, updated_entry})
+
+        persist_entry(state.dets, updated_entry)
 
         Logger.debug("Device push_token updated: #{device_id}")
         {:reply, {:ok, updated_entry}, state}
@@ -334,6 +354,14 @@ defmodule CallsafeSignaling.DeviceRegistry do
     end
   end
 
+  @impl true
+  def terminate(_reason, %{dets: dets}) when dets != nil do
+    :dets.close(dets)
+    :ok
+  end
+
+  def terminate(_reason, _state), do: :ok
+
   # Cancel the monitor associated with device_id (if any) and return the updated map.
   defp cancel_monitor_for_device(device_id, monitors) do
     case Enum.find(monitors, fn {_ref, id} -> id == device_id end) do
@@ -344,5 +372,83 @@ defmodule CallsafeSignaling.DeviceRegistry do
       nil ->
         monitors
     end
+  end
+
+  # --- Persistence (see moduledoc) ---
+
+  defp open_persistence do
+    path =
+      Application.get_env(:callsafe_signaling, :device_registry_file) ||
+        System.get_env("DEVICE_REGISTRY_FILE")
+
+    case path do
+      empty when empty in [nil, ""] ->
+        nil
+
+      path ->
+        case :dets.open_file(:device_registry_persist,
+               file: String.to_charlist(path),
+               type: :set
+             ) do
+          {:ok, table} ->
+            table
+
+          {:error, reason} ->
+            Logger.error(
+              "DeviceRegistry: cannot open persistence file #{path}: #{inspect(reason)} — persistence disabled"
+            )
+
+            nil
+        end
+    end
+  end
+
+  defp load_persisted_devices(nil), do: :ok
+
+  defp load_persisted_devices(dets) do
+    count =
+      :dets.foldl(
+        fn {device_id, entry}, acc ->
+          :ets.insert(:device_registry, {{:device, device_id}, entry})
+          :ets.insert(:device_registry, {{:business, entry.business_id, device_id}, entry})
+          acc + 1
+        end,
+        0,
+        dets
+      )
+
+    if count > 0 do
+      Logger.info("DeviceRegistry: restored #{count} persisted mobile device(s)")
+    end
+
+    :ok
+  end
+
+  # Only mobile devices with a push token are worth remembering across
+  # restarts — they stay reachable via FCM. connection_pid is never persisted
+  # (a restored entry starts disconnected).
+  defp persist_entry(nil, _entry), do: :ok
+
+  defp persist_entry(dets, %{device_type: :mobile} = entry) do
+    if is_binary(entry.push_token) do
+      :dets.insert(dets, {entry.device_id, %{entry | connection_pid: nil}})
+    else
+      :dets.delete(dets, entry.device_id)
+    end
+
+    # Registrations are rare enough that syncing each write is cheap, and it
+    # makes them survive a hard crash (DETS buffers writes in memory).
+    :dets.sync(dets)
+    :ok
+  end
+
+  defp persist_entry(_dets, _entry), do: :ok
+
+  defp unpersist_entry(nil, _device_id), do: :ok
+
+  defp unpersist_entry(dets, device_id) do
+    :dets.delete(dets, device_id)
+    :dets.sync(dets)
+    :ok
   end
 end

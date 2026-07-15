@@ -42,7 +42,9 @@ Loaded by systemd via `EnvironmentFile`. Names only — set real values on the h
 | Variable | Purpose |
 |---|---|
 | `JWT_SECRET` | HMAC-SHA256 key for verifying socket tokens. **Must match Vercel's `JWT_SECRET`.** |
-| `FCM_SERVICE_ACCOUNT_JSON` | Firebase service-account JSON for push notifications. |
+| `FCM_SERVICE_ACCOUNT_FILE` | **Preferred.** Path to the Firebase service-account JSON file (e.g. `/opt/callsafe/fcm-service-account.json`, chmod 600, owned by `callsafe`). Avoids the inline-JSON backslash gotcha below. |
+| `FCM_SERVICE_ACCOUNT_JSON` | Inline Firebase service-account JSON (fallback when the `_FILE` variant is unset). **Gotcha:** systemd `EnvironmentFile` strips backslashes, so the `\n` escapes inside `private_key` must be doubled to `\\n` — while shell `source`-ing (the Makefile's `.env`) must NOT double them. Use the `_FILE` variant to sidestep this entirely. |
+| `DEVICE_REGISTRY_FILE` | Path to the DETS file persisting mobile push-token registrations across restarts (e.g. `/opt/callsafe/data/device_registry.dets`). The directory must exist, be writable by `callsafe`, and live **outside** `/opt/callsafe/app` (that directory is replaced on every deploy). Unset ⇒ registrations are lost on restart and killed phones are unreachable until the app is next opened. |
 | `TURN_SERVER_URL` | Comma-separated TURN URLs (optional). |
 | `TURN_SECRET` | TURN shared secret (optional). |
 | `PORT` | App HTTP port (default `4000`; Caddy proxies to it). |

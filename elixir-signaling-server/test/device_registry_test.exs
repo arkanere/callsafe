@@ -210,4 +210,97 @@ defmodule CallsafeSignaling.DeviceRegistryTest do
       assert {:error, :not_found} = DeviceRegistry.lookup_by_device(device_id)
     end
   end
+
+  describe "persistence" do
+    setup do
+      path =
+        Path.join(
+          System.tmp_dir!(),
+          "device_registry_#{System.unique_integer([:positive])}.dets"
+        )
+
+      Application.put_env(:callsafe_signaling, :device_registry_file, path)
+
+      on_exit(fn ->
+        Application.delete_env(:callsafe_signaling, :device_registry_file)
+        File.rm(path)
+      end)
+
+      # Restart the registry so it picks up the persistence config
+      restart_registry()
+
+      %{path: path}
+    end
+
+    test "mobile devices with a push token survive a registry restart" do
+      {:ok, _} =
+        DeviceRegistry.register(
+          "mobile_1",
+          "business_1",
+          self(),
+          :mobile,
+          :business,
+          :available,
+          "push-token-1"
+        )
+
+      {:ok, _} =
+        DeviceRegistry.register("web_1", "business_1", self(), :web, :business, :available)
+
+      restart_registry()
+
+      assert {:ok, entry} = DeviceRegistry.lookup_by_device("mobile_1")
+      assert entry.push_token == "push-token-1"
+      assert entry.connection_pid == nil
+      assert entry.status == :available
+      assert [_] = DeviceRegistry.list_by_business("business_1") |> Enum.filter(&(&1.device_id == "mobile_1"))
+
+      # Web devices are not persisted
+      assert {:error, :not_found} = DeviceRegistry.lookup_by_device("web_1")
+    end
+
+    test "a refreshed push token is the one restored" do
+      {:ok, _} =
+        DeviceRegistry.register(
+          "mobile_1",
+          "business_1",
+          self(),
+          :mobile,
+          :business,
+          :available,
+          "push-token-old"
+        )
+
+      {:ok, _} = DeviceRegistry.update_push_token("mobile_1", "push-token-new")
+
+      restart_registry()
+
+      assert {:ok, entry} = DeviceRegistry.lookup_by_device("mobile_1")
+      assert entry.push_token == "push-token-new"
+    end
+
+    test "unregistered devices are removed from the persistence file" do
+      {:ok, _} =
+        DeviceRegistry.register(
+          "mobile_1",
+          "business_1",
+          self(),
+          :mobile,
+          :business,
+          :available,
+          "push-token-1"
+        )
+
+      :ok = DeviceRegistry.unregister("mobile_1")
+
+      restart_registry()
+
+      assert {:error, :not_found} = DeviceRegistry.lookup_by_device("mobile_1")
+    end
+
+    defp restart_registry do
+      stop_supervised!(DeviceRegistry)
+      start_supervised!(DeviceRegistry)
+    end
+  end
 end

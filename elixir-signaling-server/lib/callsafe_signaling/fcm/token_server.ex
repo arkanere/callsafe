@@ -2,9 +2,11 @@ defmodule CallsafeSignaling.FCM.TokenServer do
   @moduledoc """
   GenServer that caches OAuth2 bearer tokens for the FCM HTTP v2 API.
 
-  Reads a Google service account JSON from the FCM_SERVICE_ACCOUNT_JSON env var,
-  signs JWT assertions with RS256, and exchanges them for short-lived access tokens
-  via Google's OAuth2 token endpoint. Tokens are cached until 5 minutes before expiry.
+  Reads a Google service account JSON from the FCM_SERVICE_ACCOUNT_FILE env var
+  (path to the JSON file, preferred — systemd EnvironmentFile mangles the inline
+  JSON's backslashes) or FCM_SERVICE_ACCOUNT_JSON (inline JSON), signs JWT
+  assertions with RS256, and exchanges them for short-lived access tokens via
+  Google's OAuth2 token endpoint. Tokens are cached until 5 minutes before expiry.
   """
 
   use GenServer
@@ -45,7 +47,7 @@ defmodule CallsafeSignaling.FCM.TokenServer do
 
       {:error, reason} ->
         Logger.warning(
-          "FCM TokenServer: service account not configured (#{reason}). Push notifications disabled."
+          "FCM TokenServer: service account not configured (#{inspect(reason)}). Push notifications disabled."
         )
 
         {:ok, %{creds: nil, token: nil, expires_at: 0}}
@@ -131,23 +133,36 @@ defmodule CallsafeSignaling.FCM.TokenServer do
   # --- Service account parsing ---
 
   defp parse_service_account do
-    case System.get_env("FCM_SERVICE_ACCOUNT_JSON") do
-      nil ->
-        {:error, :env_var_missing}
+    with {:ok, json_str} <- read_service_account_json() do
+      case Jason.decode(json_str) do
+        {:ok, %{"client_email" => email, "private_key" => key, "project_id" => project}} ->
+          {:ok, %{client_email: email, private_key: key, project_id: project}}
 
-      "" ->
-        {:error, :env_var_empty}
+        {:ok, _} ->
+          {:error, :missing_required_fields}
 
-      json_str ->
-        case Jason.decode(json_str) do
-          {:ok, %{"client_email" => email, "private_key" => key, "project_id" => project}} ->
-            {:ok, %{client_email: email, private_key: key, project_id: project}}
+        {:error, _} ->
+          {:error, :invalid_json}
+      end
+    end
+  end
 
-          {:ok, _} ->
-            {:error, :missing_required_fields}
+  # FCM_SERVICE_ACCOUNT_FILE (path) takes precedence over the inline JSON.
+  defp read_service_account_json do
+    file = System.get_env("FCM_SERVICE_ACCOUNT_FILE")
 
-          {:error, _} ->
-            {:error, :invalid_json}
+    cond do
+      is_binary(file) and file != "" ->
+        case File.read(file) do
+          {:ok, content} -> {:ok, content}
+          {:error, reason} -> {:error, {:file_read_failed, file, reason}}
+        end
+
+      true ->
+        case System.get_env("FCM_SERVICE_ACCOUNT_JSON") do
+          nil -> {:error, :env_var_missing}
+          "" -> {:error, :env_var_empty}
+          json_str -> {:ok, json_str}
         end
     end
   end
