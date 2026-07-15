@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter_webrtc/flutter_webrtc.dart' as fwrtc;
 import 'package:fpdart/fpdart.dart';
 import '../protocol/protocol.dart';
+import '../services/debug_log.dart';
 import 'webrtc_platform.dart';
 
 const _stunServer = {'urls': 'stun:stun.l.google.com:19302'};
@@ -54,8 +55,9 @@ class WebRTCMethodChannel implements WebRTCPlatform {
 
       _localStream =
           await fwrtc.navigator.mediaDevices.getUserMedia(constraints);
-      // ignore: avoid_print
-      print('[RTC] getUserMedia ok (callType=$callType) tracks='
+      debugLog(
+          'RTC',
+          'getUserMedia ok (callType=$callType) tracks='
           '${_localStream!.getTracks().map((t) => '${t.kind}:${t.enabled}').toList()}');
 
       if (_renderersInitialized) {

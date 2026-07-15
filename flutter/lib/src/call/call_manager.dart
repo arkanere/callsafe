@@ -496,7 +496,8 @@ class CallManager extends StateNotifier<CallManagerState> {
     });
 
     _signalingStateSubscription = _signaling.stateStream.listen((sigState) {
-      if (sigState == SignalingState.disconnected) {
+      if (sigState == SignalingState.disconnected ||
+          sigState == SignalingState.error) {
         state = state.copyWith(isAvailable: false);
       } else if (sigState == SignalingState.connected) {
         state = state.copyWith(isAvailable: true);

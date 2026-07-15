@@ -69,6 +69,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Widget _buildBody() {
     final callManager = ref.read(callManagerProvider.notifier);
     final audio = ref.read(audioPlatformProvider);
+    // Signaling connection state: isAvailable follows connected/disconnected.
+    final isConnected =
+        ref.watch(callManagerProvider.select((s) => s.isAvailable));
 
     return SafeArea(
       child: Center(
@@ -91,9 +94,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Ready to receive calls',
+              isConnected
+                  ? 'Ready to receive calls'
+                  : 'Not connected — reconnecting…',
               style: TextStyle(
-                color: Colors.grey[400],
+                color: isConnected ? Colors.grey[400] : Colors.orange,
                 fontSize: 16,
               ),
             ),

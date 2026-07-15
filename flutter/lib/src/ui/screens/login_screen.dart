@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../auth/auth_service.dart';
+import '../../services/debug_log.dart';
 import '../providers/call_providers.dart';
 
 /// Minimal business login screen.
@@ -42,7 +43,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     } on NotAuthenticatedException catch (e) {
       setState(() => _error = e.message);
     } catch (e) {
-      setState(() => _error = 'Could not reach the server: $e');
+      debugLog('AUTH', 'login failed: $e');
+      setState(() => _error = 'Could not reach the server');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
