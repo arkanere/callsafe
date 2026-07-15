@@ -54,6 +54,9 @@ class WebRTCMethodChannel implements WebRTCPlatform {
 
       _localStream =
           await fwrtc.navigator.mediaDevices.getUserMedia(constraints);
+      // ignore: avoid_print
+      print('[RTC] getUserMedia ok (callType=$callType) tracks='
+          '${_localStream!.getTracks().map((t) => '${t.kind}:${t.enabled}').toList()}');
 
       if (_renderersInitialized) {
         _localRenderer.srcObject = _localStream;
@@ -99,6 +102,7 @@ class WebRTCMethodChannel implements WebRTCPlatform {
           _disconnectTimer?.cancel();
           _disconnectTimer = null;
           _iceRestartAttempted = false;
+          _connectionStateCallback?.call(callAttemptId, 'connected');
         } else if (state == fwrtc.RTCIceConnectionState.RTCIceConnectionStateDisconnected) {
           _disconnectTimer ??= Timer(const Duration(seconds: 4), () {
             _disconnectTimer = null;

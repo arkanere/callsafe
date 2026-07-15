@@ -52,7 +52,9 @@ constants += `}
 
 // --- protocol_enums.dart ---
 
-let enums = `${header('Enums')}`;
+let enums = `${header('Enums')}
+import 'package:json_annotation/json_annotation.dart';
+`;
 
 for (const [name, values] of Object.entries(protocol.enums)) {
   enums += `
@@ -62,7 +64,7 @@ enum ${name} {
   const entries = Object.entries(values);
   entries.forEach(([key, value], index) => {
     const isLast = index === entries.length - 1;
-    enums += `  ${camelCase(key)}('${value}')${isLast ? ';' : ','}\n`;
+    enums += `  @JsonValue('${value}')\n  ${camelCase(key)}('${value}')${isLast ? ';' : ','}\n`;
   });
   enums += `
   const ${name}(this.value);

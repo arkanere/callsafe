@@ -4,9 +4,13 @@
 /// AUTO-GENERATED from protocol.json - DO NOT EDIT MANUALLY
 /// To regenerate: node protocol/generate-dart.js
 
+import 'package:json_annotation/json_annotation.dart';
+
 /// CallType
 enum CallType {
+  @JsonValue('voice')
   voice('voice'),
+  @JsonValue('video')
   video('video');
 
   const CallType(this.value);
@@ -22,7 +26,9 @@ enum CallType {
 
 /// DeviceType
 enum DeviceType {
+  @JsonValue('web')
   web('web'),
+  @JsonValue('mobile')
   mobile('mobile');
 
   const DeviceType(this.value);
@@ -38,7 +44,9 @@ enum DeviceType {
 
 /// DeviceStatus
 enum DeviceStatus {
+  @JsonValue('available')
   available('available'),
+  @JsonValue('unavailable')
   unavailable('unavailable');
 
   const DeviceStatus(this.value);
@@ -54,7 +62,9 @@ enum DeviceStatus {
 
 /// Role
 enum Role {
+  @JsonValue('customer')
   customer('customer'),
+  @JsonValue('business')
   business('business');
 
   const Role(this.value);
@@ -70,7 +80,9 @@ enum Role {
 
 /// MediaTrackType
 enum MediaTrackType {
+  @JsonValue('audio')
   audio('audio'),
+  @JsonValue('video')
   video('video');
 
   const MediaTrackType(this.value);
@@ -86,10 +98,15 @@ enum MediaTrackType {
 
 /// MediaToggleAction
 enum MediaToggleAction {
+  @JsonValue('enable_camera')
   enableCamera('enable_camera'),
+  @JsonValue('disable_camera')
   disableCamera('disable_camera'),
+  @JsonValue('enable_microphone')
   enableMicrophone('enable_microphone'),
+  @JsonValue('disable_microphone')
   disableMicrophone('disable_microphone'),
+  @JsonValue('flip_camera')
   flipCamera('flip_camera');
 
   const MediaToggleAction(this.value);
@@ -105,16 +122,27 @@ enum MediaToggleAction {
 
 /// CallState
 enum CallState {
+  @JsonValue('initiated')
   initiated('initiated'),
+  @JsonValue('ringing')
   ringing('ringing'),
+  @JsonValue('connecting')
   connecting('connecting'),
+  @JsonValue('connected')
   connected('connected'),
+  @JsonValue('escalation_pending')
   escalationPending('escalation_pending'),
+  @JsonValue('ended')
   ended('ended'),
+  @JsonValue('failed')
   failed('failed'),
+  @JsonValue('cancelled')
   cancelled('cancelled'),
+  @JsonValue('busy')
   busy('busy'),
+  @JsonValue('unavailable')
   unavailable('unavailable'),
+  @JsonValue('timeout')
   timeout('timeout');
 
   const CallState(this.value);
@@ -130,8 +158,11 @@ enum CallState {
 
 /// CallEndReason
 enum CallEndReason {
+  @JsonValue('normal')
   normal('normal'),
+  @JsonValue('customer_hangup')
   customerHangup('customer_hangup'),
+  @JsonValue('business_hangup')
   businessHangup('business_hangup');
 
   const CallEndReason(this.value);
@@ -147,9 +178,13 @@ enum CallEndReason {
 
 /// CallFailReason
 enum CallFailReason {
+  @JsonValue('media_permission_denied')
   mediaPermissionDenied('media_permission_denied'),
+  @JsonValue('connection_failed')
   connectionFailed('connection_failed'),
+  @JsonValue('peer_disconnected')
   peerDisconnected('peer_disconnected'),
+  @JsonValue('internal_error')
   internalError('internal_error');
 
   const CallFailReason(this.value);
@@ -165,7 +200,9 @@ enum CallFailReason {
 
 /// CallCancelReason
 enum CallCancelReason {
+  @JsonValue('cancelled_by_caller')
   cancelledByCaller('cancelled_by_caller'),
+  @JsonValue('answered_elsewhere')
   answeredElsewhere('answered_elsewhere');
 
   const CallCancelReason(this.value);
@@ -181,7 +218,9 @@ enum CallCancelReason {
 
 /// CallUnavailableReason
 enum CallUnavailableReason {
+  @JsonValue('no_devices_available')
   noDevicesAvailable('no_devices_available'),
+  @JsonValue('all_devices_rejected')
   allDevicesRejected('all_devices_rejected');
 
   const CallUnavailableReason(this.value);
@@ -197,6 +236,7 @@ enum CallUnavailableReason {
 
 /// CallBusyReason
 enum CallBusyReason {
+  @JsonValue('all_devices_busy')
   allDevicesBusy('all_devices_busy');
 
   const CallBusyReason(this.value);
@@ -212,7 +252,9 @@ enum CallBusyReason {
 
 /// TimeoutPhase
 enum TimeoutPhase {
+  @JsonValue('ringing')
   ringing('ringing'),
+  @JsonValue('connecting')
   connecting('connecting');
 
   const TimeoutPhase(this.value);
@@ -228,8 +270,11 @@ enum TimeoutPhase {
 
 /// EscalationRejectReason
 enum EscalationRejectReason {
+  @JsonValue('declined')
   declined('declined'),
+  @JsonValue('timeout')
   timeout('timeout'),
+  @JsonValue('unsupported')
   unsupported('unsupported');
 
   const EscalationRejectReason(this.value);
@@ -245,23 +290,41 @@ enum EscalationRejectReason {
 
 /// ErrorCode
 enum ErrorCode {
+  @JsonValue('invalid_json')
   invalidJson('invalid_json'),
+  @JsonValue('invalid_message')
   invalidMessage('invalid_message'),
+  @JsonValue('validation_error')
   validationError('validation_error'),
+  @JsonValue('unknown_message_type')
   unknownMessageType('unknown_message_type'),
+  @JsonValue('not_authenticated')
   notAuthenticated('not_authenticated'),
+  @JsonValue('auth_failed')
   authFailed('auth_failed'),
+  @JsonValue('token_expired')
   tokenExpired('token_expired'),
+  @JsonValue('device_mismatch')
   deviceMismatch('device_mismatch'),
+  @JsonValue('protocol_incompatible')
   protocolIncompatible('protocol_incompatible'),
+  @JsonValue('rate_limited')
   rateLimited('rate_limited'),
+  @JsonValue('not_authorized')
   notAuthorized('not_authorized'),
+  @JsonValue('call_not_found')
   callNotFound('call_not_found'),
+  @JsonValue('invalid_state')
   invalidState('invalid_state'),
+  @JsonValue('not_call_participant')
   notCallParticipant('not_call_participant'),
+  @JsonValue('duplicate_call_id')
   duplicateCallId('duplicate_call_id'),
+  @JsonValue('peer_not_connected')
   peerNotConnected('peer_not_connected'),
+  @JsonValue('device_not_found')
   deviceNotFound('device_not_found'),
+  @JsonValue('server_error')
   serverError('server_error');
 
   const ErrorCode(this.value);

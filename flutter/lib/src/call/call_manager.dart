@@ -30,6 +30,12 @@ class CallManager extends StateNotifier<CallManagerState> {
   StreamSubscription<SignalingState>? _signalingStateSubscription;
   bool _isOfferer = false;
 
+  // Remote ICE candidates cannot be added to the peer connection until the
+  // remote description is set; candidates trickling in before that are held
+  // here and flushed afterwards.
+  bool _remoteDescriptionSet = false;
+  final List<RTCIceCandidate> _pendingRemoteCandidates = [];
+
   CallManager(this._signaling, this._webrtc, {Future<List<Map<String, dynamic>>?> Function()? fetchTurnServers})
       : _fetchTurnServers = fetchTurnServers,
         super(const CallManagerState()) {
@@ -153,18 +159,12 @@ class CallManager extends StateNotifier<CallManagerState> {
         ),
       );
 
-      // Send call:accept message
-      final payload = CallAcceptPayload(
-        callAttemptId: session.callAttemptId,
-        mediaCapabilities: capabilities,
-        timestamp: DateTime.now().millisecondsSinceEpoch,
-      );
-
-      _signaling.emit(MessageTypes.callAccept, payload.toJson());
-
       _isOfferer = false;
 
-      // Fetch TURN credentials then initialize WebRTC
+      // Initialize WebRTC BEFORE sending call:accept — the caller sends its
+      // offer and ICE candidates as soon as it sees the accept, and they must
+      // find an existing peer connection (video getUserMedia is slow enough
+      // to lose that race otherwise).
       final iceServers = await _fetchTurnServers?.call();
       await _webrtc
           .initializePeerConnection(
@@ -173,6 +173,15 @@ class CallManager extends StateNotifier<CallManagerState> {
             iceServers: iceServers,
           )
           .run();
+
+      // Send call:accept message
+      final payload = CallAcceptPayload(
+        callAttemptId: session.callAttemptId,
+        mediaCapabilities: capabilities,
+        timestamp: DateTime.now().millisecondsSinceEpoch,
+      );
+
+      _signaling.emit(MessageTypes.callAccept, payload.toJson());
 
       return unit;
     });
@@ -308,6 +317,7 @@ class CallManager extends StateNotifier<CallManagerState> {
 
       // Set remote description via platform
       await _webrtc.setRemoteDescription(session.callAttemptId, offer).run();
+      await _flushPendingRemoteCandidates(session.callAttemptId);
 
       // Create answer
       final answer = await _webrtc.createAnswer(session.callAttemptId).run();
@@ -345,6 +355,7 @@ class CallManager extends StateNotifier<CallManagerState> {
 
       // Set remote description via platform
       await _webrtc.setRemoteDescription(session.callAttemptId, answer).run();
+      await _flushPendingRemoteCandidates(session.callAttemptId);
 
       return unit;
     });
@@ -365,11 +376,26 @@ class CallManager extends StateNotifier<CallManagerState> {
         ),
       );
 
+      if (!_remoteDescriptionSet) {
+        // Hold until the remote description is set (see field docs)
+        _pendingRemoteCandidates.add(candidate);
+        return unit;
+      }
+
       // Add candidate via platform
       await _webrtc.addIceCandidate(session.callAttemptId, candidate).run();
 
       return unit;
     });
+  }
+
+  Future<void> _flushPendingRemoteCandidates(String callAttemptId) async {
+    _remoteDescriptionSet = true;
+    final pending = [..._pendingRemoteCandidates];
+    _pendingRemoteCandidates.clear();
+    for (final candidate in pending) {
+      await _webrtc.addIceCandidate(callAttemptId, candidate).run();
+    }
   }
 
   /// Send local ICE candidate
@@ -396,12 +422,25 @@ class CallManager extends StateNotifier<CallManagerState> {
 
   /// Setup message handlers
   void _setupMessageHandlers() {
+    _webrtc.onIceCandidate((callAttemptId, candidate) {
+      if (!mounted) return;
+      final session = state.currentCall;
+      if (session?.callAttemptId != callAttemptId) return;
+      sendIceCandidate(candidate);
+    });
+
     _webrtc.onConnectionStateChange((callAttemptId, connectionState) {
       if (!mounted) return;
       final session = state.currentCall;
       if (session?.callAttemptId != callAttemptId) return;
 
-      if (connectionState == 'ice-restart-needed' && _isOfferer) {
+      if (connectionState == 'connected') {
+        if (session!.state == CallState.connecting) {
+          state = state.copyWith(
+            currentCall: session.copyWith(state: CallState.connected),
+          );
+        }
+      } else if (connectionState == 'ice-restart-needed' && _isOfferer) {
         _createAndSendOffer(callAttemptId);
       } else if (connectionState == 'failed') {
         state = _endCall(session!, CallState.ended);
@@ -514,8 +553,12 @@ class CallManager extends StateNotifier<CallManagerState> {
       ),
     );
 
-    // Caller creates and sends WebRTC offer now that callee has accepted
-    _createAndSendOffer(session.callAttemptId);
+    // Caller creates and sends WebRTC offer now that callee has accepted.
+    // The accepting device also receives call:accepted (as its ack) — only
+    // the designated offerer may send an offer.
+    if (_isOfferer) {
+      _createAndSendOffer(session.callAttemptId);
+    }
   }
 
   Future<void> _createAndSendOffer(String callAttemptId) async {
@@ -616,6 +659,9 @@ class CallManager extends StateNotifier<CallManagerState> {
 
   /// End call and move to history (pure transformation)
   CallManagerState _endCall(CallSession session, CallState endState) {
+    _remoteDescriptionSet = false;
+    _pendingRemoteCandidates.clear();
+
     final endedSession = session.copyWith(
       state: endState,
       endTime: DateTime.now(),
