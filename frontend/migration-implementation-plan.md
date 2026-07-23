@@ -15,7 +15,7 @@ re-litigate decisions here; if something turns out to be impossible as written, 
 |---|---|
 | 0 Scaffold | ✅ done |
 | 1 Port `src/lib/` | ✅ done |
-| 2 API route handlers | ⬜ not started |
+| 2 API route handlers | ✅ done (unauthenticated paths verified; authenticated paths deferred to Phase 10) |
 | 3 `middleware.ts` | ⬜ not started |
 | 4 Marketing RSC | ⬜ not started |
 | 5 Dashboard | ⬜ not started |
@@ -42,6 +42,32 @@ re-litigate decisions here; if something turns out to be impossible as written, 
   `NEXT_PUBLIC_SIGNALING_SERVER_URL` (same value) so both stacks run locally.
 - Phase 0/1 verification actually run and passing: `npm run build` (Next, typecheck clean),
   `npm run build:embed` (both bundles, **zero** `process.env` occurrences in the output).
+
+#### Phase 2 notes
+
+- All 9 route handlers ported; `api/user` and `api/links` were `.js` in SvelteKit and are
+  now `.ts` (per the plan's file listing). `api/links` carries GET/POST/PUT in one file.
+- **Side-by-side diff harness:** `scratchpad/compare-api.mjs` (in the session scratchpad)
+  hits 24 unauthenticated cases against both stacks and diffs status + body + Set-Cookie.
+  To re-run it, serve Next on `:3100` (`npx next dev -p 3100`) and the **pristine SvelteKit
+  app** on `:3200`. The latter needs a clean checkout — a `main` git worktree at
+  `/tmp/callsafe-main` (`git worktree add /tmp/callsafe-main main`, symlink `node_modules`,
+  copy `.env.local`), because the Phase 1 edit to the *shared* `src/lib/server/auth.js`
+  breaks the in-tree SvelteKit app (SvelteKit dev does not populate `process.env` from
+  `.env.local`). Remove that worktree at the end of the migration.
+- **Result: 23/24 byte-identical.** The one difference is `/api/logout`'s `Set-Cookie`
+  serialization — SvelteKit emits `auth_token=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax`,
+  Next emits `auth_token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT`. Both clear the
+  cookie (browsers match deletion on name+domain+path), so this is accepted as-is; note it
+  in the Phase 3 / Phase 10 header diff so it isn't mistaken for a regression.
+- **Not yet verified — needs real credentials, do this in Phase 10:** the login/signup
+  success paths, the `Set-Cookie` on a *successful* login, `/api/me` and `/api/refresh`
+  with a valid cookie, and `/api/socket-token` with a valid Bearer token. Only failure
+  paths could be exercised without touching the production database.
+- Login/signup route handlers wrap `request.json()` in the same try/catch as the original
+  so a malformed body still yields the original 500 body. The `[SIGNUP API] Database pool
+  created` / `Closing database pool` log lines are not emitted on a malformed-body request
+  (the pool now lives in the service, which is never reached) — the only log-line divergence.
 
 ---
 
