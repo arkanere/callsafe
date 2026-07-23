@@ -47,9 +47,12 @@ re-litigate decisions here; if something turns out to be impossible as written, 
 
 - All 9 route handlers ported; `api/user` and `api/links` were `.js` in SvelteKit and are
   now `.ts` (per the plan's file listing). `api/links` carries GET/POST/PUT in one file.
-- **Side-by-side diff harness:** `scratchpad/compare-api.mjs` (in the session scratchpad)
-  hits 24 unauthenticated cases against both stacks and diffs status + body + Set-Cookie.
-  To re-run it, serve Next on `:3100` (`npx next dev -p 3100`) and the **pristine SvelteKit
+- **Side-by-side diff harness.** Two throwaway Node scripts were written to a session
+  scratchpad and are **not checked in** (public repo; they are trivially regenerated from
+  the case lists in these notes). `compare-api.mjs` hits 24 unauthenticated cases against
+  both stacks and diffs status + body + Set-Cookie; `compare-headers.mjs` (Phase 3) diffs
+  security headers and exercises the CSRF / content-type / auth-redirect checks.
+  To re-run: serve Next on `:3100` (`npx next dev -p 3100`) and the **pristine SvelteKit
   app** on `:3200`. The latter needs a clean checkout — a `main` git worktree at
   `/tmp/callsafe-main` (`git worktree add /tmp/callsafe-main main`, symlink `node_modules`,
   copy `.env.local`), because the Phase 1 edit to the *shared* `src/lib/server/auth.js`
