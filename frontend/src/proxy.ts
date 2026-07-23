@@ -5,7 +5,7 @@ import { jwtVerify } from 'jose';
 // plus the server-side auth redirects that replace the pages' onMount checks.
 //
 // Runs on the Edge runtime, so JWT verification uses `jose` rather than
-// `jsonwebtoken` (see migration-implementation-plan.md D2). Same HS256 tokens,
+// `jsonwebtoken`, which needs Node's crypto. Same HS256 tokens,
 // same secret; verification only — all minting still happens in route handlers.
 
 // Pure function to check if route is embeddable widget

@@ -10,9 +10,9 @@ const config = [
 			'build/**',
 			'node_modules/**',
 			'public/**',
-			// Hand-authored vanilla JS built by Vite, not by Next. Off-limits to the
-			// migration (see migration-implementation-plan.md rule #2), so linting it
-			// only produces findings nobody is allowed to act on.
+			// Hand-authored vanilla JS built by Vite, not by Next. Deliberately kept
+			// out of the SvelteKit -> Next.js migration, so linting it only produces
+			// findings nobody was allowed to act on.
 			'src/embed/**'
 		]
 	},

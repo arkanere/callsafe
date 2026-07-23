@@ -7,7 +7,7 @@ website, and your phone rings like a real call, even if the app was killed.**
 
 Deployed and operating at [callsafe.tech](https://callsafe.tech) (beta).
 Built and operated by a solo developer: an Elixir/OTP signaling server, a
-Flutter mobile app, a SvelteKit frontend with an embeddable widget, and a
+Flutter mobile app, a Next.js frontend with an embeddable widget, and a
 code-generated wire protocol shared across four platforms.
 
 <!-- TODO: 60–90s demo video goes here.
@@ -59,13 +59,13 @@ The engineering problems this repo actually solves:
 |---|---|
 | [`elixir-signaling-server/`](elixir-signaling-server/) | Elixir/OTP signaling server — raw WebSockets, per-call processes, presence, TURN credentials, FCM push. |
 | [`flutter/`](flutter/) | Business-side mobile app (Android/iOS) — Dart signaling + native Kotlin/Swift for WebRTC, audio, FCM wake. |
-| [`frontend/`](frontend/) | SvelteKit web app on Vercel — marketing site, dashboard, embeddable call widget, JWT issuance. |
+| [`frontend/`](frontend/) | Next.js web app on Vercel — marketing site, dashboard, embeddable call widget, JWT issuance. |
 | [`protocol/`](protocol/) | The wire protocol (v2.0.0): `protocol.json` source of truth + TS/Kotlin/Dart/Swift generators. |
 
 ## Stack
 
 Elixir 1.19 / OTP 27 (Cowboy + Plug, no Phoenix) · WebRTC · Flutter/Dart
-with native Kotlin & Swift · SvelteKit + TypeScript · Firebase Cloud
+with native Kotlin & Swift · Next.js + React + TypeScript · Firebase Cloud
 Messaging · coturn/TURN · Caddy + systemd on DigitalOcean · Vercel.
 
 ## Documentation

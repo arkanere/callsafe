@@ -17,4 +17,3 @@ next-env.d.ts
 /vite.embed.config.ts
 /vite.embed-core.config.ts
 /tsconfig.json
-/migration-implementation-plan.md

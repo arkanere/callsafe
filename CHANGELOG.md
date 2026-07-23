@@ -33,6 +33,19 @@ independently in [`protocol/protocol.json`](protocol/protocol.json)
 
 ### Changed
 
+- **Frontend migrated from SvelteKit to Next.js (App Router)** on React 19,
+  as a behaviour-parity port: same routes, responses, cookies, security
+  headers, and log lines. Marketing pages are now React Server Components;
+  the agent console and customer embed page are client components. The
+  SvelteKit `hooks.server.ts` handles became a single proxy module
+  (`frontend/src/proxy.ts`) that also gained two things SvelteKit did for
+  free or not at all — an explicit same-origin CSRF check on state-mutating
+  `/api` requests, and server-side redirects for authenticated routes, which
+  removes the unauthenticated flash the old client-side `onMount` checks
+  allowed. The nine API route handlers keep their paths and contracts, so
+  the mobile app's `/api/socket-token` Bearer flow is untouched. Browser
+  environment variables moved from `VITE_*` to `NEXT_PUBLIC_*`; the embed
+  bundles are still built by Vite and are byte-identical across the move.
 - Signaling server, web client, and Flutter client conformed to protocol
   v2.0.0 (server-authoritative state machine, app-level ping/pong heartbeat,
   transport events no longer pseudo-messages).

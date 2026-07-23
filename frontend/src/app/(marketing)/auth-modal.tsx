@@ -8,8 +8,8 @@ import { AuthManager } from '$lib/managers/auth-manager';
 // open the modal are rendered as <AuthTrigger> and share this state.
 //
 // The page's onMount authentication check is intentionally absent: proxy.ts now
-// performs the same redirect server-side (see migration-implementation-plan.md
-// Phase 4).
+// performs the same redirect server-side, which also removes the unauthenticated
+// flash the client-side check allowed.
 
 const AuthModalContext = createContext<() => void>(() => {});
 

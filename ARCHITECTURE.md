@@ -23,7 +23,7 @@ flowchart LR
     end
 
     subgraph Vercel
-        F["SvelteKit frontend<br/>callsafe.tech<br/>signs socket JWTs"]
+        F["Next.js frontend<br/>callsafe.tech<br/>signs socket JWTs"]
     end
 
     subgraph "DigitalOcean droplet (sgp1)"
@@ -245,7 +245,7 @@ the same generator: a public one for anonymous embed guests
   `device:connect`. The token's `device_id` claim must equal the `deviceId`
   the client claims to be — a mismatch fails with `device_mismatch`, so a
   leaked token can't be replayed as a different device.
-- Tokens are **signed by the SvelteKit frontend** (Vercel) and verified by
+- Tokens are **signed by the Next.js frontend** (Vercel) and verified by
   the signaling server; the two share `JWT_SECRET`. The server itself never
   issues tokens — identity is the frontend's job, admission is the server's.
 - Anonymous embed guests get short-lived guest tokens from the frontend, so
@@ -356,10 +356,15 @@ for itself many times over across the v1→v2 migration.
 
 ## The other components
 
-- **`frontend/`** — SvelteKit app on Vercel: marketing site, business
-  dashboard, and the embeddable widget (a tiny loader stub that lazy-loads
-  the call core, so embedding costs a host page almost nothing). Also the
-  identity provider: it signs the socket JWTs and issues guest tokens.
+- **`frontend/`** — Next.js (App Router) app on Vercel: marketing site,
+  business dashboard, and the embeddable widget (a tiny loader stub that
+  lazy-loads the call core, so embedding costs a host page almost nothing).
+  Also the identity provider: it signs the socket JWTs and issues guest
+  tokens. Marketing pages are React Server Components; the two call pages
+  (agent console and customer embed) are client components holding the
+  WebSocket and `RTCPeerConnection`. CORS, CSP, the security headers, the
+  CSRF origin check, and the authenticated-route redirects all live in one
+  proxy (middleware) module, `frontend/src/proxy.ts`.
 - **`flutter/`** — the business-side mobile app. Dart owns signaling and call
   state; platform channels bridge to native Kotlin for WebRTC, audio
   routing, FCM, and the foreground call service.

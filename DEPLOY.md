@@ -161,13 +161,17 @@ systemctl restart callsafe-signaling
 
 ## Frontend wiring (Vercel)
 
-The SvelteKit frontend derives the WebSocket URL from an HTTPS base:
+The Next.js frontend derives the WebSocket URL from an HTTPS base:
 
-- `VITE_SIGNALING_SERVER_URL = https://signal.callsafe.tech`
+- `NEXT_PUBLIC_SIGNALING_SERVER_URL = https://signal.callsafe.tech`
   (the code converts `https://` → `wss://…/ws` and reuses the base for the
   guest-token / TURN-credential HTTP calls — do **not** put `wss://` here).
-- `VITE_*` values are inlined at **build time**, so changing this requires a
-  redeploy.
+- `NEXT_PUBLIC_*` values are inlined at **build time**, so changing this
+  requires a redeploy. A missing one does not fail the build — it silently
+  inlines `undefined` and every call fails at runtime.
+- The Vercel project's **Framework Preset must be Next.js**. With the old
+  SvelteKit preset the build "succeeds" (it runs `vite build` and serves
+  `public/` as a static directory) but every route returns Vercel's 404.
 - `JWT_SECRET` on Vercel **must equal** the server's `JWT_SECRET`, or the
   `device:connect` handshake fails with `auth_failed: invalid_signature`.
 
