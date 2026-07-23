@@ -17,7 +17,7 @@ re-litigate decisions here; if something turns out to be impossible as written, 
 | 1 Port `src/lib/` | ✅ done |
 | 2 API route handlers | ✅ done (unauthenticated paths verified; authenticated paths deferred to Phase 10) |
 | 3 `middleware.ts` | ✅ done — lives at **`src/proxy.ts`**, see notes |
-| 4 Marketing RSC | ⬜ not started |
+| 4 Marketing RSC | ✅ done |
 | 5 Dashboard | ⬜ not started |
 | 6 `receive/[handle]` | ⬜ not started |
 | 7 `embed/[handle]` | ⬜ not started |
@@ -101,6 +101,69 @@ re-litigate decisions here; if something turns out to be impossible as written, 
     Phases 4–7. Headers are still emitted and compared.
 - **Still unverified: HSTS.** Both dev servers run with `NODE_ENV=development`, so neither
   emits `Strict-Transport-Security`. Confirm it on the Vercel preview in Phase 10.
+
+#### Phase 4 notes
+
+- **Files added:** `(marketing)/layout.tsx` + `analytics-scripts.tsx`, `page.tsx` +
+  `auth-modal.tsx`, `pricing/page.tsx` + `pricing.module.css`, `privacy-policy/page.tsx`,
+  `terms-of-service/page.tsx`, `unsubscribe/page.tsx` + `unsubscribe-form.tsx`,
+  `legal-prose.module.css`, `app/sitemap.ts`, `app/robots.ts`.
+  **Deleted:** the `src/app/page.tsx` placeholder, `static/sitemap.xml`, `static/robots.txt`.
+- **No Server Actions — decision D3 was overridden by the user.** The three web forms keep
+  calling the existing route handlers exactly as the Svelte components did
+  (`AuthManager.login()`, `fetch('/api/signup')`, `fetch('/api/unsubscribe')`). Rationale:
+  rule #1 (behaviour parity) beats D3's optional convenience — this preserves every client
+  log line, keeps the proxy.ts CSRF/content-type gates on the path actually used, and adds
+  no second server surface over the same services. **There is no `(marketing)/actions.ts`.**
+- Svelte scoped `<style>` blocks → **CSS Modules**: `pricing.module.css`, and one shared
+  `legal-prose.module.css` for the byte-identical `.prose` overrides in privacy-policy and
+  terms-of-service. Class names kept kebab-case and accessed as `styles['pricing-card']`
+  so the CSS is verbatim.
+- **`pricing` is pure RSC, no client island** (user decision). Its `selectedPlan` state was
+  written by the CTA buttons but never read anywhere — the clicks were already inert, so
+  dropping it changes nothing observable and keeps the page fully static.
+- The home page's `onMount` auth check is gone — proxy.ts does that redirect server-side.
+  This is the one sanctioned behaviour change, exactly as the plan specifies.
+- `AuthTrigger` / `AuthModalProvider`: the three "open modal" buttons are scattered through
+  the static markup, so the client island is a context provider wrapping the RSC children,
+  with a tiny `<AuthTrigger>` button component. All marketing prose stays server-rendered.
+- **`unsubscribe-form.tsx` reads the query param from `window.location.search`, not
+  `useSearchParams()`.** `useSearchParams()` opts the whole route out of prerendering and
+  left the shell markup absent from the initial HTML; `window.location` in an effect
+  mirrors the original's `onMount` and keeps the page static.
+- `analytics-scripts.tsx` checks `document.readyState === 'complete'` before falling back to
+  the `load` listener — the Svelte version ran in `<head>` and could assume `load` was still
+  ahead of it, which an effect cannot.
+
+**Verification run and passing:**
+
+- `npm run build` clean; all 6 marketing routes + sitemap/robots prerendered **static**.
+  `tsc --noEmit` clean. `prettier --check` clean. ESLint: only the **3 pre-existing**
+  `no-explicit-any` errors in the Phase 2 API routes (config swap is Phase 9).
+- **Rendered-text diff vs. the pristine SvelteKit app: byte-identical on all five pages**
+  (`/`, `/pricing`, `/privacy-policy`, `/terms-of-service`, `/unsubscribe`) after
+  whitespace normalisation. Raw-HTML-only difference: JSX collapses the source's
+  intra-paragraph newlines to single spaces; HTML renders both identically.
+- Security headers byte-identical on all five pages. **`/sitemap.xml` and `/robots.txt` now
+  gain** CSP/XFO/XCTO/Referrer-Policy/Permissions-Policy, because they are generated routes
+  passing through the proxy where SvelteKit served them as static files. Additive, benign —
+  don't mistake it for a regression in the Phase 10 header diff.
+- Screenshot comparison of `/pricing` and `/privacy-policy` against the SvelteKit app:
+  pixel-identical (this is what validates the CSS-Modules port).
+- Login modal opens in signup mode and renders correctly.
+
+**Pre-existing bug found, NOT fixed (out of migration scope):** the modal backdrop uses
+`bg-black bg-opacity-50`, but `bg-opacity-*` was **removed in Tailwind 4** — the built CSS
+contains no such rule, so the overlay is fully opaque black in both the old and new app.
+Ported verbatim per rule #1. Fix separately with `bg-black/50` if desired.
+
+**Harness caveat for Phases 5–7 (important):** the `/tmp/callsafe-main` reference worktree
+is at the **repo root**, so the SvelteKit app is at `/tmp/callsafe-main/frontend`, and it
+needs `npx svelte-kit sync` before `npx vite dev`. With `node_modules` **symlinked** into
+the migration tree, SvelteKit's client entry is served from an `@fs/…` path that fails to
+load, so **the reference app never hydrates** — it is SSR-only and no interactive behaviour
+can be compared against it. Fine for Phase 4 (static pages), useless for the interactive
+Phases 5–7: do a real `npm install` inside that worktree instead of symlinking.
 
 ---
 

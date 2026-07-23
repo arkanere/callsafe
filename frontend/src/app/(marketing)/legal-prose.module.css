@@ -1,0 +1,27 @@
+/* Ported verbatim from the identical scoped <style> blocks of
+   (layout-1)/privacy-policy/+page.svelte and terms-of-service/+page.svelte. */
+.prose {
+	line-height: 1.75;
+}
+
+.prose h2 {
+	margin-top: 2rem;
+	margin-bottom: 1rem;
+}
+
+.prose h3 {
+	margin-top: 1.5rem;
+	margin-bottom: 0.75rem;
+}
+
+.prose p {
+	margin-bottom: 1rem;
+}
+
+.prose ul {
+	margin-bottom: 1rem;
+}
+
+.prose li {
+	margin-bottom: 0.5rem;
+}
