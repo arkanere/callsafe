@@ -43,11 +43,6 @@
     ".next/dev/types/**/*.ts"
   ],
   "exclude": [
-    "node_modules",
-    // TEMPORARY — legacy SvelteKit sources still on disk during the migration.
-    // These are deleted in Phase 9; remove these exclusions then.
-    "src/routes/**",
-    "src/hooks.server.ts",
-    "src/app.d.ts"
+    "node_modules"
   ]
 }

@@ -22,7 +22,7 @@ re-litigate decisions here; if something turns out to be impossible as written, 
 | 6 `receive/[handle]` | ✅ done (voice E2E verified; video path left for manual test) |
 | 7 `embed/[handle]` | ✅ done (E2E confirmed by the user against the local signaling server) |
 | 8 Embed builds → `public/` | ✅ done (widget call completion deferred to Phase 10 — see notes) |
-| 9 Deletion & cleanup | ⬜ not started |
+| 9 Deletion & cleanup | ✅ done (SvelteKit fully removed; two follow-ups flagged below) |
 | 10 E2E + cutover | ⬜ not started |
 
 ### Notes / deviations from the plan as written
@@ -409,6 +409,105 @@ where prod signaling is reachable — **run it there in Phase 10.**
 
 Also note `public/ringtone.mp3` is a **0-byte file** (pre-existing, unchanged by the move) —
 the agent console's ringtone is effectively silent. Out of migration scope; flag separately.
+
+#### Phase 9 notes
+
+**Deleted** (all via `git rm`, history preserved): `src/routes/` (18 files), `src/hooks.server.ts`,
+`src/app.html`, `src/app.d.ts`, `svelte.config.js`, `vite.config.ts` (the SvelteKit one — both
+`vite.embed*.config.ts` stay), and the stray `package-lock 2.json`. The untracked `.svelte-kit/`
+build dir was `rm -rf`'d and its `/.svelte-kit` line dropped from `.gitignore`.
+`src/lib/stores/` and `src/app.css` were already gone (Phases 1 and 0).
+
+**`package.json`** — removed `@sveltejs/adapter-vercel`, `@sveltejs/kit`,
+`@sveltejs/vite-plugin-svelte`, `svelte`, `svelte-check`, `eslint-plugin-svelte`,
+`prettier-plugin-svelte`, `@tailwindcss/vite`, plus the four packages that existed only to
+build the old flat ESLint config (`@eslint/compat`, `@eslint/js`, `typescript-eslint`,
+`globals`). `vite` stays — the embed builds need it. Lockfile refreshed by `npm uninstall`.
+Note: `svelte`, `@sveltejs/acorn-typescript` and `prettier-plugin-svelte` still appear in
+`package-lock.json` as **optional peer** deps of `prettier-plugin-tailwindcss`. Not ours,
+not installed as direct deps, nothing to do.
+
+**`tsconfig.json`** — the temporary `src/routes/**` / `src/hooks.server.ts` / `src/app.d.ts`
+exclusions are gone, so `tsc` now covers the whole tree (`src/embed/*.js` included — both
+files carry `@ts-nocheck`, so `checkJs` is satisfied). `npm run check` clean.
+
+**`eslint.config.js` — rewritten on `eslint-config-next`** (`eslint-config-next` +
+`eslint-config-next/typescript` + `eslint-config-prettier`), with explicit `ignores` replacing
+the old `includeIgnoreFile(.gitignore)`. Two deliberate rule adjustments, both commented in
+the file:
+
+- **`src/embed/**` is ignored entirely.** Rule #2 forbids editing it, so linting it only
+  produces findings nobody may act on (2 `ban-ts-comment` errors + 1 `no-unused-expressions`).
+- **`react-hooks/purity`, `react-hooks/immutability`, `react-hooks/set-state-in-effect` are
+  off**, and `@typescript-eslint/no-explicit-any` is downgraded to `warn`. The first three are
+  the React Compiler rules new in `eslint-plugin-react-hooks` v7, and they fired 13 errors
+  against the ported call pages: `Date.now()` inside plain functions declared in the component
+  body (every flagged site is a socket or click handler, never render), the mount effect calling
+  hoisted helpers declared further down the file, and the unsubscribe form's `onMount`
+  query-param prefill. Satisfying them means restructuring pages the migration is required to
+  port verbatim. **Revisit after cutover** — they are worth turning back on then.
+
+Result: **`eslint .` → 0 errors, 17 warnings**, all pre-existing and expected —
+7 `no-explicit-any` (3 API routes + 4 `error-handler.ts`), 3 `exhaustive-deps` (the
+intentional `[]` mount effects, as anticipated in the Phase 5 notes), 6
+`no-html-link-for-pages` and 1 `no-img-element` (verbatim `<a>` / `<img>` from the Svelte
+source — parity, rule #1).
+
+**`.prettierrc`** — dropped `prettier-plugin-svelte` and the `*.svelte` parser override.
+
+**`prettier --check` and the 16 pre-existing unformatted files — user decision: ignore, do
+not reformat.** `src/lib/**`, `src/embed/*`, both vite embed configs, `tsconfig.json`,
+`next-env.d.ts` and this plan document were all already unformatted at `HEAD` before Phase 9
+(verified in Phase 8). They are now listed in `.prettierignore` with a comment. Rationale:
+reformatting is whitespace-only (2-space → tabs) for ~13 files, it inflates the migration
+diff, and it would destroy `src/lib`'s line-for-line comparability against the SvelteKit
+original that Phase 10 still relies on. **A repo-wide `npm run format` is a fine separate
+commit after cutover** — just delete the ignore block.
+
+**`vite.embed-core.config.ts`** — dropped the now-dead `'import.meta.env.DEV'` /
+`'import.meta.env.PROD'` defines. Nothing under `src/lib` or `src/embed` reads `import.meta`
+any more (Phase 1 swapped it all to `process.env`), and the rebuilt bundles are byte-identical,
+proving they were inert.
+
+**`README.md`** — "SvelteKit app" → "Next.js (App Router) app", `npm run check # svelte-check`
+→ `# tsc --noEmit`, and the config section's `VITE_SIGNALING_SERVER_URL` →
+`NEXT_PUBLIC_SIGNALING_SERVER_URL`. (`.env.example` was already correct.)
+
+**Leftover grep** (`svelte|$app/|$env/|import.meta.env|sveltekit`, excluding `package-lock.json`
+and this document): **zero live-code hits.** What remains is (a) provenance comments in the
+ported files — `// Ported from (layout-1)/pricing/+page.svelte` and similar, which are worth
+keeping — and (b) the four `// … (SvelteKit pattern)` comments in `webrtc-manager.ts`
+describing the two credential paths, and (c) `eslint.config.js`'s own explanatory comment.
+
+**Verification run and passing:**
+
+- `npm run check` (tsc, now whole-tree) — clean.
+- `npm run lint` (`prettier --check . && eslint .`) — **exit 0**.
+- `npm run build` — clean, all 19 routes present and with the same static/dynamic split as
+  Phase 8 (`/`, `/pricing`, `/privacy-policy`, `/terms-of-service`, `/unsubscribe`, `/user`,
+  `/sitemap.xml`, `/robots.txt` static; `/embed/[handle]`, `/user/receive/[handle]` and all
+  9 API routes dynamic; Proxy middleware listed).
+- `npm run build:embed` — clean, and the rebuilt bundles are **byte-identical to the committed
+  ones** (`git diff --stat public/` empty). Zero `process.env`, zero `import.meta` in both.
+- **Runtime smoke test on `next start -p 3111`:** `/`, `/pricing`, `/privacy-policy`,
+  `/terms-of-service`, `/unsubscribe`, `/sitemap.xml`, `/robots.txt`, `/embed/abc123handle`
+  → 200; `/favicon.svg`, `/embed.js`, `/embed.core.js` served from `public/` → 200;
+  `/user` with no cookie → 307. Security headers on `/embed/x` unchanged from Phase 3
+  (CSP with `frame-ancestors *`, no X-Frame-Options, the three CORS headers, XCTO,
+  Referrer-Policy, Permissions-Policy).
+
+**Two follow-ups flagged, NOT done (both out of Phase 9 scope):**
+
+1. **`public/favicon.svg` is the Svelte logo** — literally, `<title>svelte-logo</title>`, the
+   SvelteKit skeleton default that was never replaced. It is the site's favicon on
+   callsafe.tech today, so swapping it is a visible design change, not cleanup. Pre-existing;
+   decide separately.
+2. **`src/embed/stub.js` / `core.js` header comments still say the build output is
+   `static/embed.js` / `static/embed.core.js`** (flagged in the Phase 8 notes). Rule #2 was
+   not relaxed, so they were left alone. Comment-only edit whenever you want it.
+
+Still outstanding from earlier phases and carried into Phase 10: remove the
+`/tmp/callsafe-main` reference worktree once the header/behaviour diffs are done.
 
 ---
 

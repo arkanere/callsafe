@@ -7,3 +7,14 @@ bun.lockb
 
 # Miscellaneous
 /public/
+next-env.d.ts
+
+# Unformatted before the SvelteKit -> Next.js migration and deliberately left
+# that way, so the diff stays reviewable and src/lib stays line-comparable
+# against the SvelteKit original. Reformat as a separate commit if wanted.
+/src/embed/
+/src/lib/
+/vite.embed.config.ts
+/vite.embed-core.config.ts
+/tsconfig.json
+/migration-implementation-plan.md

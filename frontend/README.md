@@ -1,6 +1,6 @@
 # CallSafe Frontend
 
-SvelteKit app deployed on Vercel at [callsafe.tech](https://callsafe.tech).
+Next.js (App Router) app deployed on Vercel at [callsafe.tech](https://callsafe.tech).
 It serves three roles for [CallSafe](../README.md):
 
 - **Marketing site + business dashboard** — sign-up, call handling in the
@@ -19,14 +19,14 @@ System design: [`../ARCHITECTURE.md`](../ARCHITECTURE.md).
 ```sh
 npm install
 npm run dev        # local dev server
-npm run check      # svelte-check
+npm run check      # tsc --noEmit
 npm run lint       # prettier + eslint
 npm run build      # production build
 ```
 
 ## Configuration
 
-- `VITE_SIGNALING_SERVER_URL` — HTTPS base of the signaling server (the code
+- `NEXT_PUBLIC_SIGNALING_SERVER_URL` — HTTPS base of the signaling server (the code
   derives `wss://…/ws` from it). Inlined at build time.
 - `JWT_SECRET` — must equal the signaling server's secret, or the
   `device:connect` handshake fails with `invalid_signature`.
