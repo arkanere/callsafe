@@ -2,7 +2,7 @@ import { WsTransport } from '$lib/transport/ws-transport';
 import { MessageTypes } from '@callsafe/protocol';
 
 // Verbose logging only in dev builds. console.error calls remain unconditional.
-const dbg = import.meta.env.DEV
+const dbg = process.env.NODE_ENV === 'development'
   ? (...args: unknown[]) => console.log(...args)
   : () => {};
 
@@ -39,8 +39,8 @@ export class WebRTCManager {
     const iceServers: RTCIceServer[] = [];
 
     // Add STUN servers from environment variables or use defaults
-    const stunServer1 = import.meta.env.VITE_STUN_SERVER_1 || 'stun:stun.l.google.com:19302';
-    const stunServer2 = import.meta.env.VITE_STUN_SERVER_2 || 'stun:stun1.l.google.com:19302';
+    const stunServer1 = process.env.NEXT_PUBLIC_STUN_SERVER_1 || 'stun:stun.l.google.com:19302';
+    const stunServer2 = process.env.NEXT_PUBLIC_STUN_SERVER_2 || 'stun:stun1.l.google.com:19302';
 
     iceServers.push({ urls: stunServer1 });
     iceServers.push({ urls: stunServer2 });
@@ -54,9 +54,9 @@ export class WebRTCManager {
       });
       dbg('[WEBRTC MANAGER] getIceServers(): using dynamic TURN credentials');
     } else {
-      const turnServerUrl = import.meta.env.VITE_TURN_SERVER_URL;
-      const turnUsername = import.meta.env.VITE_TURN_USERNAME;
-      const turnCredential = import.meta.env.VITE_TURN_CREDENTIAL;
+      const turnServerUrl = process.env.NEXT_PUBLIC_TURN_SERVER_URL;
+      const turnUsername = process.env.NEXT_PUBLIC_TURN_USERNAME;
+      const turnCredential = process.env.NEXT_PUBLIC_TURN_CREDENTIAL;
 
       if (turnServerUrl && turnUsername && turnCredential) {
         iceServers.push({

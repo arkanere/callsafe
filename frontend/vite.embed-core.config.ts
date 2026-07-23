@@ -24,14 +24,17 @@ export default defineConfig({
     }
   },
   define: {
+    // src/lib is shared with the Next.js app and now reads process.env.NEXT_PUBLIC_*.
+    // Vite must substitute those here so the embed bundle contains no process.env.
     // Production embed — no dev-mode verbose logging
     'import.meta.env.DEV': 'false',
     'import.meta.env.PROD': 'true',
+    'process.env.NODE_ENV': JSON.stringify('production'),
     // STUN defaults; embed fetches TURN dynamically via setTurnCredentials()
-    'import.meta.env.VITE_STUN_SERVER_1': JSON.stringify('stun:stun.l.google.com:19302'),
-    'import.meta.env.VITE_STUN_SERVER_2': JSON.stringify('stun:stun1.l.google.com:19302'),
-    'import.meta.env.VITE_TURN_SERVER_URL': JSON.stringify(''),
-    'import.meta.env.VITE_TURN_USERNAME': JSON.stringify(''),
-    'import.meta.env.VITE_TURN_CREDENTIAL': JSON.stringify('')
+    'process.env.NEXT_PUBLIC_STUN_SERVER_1': JSON.stringify('stun:stun.l.google.com:19302'),
+    'process.env.NEXT_PUBLIC_STUN_SERVER_2': JSON.stringify('stun:stun1.l.google.com:19302'),
+    'process.env.NEXT_PUBLIC_TURN_SERVER_URL': JSON.stringify(''),
+    'process.env.NEXT_PUBLIC_TURN_USERNAME': JSON.stringify(''),
+    'process.env.NEXT_PUBLIC_TURN_CREDENTIAL': JSON.stringify('')
   }
 });

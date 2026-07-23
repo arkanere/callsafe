@@ -1,5 +1,3 @@
-import { goto } from '$app/navigation';
-
 export interface UserData {
   userId: string;
   email: string;
@@ -111,6 +109,6 @@ export class AuthManager {
     });
 
     console.log('[AUTH MANAGER] logout(): Redirecting to home');
-    goto('/');
+    window.location.href = '/';
   }
 }

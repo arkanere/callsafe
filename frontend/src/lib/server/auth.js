@@ -1,6 +1,11 @@
 // Authentication utility - pure functions for JWT verification
 import jwt from 'jsonwebtoken';
-import { JWT_SECRET } from '$env/static/private';
+
+// Fail fast at import time, matching SvelteKit's $env/static/private behaviour.
+if (!process.env.JWT_SECRET) {
+    throw new Error('JWT_SECRET environment variable is not set');
+}
+const JWT_SECRET = /** @type {string} */ (process.env.JWT_SECRET);
 
 /**
  * Extracts Bearer token from Authorization header

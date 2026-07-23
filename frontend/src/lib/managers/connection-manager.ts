@@ -8,7 +8,7 @@ export class ConnectionManager {
   async connect(): Promise<WsTransport> {
     console.log('[CONNECTION MANAGER] connect(): Initiating connection');
 
-    const serverUrl = import.meta.env.VITE_SIGNALING_SERVER_URL || 'https://signal.callsafe.tech';
+    const serverUrl = process.env.NEXT_PUBLIC_SIGNALING_SERVER_URL || 'https://signal.callsafe.tech';
     const wsUrl = serverUrl.replace(/^https:\/\//, 'wss://').replace(/^http:\/\//, 'ws://') + '/ws';
     console.log('[CONNECTION MANAGER] connect(): Connecting to', wsUrl);
 
