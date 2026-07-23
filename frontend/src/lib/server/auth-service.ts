@@ -27,7 +27,10 @@ function createDbPool() {
 	return createPool({ connectionString: POSTGRES_URL });
 }
 
-export async function loginUser(input: { email?: string; password?: string }): Promise<ServiceResult> {
+export async function loginUser(input: {
+	email?: string;
+	password?: string;
+}): Promise<ServiceResult> {
 	const pool = createDbPool();
 
 	try {
@@ -183,15 +186,10 @@ export async function signupUser(input: {
 
 		console.log('[SIGNUP API] Checking if user already exists');
 		// Check if user already exists
-		const existingUserResult = await pool.query(
-			'SELECT id FROM callsafeusers WHERE email = $1',
-			[email.toLowerCase()]
-		);
-		console.log(
-			'[SIGNUP API] Existing user query result:',
-			existingUserResult.rows.length,
-			'rows'
-		);
+		const existingUserResult = await pool.query('SELECT id FROM callsafeusers WHERE email = $1', [
+			email.toLowerCase()
+		]);
+		console.log('[SIGNUP API] Existing user query result:', existingUserResult.rows.length, 'rows');
 
 		if (existingUserResult.rows.length > 0) {
 			console.log('[SIGNUP API] User already exists with email:', email);

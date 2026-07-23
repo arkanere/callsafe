@@ -16,7 +16,7 @@ re-litigate decisions here; if something turns out to be impossible as written, 
 | 0 Scaffold | ✅ done |
 | 1 Port `src/lib/` | ✅ done |
 | 2 API route handlers | ✅ done (unauthenticated paths verified; authenticated paths deferred to Phase 10) |
-| 3 `middleware.ts` | ⬜ not started |
+| 3 `middleware.ts` | ✅ done — lives at **`src/proxy.ts`**, see notes |
 | 4 Marketing RSC | ⬜ not started |
 | 5 Dashboard | ⬜ not started |
 | 6 `receive/[handle]` | ⬜ not started |
@@ -68,6 +68,36 @@ re-litigate decisions here; if something turns out to be impossible as written, 
   so a malformed body still yields the original 500 body. The `[SIGNUP API] Database pool
   created` / `Closing database pool` log lines are not emitted on a malformed-body request
   (the pool now lives in the service, which is never reached) — the only log-line divergence.
+
+#### Phase 3 notes
+
+- **The file is `src/proxy.ts`, not `src/middleware.ts`.** Next.js 16 renamed the
+  convention; `middleware.ts` is deprecated and, in this version, silently serves empty
+  `200`s in dev instead of running. The exported function is `proxy`, not `middleware`.
+  Everywhere the plan says `middleware.ts`, read `proxy.ts`. Contents are otherwise exactly
+  the Phase 3 spec.
+- All the pure helpers (`isEmbedRoute`, `createEmbedCORSHeaders`, `withCORSHeaders`,
+  `routeAcceptsBody`, `hasJsonContentType`, `isStateMutating`, `generateCSP`,
+  `withSecurityHeaders`) are ported verbatim from `hooks.server.ts`. `dev` → 
+  `process.env.NODE_ENV === 'production'` for the HSTS gate.
+- Security headers are also applied to the new auth-redirect responses.
+- **Verification harness:** `scratchpad/compare-headers.mjs`, run against Next on `:3100`
+  and the pristine `main` worktree on `:3200`. Result — **all checks pass**:
+  - Security headers byte-identical on `/`, `/pricing`, `/user`, `/embed/x`, `/api/me`
+    and `OPTIONS /embed/x` (CSP incl. `frame-ancestors *` on embed vs `'none'` elsewhere,
+    X-Frame-Options omitted on embed, XCTO, Referrer-Policy, Permissions-Policy, the three
+    CORS headers on embed GETs and all four incl. `Access-Control-Max-Age: 86400` on the
+    preflight).
+  - CSRF: evil `Origin` POST → 403 with the exact message; same-origin POST → 200; no
+    `Origin` (curl/mobile) → 200; GET with evil `Origin` unaffected.
+  - `/api/login` without JSON content-type → 400 with the exact message.
+  - Auth redirects: `/user` and `/user/receive/abc` with no / expired / forged cookie →
+    307 to `/`; `/user` with a valid cookie passes through; `/` with a valid cookie → 307
+    to `/user`; `/pricing` never gated.
+  - `/pricing`, `/embed/x`, `/user` return 404 on the Next side — those pages arrive in
+    Phases 4–7. Headers are still emitted and compared.
+- **Still unverified: HSTS.** Both dev servers run with `NODE_ENV=development`, so neither
+  emits `Strict-Transport-Security`. Confirm it on the Vercel preview in Phase 10.
 
 ---
 
