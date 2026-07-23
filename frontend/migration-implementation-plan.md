@@ -19,7 +19,7 @@ re-litigate decisions here; if something turns out to be impossible as written, 
 | 3 `middleware.ts` | ✅ done — lives at **`src/proxy.ts`**, see notes |
 | 4 Marketing RSC | ✅ done |
 | 5 Dashboard | ✅ done |
-| 6 `receive/[handle]` | ⬜ not started |
+| 6 `receive/[handle]` | ✅ done (voice E2E verified; video path left for manual test) |
 | 7 `embed/[handle]` | ⬜ not started |
 | 8 Embed builds → `public/` | ⬜ not started |
 | 9 Deletion & cleanup | ⬜ not started |
@@ -213,6 +213,72 @@ authenticated with a locally minted `auth_token` — cookies are shared across p
 - **Not verified here:** the "Receive Calls" / "Make Calls" buttons navigate to
   `/user/receive/[handle]` and `/embed/[handle]`, which do not exist until Phases 6–7;
   and login-with-real-credentials → dashboard, which needs production DB access (Phase 10).
+
+#### Phase 6 notes
+
+- **Files added:** `src/app/(app)/user/receive/[handle]/page.tsx`. Nothing deleted (the
+  SvelteKit original goes in Phase 9).
+- **`next.config.ts` gained `turbopack.root` / `outputFileTracingRoot` = the repo root.**
+  This is the first phase whose pages import `@callsafe/protocol`, and the build failed with
+  *"Symlink `node_modules/@callsafe/protocol/index.ts` is invalid, it points out of the
+  filesystem root"*. It is a `file:../protocol` dependency, i.e. a symlink above `frontend/`,
+  and Turbopack will not follow a symlink out of its root. Pointing the root at the repo root
+  fixes it; `../protocol/` itself is untouched (rule #2). `transpilePackages` and a
+  `tsconfig` path alias were both tried and are **not** needed — only the root matters.
+  **Watch this on the first Vercel preview build** (Phase 10): the project's Root Directory
+  is `frontend/`, so confirm the deploy still resolves the package.
+- **The `callState` store (D1) is inlined as follows:** only `currentCall` was ever read back
+  (`getCurrentCall()`), so it lives in a `useRef` — it never drives render. Every `ui.*`
+  field the store carried (`status`, `showIncomingCallModal`, `showCallControls`, `isMuted`)
+  was **written and never read** anywhere in the component or its markup, so those
+  `callState.update` calls are gone. Same rationale as the Phase 5 dead-code drop.
+- **Refs vs. state.** Refs: `connectionManager`, `webrtcManager`, `socket`, `durationInterval`,
+  `currentCallStartTime`, `currentCall`, and a `callHistory` mirror (read *and* written across
+  handler invocations — the stale-closure hazard the plan calls out). State: everything that
+  drives render. `incomingCalls` needs no ref mirror because every mutation is expressible as
+  a functional `setIncomingCalls(prev => …)`.
+- `attachStream` action → a small `<VideoStream>` component holding a `useEffect` on
+  `[stream]`. Same `srcObject !== s` guard, same `play().catch(() => autoplayBlocked = true)`.
+  The `data-remote` / `data-local` attributes are preserved — `webrtc-manager.ts` finds the
+  elements by `document.querySelector('video[data-remote]')`.
+- `$page.params` → `useParams()`, `$page.url.searchParams` → `useSearchParams()`.
+  `useSearchParams()` is fine here (unlike the Phase 4 unsubscribe page): the route is
+  already `ƒ` dynamic, so there is no prerender to opt out of.
+- `goto('/')` / `goto('/user')` → `router.push()`. `onMount` → one `useEffect(…, [])`;
+  `onDestroy` → its cleanup function.
+
+**Verification run and passing** (Next `:3100`, pristine SvelteKit worktree `:3200`, the
+Elixir signaling server on `:4000` from `elixir-signaling-server/.env`, authenticated with a
+locally minted `auth_token` for handle `abc123handle`):
+
+- `npm run build` clean, `/user/receive/[handle]` listed; `tsc --noEmit` clean;
+  `prettier --check` clean on the touched files; ESLint clean on `src/app/(app)`.
+- **SSR shell text diff vs. SvelteKit: identical** (after whitespace normalisation).
+- **Real end-to-end voice call, customer = the pristine SvelteKit `/embed/` page:**
+  WebSocket connect → `/api/socket-token` → `device:connect` handshake → "Online - Waiting
+  for calls" → incoming-call card (type, call id, source, timestamp, pulse) → Accept →
+  WebRTC answer → "Connected to Customer" + running timer + "Handle: Busy" → Mute flips the
+  button to red "Unmute" → End Call → UI resets to `terminated`, still online, history entry
+  written. Remote audio track confirmed `live` and playing on the agent side, and **the user
+  confirmed two-way audio by ear.**
+- **Same flow re-run entirely inside the pristine SvelteKit app** (reference agent console on
+  `:3200`): the localStorage history record is structurally identical to the Next one.
+- **Not verified here — do it manually / in Phase 10:** the video-call path (camera toggle
+  and the `<VideoStream>` re-attach across the connecting→active transition), tab
+  close/reopen reconnection, and `call:timeout` / `call:cancelled` / `call:failed` branches.
+  Chrome will not raise a getUserMedia permission prompt in a background tab, so the camera
+  grant cannot be automated.
+
+**Pre-existing bugs found, NOT fixed (out of migration scope) — confirmed identical in the
+pristine SvelteKit app, so do not mistake them for port regressions:**
+
+1. `call:ended` records `duration` in **milliseconds** but `formatDuration()` renders it as
+   seconds, so a 62-second call shows as `1034:36` in Recent Calls.
+2. The history row always logs `sourceId: "unknown"` and `startTime === endTime` when the
+   *agent* hangs up: `endCall()` calls `resetCallUI()` (clearing `currentCall` and
+   `currentCallStartTime`) **before** the server's `call:ended` arrives, so the handler's
+   `getCurrentCall()?.sourceId || 'unknown'` and `currentCallStartTime || data.timestamp`
+   fallbacks both fire.
 
 ---
 
