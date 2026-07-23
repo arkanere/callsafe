@@ -23,7 +23,7 @@ re-litigate decisions here; if something turns out to be impossible as written, 
 | 7 `embed/[handle]` | ✅ done (E2E confirmed by the user against the local signaling server) |
 | 8 Embed builds → `public/` | ✅ done (widget call completion deferred to Phase 10 — see notes) |
 | 9 Deletion & cleanup | ✅ done (SvelteKit fully removed; two follow-ups flagged below) |
-| 10 E2E + cutover | ⬜ not started |
+| 10 E2E + cutover | 🟡 blocked on two Vercel project settings — see below |
 
 ### Notes / deviations from the plan as written
 
@@ -508,6 +508,62 @@ describing the two credential paths, and (c) `eslint.config.js`'s own explanator
 
 Still outstanding from earlier phases and carried into Phase 10: remove the
 `/tmp/callsafe-main` reference worktree once the header/behaviour diffs are done.
+
+#### Phase 10 blockers — the first Vercel preview (READ THIS BEFORE MERGING TO `main`)
+
+`next-migration` was pushed to `origin` on 2026-07-23 specifically to get a preview deploy
+before touching `main`. **Do not merge to `main` until both items below are fixed** — a merge
+deploys production, and today it would take callsafe.tech down.
+
+Vercel reported the preview build as **success in 35 s** and GitHub showed a green check.
+**Both were misleading.** Every path on the preview
+(`callsafe-git-next-migration-aniruddha-kaneres-projects.vercel.app`) returned Vercel's own
+platform `404: NOT_FOUND` page — not our Next 404. Neither problem is a code defect, and
+nothing in the local verification could have caught either; both are project settings.
+
+**Blocker 1 — Framework Preset is still SvelteKit.** Project Settings → Build and Deployment:
+
+| Setting | Current (wrong) | Needs to be |
+|---|---|---|
+| Framework Preset | **SvelteKit** | **Next.js** |
+| Build Command | `vite build` (preset default) | `next build` (preset default) |
+| Output Directory | **`public`** (preset default) | `.next` (preset default) |
+| Development Command | `vite dev` (preset default) | `next dev` (preset default) |
+
+None of these are "Override"-toggled, so they all follow the preset — **switching the preset
+alone fixes all four.** What happened: Vercel ran `vite build` (the repo no longer has a
+`vite.config.ts`, so it built nothing useful), then served `public/` as a static directory.
+`public/` holds `favicon.svg`, `embed.js`, `embed.core.js`, `ringtone.mp3`, `CallsafeLive.gif`
+and no `index.html` — hence 404 on every route. `next build` never ran.
+
+**Blocker 2 — `NEXT_PUBLIC_SIGNALING_SERVER_URL` is not set in Vercel.** The project has
+`JWT_SECRET`, `VITE_SIGNALING_SERVER_URL`, and the Postgres set (`POSTGRES_URL` +
+`POSTGRES_PRISMA_URL` / `_NO_SSL` / `_NON_POOLING`, `PGDATABASE`, `PGHOST_UNPOOLED`, … from the
+storage integration). **No `NEXT_PUBLIC_*` variable exists.** Next inlines `NEXT_PUBLIC_*` at
+*build* time, so once blocker 1 is fixed the bundle would ship a literal `undefined` signaling
+URL and every call would fail silently. Add `NEXT_PUBLIC_SIGNALING_SERVER_URL` with the same
+value as the existing `VITE_SIGNALING_SERVER_URL`, All Environments. Per the cutover plan,
+**keep `VITE_SIGNALING_SERVER_URL` set during the transition** and remove it only after
+cutover. The STUN/TURN `NEXT_PUBLIC_*` vars are optional (see `.env.example`) — the embed core
+hardcodes STUN defaults at build time and fetches TURN dynamically, and `webrtc-manager`
+falls back to Google STUN.
+
+After both are fixed: redeploy the branch (Vercel → Deployments → ⋯ → Redeploy, **with the
+build cache cleared**, since the cached build is a `vite build`), confirm the preview actually
+serves the app, and only then run the Phase 10 matrix below.
+
+**Things this preview therefore did NOT prove yet, despite the green check** — re-check all of
+them on the corrected build:
+
+- The `@callsafe/protocol` symlink / `outputFileTracingRoot` question from the Phase 6 notes.
+  Vercel's Root Directory is `frontend/` while `next.config.ts` points the root at the repo
+  root. `next build` has still never run on Vercel, so this remains **unverified**.
+- HSTS (unverified since Phase 3) and the production CSP without React's dev-mode `eval`
+  (flagged in the Phase 7 notes).
+- Note the preview sits behind Vercel Deployment Protection, so `curl` gets a 302 to the SSO
+  wall. The `x-frame-options: DENY` and HSTS headers visible there are **Vercel's**, not our
+  `proxy.ts` — do not mistake them for our headers. Use a logged-in browser, or a protection
+  bypass token, to check our headers on the preview.
 
 ---
 
