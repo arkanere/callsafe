@@ -20,7 +20,7 @@ re-litigate decisions here; if something turns out to be impossible as written, 
 | 4 Marketing RSC | ✅ done |
 | 5 Dashboard | ✅ done |
 | 6 `receive/[handle]` | ✅ done (voice E2E verified; video path left for manual test) |
-| 7 `embed/[handle]` | ⬜ not started |
+| 7 `embed/[handle]` | ✅ done (E2E confirmed by the user against the local signaling server) |
 | 8 Embed builds → `public/` | ⬜ not started |
 | 9 Deletion & cleanup | ⬜ not started |
 | 10 E2E + cutover | ⬜ not started |
@@ -279,6 +279,75 @@ pristine SvelteKit app, so do not mistake them for port regressions:**
    `currentCallStartTime`) **before** the server's `call:ended` arrives, so the handler's
    `getCurrentCall()?.sourceId || 'unknown'` and `currentCallStartTime || data.timestamp`
    fallbacks both fire.
+
+#### Phase 7 notes
+
+- **Files added:** `src/app/(app)/embed/[handle]/page.tsx`. Nothing deleted (the SvelteKit
+  original goes in Phase 9). No config changes were needed — `turbopack.root` from Phase 6
+  already covers the `@callsafe/protocol` import.
+- **The `customerCallState` store (D1) is dropped entirely, not inlined.** Unlike the agent
+  console (where `currentCall` was read back via `getCurrentCall()`), *nothing* on the
+  customer side ever read the store — every field was write-only. So all
+  `customerCallState.update(...)` calls are gone.
+- **`showCallButton` / `showCallControls` dropped (unobservable).** Both were maintained by
+  the state transitions but are **not referenced anywhere in the markup** — the template
+  branches purely on `callState`. Same rationale as the Phase 5/6 dead-code drops.
+- **Refs vs. state.** Refs: `socket`, `webrtcManager`, `callAttemptId`, `accepted`,
+  `cleanupTimeout`, plus mirrors of `callState` and `callType`. Both mirrors are genuinely
+  needed: `callStateRef` is read by the `initiateCall` re-entrancy guard and by the 1 s
+  `connectionCheckInterval`; `callTypeRef` is read by `handleMediaAccessError` (invoked from
+  `initiateCall`'s own catch, where `setCallType` has not yet re-rendered) and by
+  `toggleCamera`. Both are written through the small `setCallState()` / `setCallType()`
+  helpers so the ref and the state never drift. State: everything that drives render.
+- `attachStream` action → the same `<VideoStream>` component pattern as Phase 6 (effect on
+  `[stream]`, `srcObject !== s` guard, `play().catch(() => autoplayBlocked = true)`), with
+  `data-remote` / `data-local` preserved for `webrtc-manager`'s `document.querySelector`.
+- The hidden voice-call `<audio autoPlay hidden playsInline muted={false}>` keeps its
+  attributes — React renders `autoPlay` as the `autoplay` attribute, which is what
+  `webrtc-manager.playRemoteAudio()`'s `document.querySelector('audio[autoplay]')` matches.
+- `$page.params` → `useParams()`, `$page.url.searchParams` → `useSearchParams()` (fine here,
+  the `[handle]` route is already `ƒ` dynamic). `sourceId` keeps its `'website'` default.
+- `onMount` → one `useEffect(…, [])`; `onDestroy` → its cleanup function. The onMount body is
+  now only the four `console.log` lines (its store write is gone), all preserved verbatim.
+- Tailwind class *strings* are byte-identical in content; prettier-plugin-tailwindcss
+  reorders them, which does not change the generated CSS.
+
+**Verification run and passing:**
+
+- `npm run build` clean, `/embed/[handle]` listed as `ƒ`; `tsc --noEmit` clean;
+  `prettier --check` clean; ESLint clean on `src/app/(app)`.
+- Direct load of `/embed/abc123handle?sourceId=test` renders correctly (handle + source
+  codes, status dot, Voice/Video buttons, footer).
+- **End-to-end call against the local Elixir signaling server, agent console = the Next
+  `/user/receive/[handle]` page — confirmed working by the user.**
+
+**Two dev-environment gotchas hit while testing — neither is a port defect, but both cost
+time, so note them for Phases 8–10:**
+
+1. **Restarting the signaling server silently breaks an already-open agent console.** The
+   Elixir device registry is in-memory, so a restart wipes every registration. `WsTransport`
+   reconnects at the transport level but `registerDevice()` is only ever called once, from
+   `initializeConnection()` — so no `device:connect` is re-sent. The console keeps showing
+   "Online - Waiting for calls" (`isOnline` is set once and never cleared on disconnect)
+   while the server answers `call:unavailable / no_devices_available`. **Always reload the
+   agent console after starting the server.** Identical in the pristine SvelteKit app —
+   pre-existing, and the same gap Phase 6 flagged as "tab close/reopen reconnection".
+2. **Testing the agent console needs an auth cookie** — `proxy.ts` 307s `/user/**` to `/`
+   when there is none, so after a logout the console simply won't open. Mint one locally
+   (payload shape from `auth-service.ts`: `userId`, `email`, `handle`, `sourceId`, `exp`)
+   signed with `JWT_SECRET` from `.env.local`, and set it via `document.cookie` on
+   `localhost` — cookies are shared across ports, so one cookie drives :3000 and :3200.
+
+**Dev-only CSP warning, NOT fixed (parity):** React's *development* build wants
+`unsafe-eval`, which our ported CSP (`script-src 'self' 'unsafe-inline'`) does not grant, so
+the browser logs an `eval() is not supported` notice. This is new relative to SvelteKit/Vite
+dev, which did not need eval. React never uses `eval` in production builds, so it should not
+reach prod — **confirm on the Vercel preview in Phase 10.** Do not add `unsafe-eval` to the
+CSP to silence it.
+
+**Not verified here — do it in Phase 10:** the video-call path (camera toggle, and remote
+video surviving the ringing→connected remount), the pre-accept `call:cancel` branch, and
+loading the page in an iframe on a genuinely foreign origin (CORS + `frame-ancestors *`).
 
 ---
 
