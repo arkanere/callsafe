@@ -21,7 +21,7 @@ re-litigate decisions here; if something turns out to be impossible as written, 
 | 5 Dashboard | ✅ done |
 | 6 `receive/[handle]` | ✅ done (voice E2E verified; video path left for manual test) |
 | 7 `embed/[handle]` | ✅ done (E2E confirmed by the user against the local signaling server) |
-| 8 Embed builds → `public/` | ⬜ not started |
+| 8 Embed builds → `public/` | ✅ done (widget call completion deferred to Phase 10 — see notes) |
 | 9 Deletion & cleanup | ⬜ not started |
 | 10 E2E + cutover | ⬜ not started |
 
@@ -348,6 +348,67 @@ CSP to silence it.
 **Not verified here — do it in Phase 10:** the video-call path (camera toggle, and remote
 video surviving the ringing→connected remount), the pre-accept `call:cancel` branch, and
 loading the page in an iframe on a genuinely foreign origin (CORS + `frame-ancestors *`).
+
+#### Phase 8 notes
+
+- **`git mv static public`** — all 5 files (`favicon.svg`, `ringtone.mp3`, `CallsafeLive.gif`,
+  `embed.js`, `embed.core.js`) moved with history preserved. `sitemap.xml` / `robots.txt`
+  were already gone (deleted in Phase 4), so step 1's deletion was a no-op.
+- **The `/static/` ignore entry was in `.prettierignore`, not `.gitignore`** (the plan implies
+  otherwise). Updated to `/public/` so the minified bundles stay out of the format check.
+  The bundles **are** git-tracked — that practice is preserved.
+- **Both Vite configs gained `publicDir: false`.** With `outDir: 'public'`, Vite's *default*
+  `publicDir` is also `public`, and it warned *"The public directory feature may not work
+  correctly … not separate folders"* — i.e. it would try to copy the folder onto itself.
+  Disabling the public-dir copy step is the correct fix and silences it. Header comments in
+  both configs updated `static/` → `public/`.
+- **`define` block needed no change.** Grep of `src/lib` + `src/embed` confirms the only
+  `process.env.*` the embed core can reach are `NODE_ENV`, `NEXT_PUBLIC_STUN_SERVER_1/_2` and
+  `NEXT_PUBLIC_TURN_SERVER_URL/_USERNAME/_CREDENTIAL` — all already defined.
+  `NEXT_PUBLIC_SIGNALING_SERVER_URL` lives in `connection-manager.ts`, which `core.js` does
+  **not** import (it imports only `ws-transport` and `webrtc-manager`), so it is not needed.
+- **`src/embed/stub.js` / `core.js` were NOT touched** (rule #2), so their header comments
+  still say the build output is `static/embed.js` / `static/embed.core.js`. Stale but
+  harmless — **fix in Phase 9** if the rule is relaxed, it is a comment-only edit.
+- **The in-tree SvelteKit app lost its assets dir.** `svelte.config.js` uses the default
+  `kit.files.assets = 'static'`, which no longer exists. Not fixed: that app was already
+  non-functional in-tree (see Phase 2 notes) and both files are deleted in Phase 9. The
+  pristine `/tmp/callsafe-main` reference worktree is unaffected.
+
+**Verification run and passing:**
+
+- `npm run build:embed` clean, **no `publicDir` warning**, and the rebuilt bundles are
+  **byte-identical to the committed pre-move ones** (`git diff --stat` empty) — proving the
+  move is a pure relocation with zero output change. **Zero** `process.env` and zero
+  `import.meta.env` occurrences in both bundles.
+- `npm run build` clean (all routes as before); `tsc --noEmit` clean.
+- `prettier --check` — the 38 reported files are **pre-existing and identical at `HEAD`**
+  (verified via `git stash`): legacy `src/routes/**`, the original `src/lib/**`, the Svelte
+  configs, and both `vite.embed*.config.ts` (already unformatted before this phase).
+  No new offenders. Phase 9 cleans this up.
+- All 5 assets served by Next from `public/` at the same URLs with correct sizes and
+  content types (`favicon.svg` 1569 B `image/svg+xml`, `embed.js` 5814 B, `embed.core.js`
+  40291 B `application/javascript`, `CallsafeLive.gif` 45198 B, `ringtone.mp3` 0 B).
+- **Third-party-origin widget test** (test page on `http://localhost:8080` via
+  `python3 -m http.server`, app on `:3000` — a genuinely foreign origin): `embed.js` loads
+  cross-origin, the **"Talk to us instantly" button renders**, and **hover lazy-loads
+  `embed.core.js`** (network log confirms stub-only before hover, both after). The stub's
+  `src.replace(/embed\.js$/, 'embed.core.js')` URL derivation still resolves correctly under
+  the new directory. The core then initialises and issues its network calls.
+
+**Not verified — completing a call through the widget. Deferred to Phase 10, and it is NOT a
+Phase 8 defect:** the widget self-disables to "Calls temporarily unavailable" locally because
+its TURN pre-fetch (`core.js:126`) is hardcoded to `CONFIG.DEFAULT_SIGNALING_SERVER`
+(`https://signal.callsafe.tech`), which is unreachable from the dev machine (`curl` → `000`,
+while the local server on `:4000` answers `200`). That line ignores `data-server-url` — unlike
+`getSignalingServerUrl()` at `core.js:637/972`, which honours it — so **no local override can
+point the pre-fetch at `:4000`**, and fixing it would mean editing `core.js` (forbidden by
+rule #2). This is pre-existing behaviour, unchanged by the migration. The plan's own wording
+(*"a plain HTML page embedding `<preview>/embed.js`"*) already targets the Vercel preview,
+where prod signaling is reachable — **run it there in Phase 10.**
+
+Also note `public/ringtone.mp3` is a **0-byte file** (pre-existing, unchanged by the move) —
+the agent console's ringtone is effectively silent. Out of migration scope; flag separately.
 
 ---
 

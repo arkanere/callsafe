@@ -5,8 +5,11 @@ import { fileURLToPath } from 'url';
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
 // Calling core — the heavy bundle (modal UI + WebSocket transport + WebRTC),
-// lazy-loaded by the loader stub as static/embed.core.js.
+// lazy-loaded by the loader stub as public/embed.core.js.
 export default defineConfig({
+  // outDir is 'public', which is also Vite's default publicDir; disable the
+  // public-dir copy step so it does not try to copy the folder onto itself.
+  publicDir: false,
   build: {
     lib: {
       entry: resolve(__dirname, 'src/embed/core.js'),
@@ -14,7 +17,7 @@ export default defineConfig({
       formats: ['iife'],
       fileName: () => 'embed.core.js'
     },
-    outDir: 'static',
+    outDir: 'public',
     emptyOutDir: false,
     minify: true
   },
