@@ -18,7 +18,7 @@ re-litigate decisions here; if something turns out to be impossible as written, 
 | 2 API route handlers | ✅ done (unauthenticated paths verified; authenticated paths deferred to Phase 10) |
 | 3 `middleware.ts` | ✅ done — lives at **`src/proxy.ts`**, see notes |
 | 4 Marketing RSC | ✅ done |
-| 5 Dashboard | ⬜ not started |
+| 5 Dashboard | ✅ done |
 | 6 `receive/[handle]` | ⬜ not started |
 | 7 `embed/[handle]` | ⬜ not started |
 | 8 Embed builds → `public/` | ⬜ not started |
@@ -164,6 +164,55 @@ the migration tree, SvelteKit's client entry is served from an `@fs/…` path th
 load, so **the reference app never hydrates** — it is SSR-only and no interactive behaviour
 can be compared against it. Fine for Phase 4 (static pages), useless for the interactive
 Phases 5–7: do a real `npm install` inside that worktree instead of symlinking.
+**Done as of Phase 5** — the worktree now has its own real `node_modules` and hydrates.
+
+#### Phase 5 notes
+
+- **Files added:** `src/app/(app)/layout.tsx`, `src/app/(app)/user/page.tsx`. Nothing deleted
+  (the SvelteKit originals go in Phase 9).
+- `(app)/layout.tsx` reuses `(marketing)/analytics-scripts.tsx` with `selfEmbed={false}`
+  — that component already took the flag, so the Hotjar-only variant needed no new code.
+- **Dead code dropped (unobservable), everything else verbatim.** The Svelte component
+  declared `hasCreatedHandle`, `userHandles`, `getFullUrl()`, and
+  `totalCalls`/`totalTime`/`successfulCalls` — none of them are referenced anywhere in the
+  markup, and the last three are only *written* by `markAsEmbedded()`. Ported as `useState`
+  they would be unused-variable lint errors for zero behaviour difference, so they are gone.
+  All log lines, control flow, and rendered markup are otherwise identical.
+- `loadUserData()` takes the freshly-fetched user object as an argument instead of reading a
+  module-level `let` (React state is not yet updated at that point in the effect). Same two
+  log lines, same values.
+- `goto()` → `router.push()` from `next/navigation` at all three call sites
+  (`/`, `/user/receive/<handle>`, `/embed/<handle>`, `/user/customer`). `logout()` still goes
+  through `AuthManager.logout()`, which does its own `window.location.href = '/'`.
+- The displayed embed snippet is a JSX template literal instead of the Svelte HTML-entity
+  soup (`&lt;script&gt;` / `&#123;`); rendered text is byte-identical. `getEmbedSnippet()`
+  (the string-concatenation trick) is kept as-is per the plan.
+- Effect deps are `[]` on purpose. No `eslint-disable` for `react-hooks/exhaustive-deps` —
+  that rule is not in the current flat config and the disable comment itself errors; after
+  the Phase 9 swap to `eslint-config-next` it becomes a warning, which is acceptable.
+
+**Verification run and passing** (Next on `:3100`, pristine SvelteKit worktree on `:3200`,
+authenticated with a locally minted `auth_token` — cookies are shared across ports on
+`localhost`, so one cookie drives both stacks):
+
+- `npm run build` clean, `/user` listed as a route; `tsc --noEmit` clean;
+  `prettier --check` clean; ESLint clean on `src/app/**/*.tsx` (the 3 pre-existing
+  `no-explicit-any` errors in the API routes remain, Phase 9).
+- **SSR shell text diff vs. SvelteKit: identical.** The only raw-HTML difference is React's
+  zero-width `<!-- -->` text-node separators around `{userData?.name || 'User'}`.
+- **Screenshot comparison of the hydrated dashboard: pixel-identical.**
+- Client behaviour verified in Chrome: handle populates after hydration (`abc123handle`),
+  Copy button → "Copied!" → resets after 2 s, "I have embedded this code" flips the blue
+  panel to the green "CallSafe is active!" banner, Logout clears the cookie and lands on `/`
+  without the proxy bouncing back to `/user`.
+- **Console log sequence matches the Svelte original exactly** (`[USER PAGE] Component
+  mounted` → `Checking authentication` → `Authenticated, loading user data` → `User data
+  loaded:` → `CallSafe handle set:` → `Loading additional user data` → `User data loaded
+  from JWT:`). The one hydration warning in dev is a browser extension writing
+  `nighteye="disabled"` onto `<html>`, not our markup.
+- **Not verified here:** the "Receive Calls" / "Make Calls" buttons navigate to
+  `/user/receive/[handle]` and `/embed/[handle]`, which do not exist until Phases 6–7;
+  and login-with-real-credentials → dashboard, which needs production DB access (Phase 10).
 
 ---
 
