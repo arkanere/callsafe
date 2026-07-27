@@ -55,13 +55,13 @@ android {
         release {
             signingConfig signingConfigs.debug
 
-            buildConfigField "String", "SIGNALING_SERVER_URL", "\"wss://tunnel.callsafe.tech\""
-            buildConfigField "String", "API_BASE_URL", "\"https://callsafe.tech\""
+            buildConfigField "String", "SIGNALING_SERVER_URL", "\"wss://signal.callsafe.online/ws\""
+            buildConfigField "String", "API_BASE_URL", "\"https://www.callsafe.online\""
         }
 
         debug {
-            buildConfigField "String", "SIGNALING_SERVER_URL", "\"wss://tunnel.callsafe.tech\""
-            buildConfigField "String", "API_BASE_URL", "\"https://callsafe.tech\""
+            buildConfigField "String", "SIGNALING_SERVER_URL", "\"wss://signal.callsafe.online/ws\""
+            buildConfigField "String", "API_BASE_URL", "\"https://www.callsafe.online\""
         }
     }
 

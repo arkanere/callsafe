@@ -13,7 +13,7 @@ turn_urls =
 turn_servers = if turn_urls == [], do: [], else: [%{urls: turn_urls}]
 
 # CORS allowlist — comma-separated origins, e.g.
-# "https://app.callsafe.tech,https://widget.callsafe.tech" (or "*" for any).
+# "https://www.callsafe.online" (or "*" for any).
 # Only overrides the compile-time config when the env var is set, so dev
 # defaults from dev.exs survive.
 case System.get_env("CORS_ALLOWED_ORIGINS") do

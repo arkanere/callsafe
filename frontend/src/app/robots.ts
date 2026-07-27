@@ -8,6 +8,6 @@ export default function robots(): MetadataRoute.Robots {
 			allow: '/',
 			disallow: ['/user/', '/embed/', '/api/']
 		},
-		sitemap: 'https://www.callsafe.tech/sitemap.xml'
+		sitemap: 'https://www.callsafe.online/sitemap.xml'
 	};
 }

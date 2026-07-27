@@ -1,6 +1,6 @@
 # CallSafe Frontend
 
-Next.js (App Router) app deployed on Vercel at [callsafe.tech](https://callsafe.tech).
+Next.js (App Router) app deployed on Vercel at [callsafe.online](https://www.callsafe.online).
 It serves three roles for [CallSafe](../README.md):
 
 - **Marketing site + business dashboard** — sign-up, call handling in the

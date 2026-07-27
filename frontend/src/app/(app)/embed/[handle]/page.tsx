@@ -178,7 +178,7 @@ export default function EmbedPage() {
 	}
 
 	function getServerUrl(): string {
-		return process.env.NEXT_PUBLIC_SIGNALING_SERVER_URL || 'https://signal.callsafe.tech';
+		return process.env.NEXT_PUBLIC_SIGNALING_SERVER_URL || 'https://signal.callsafe.online';
 	}
 
 	async function fetchGuestToken(

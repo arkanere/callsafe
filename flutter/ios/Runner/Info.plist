@@ -71,14 +71,7 @@
 		<false/>
 		<key>NSExceptionDomains</key>
 		<dict>
-			<key>callsafe.tech</key>
-			<dict>
-				<key>NSExceptionAllowsInsecureHTTPLoads</key>
-				<false/>
-				<key>NSIncludesSubdomains</key>
-				<true/>
-			</dict>
-			<key>tunnel.callsafe.tech</key>
+			<key>callsafe.online</key>
 			<dict>
 				<key>NSExceptionAllowsInsecureHTTPLoads</key>
 				<false/>

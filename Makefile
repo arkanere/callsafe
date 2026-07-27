@@ -12,7 +12,7 @@ SERVER_PORT   ?= 4000
 WS_URL        ?= ws://$(LOCAL_IP):$(SERVER_PORT)/ws
 HTTP_URL      ?= http://$(LOCAL_IP):$(SERVER_PORT)
 # SvelteKit dashboard origin (login + socket-token endpoints).
-# For prod testing: make flutter-apk WS_URL=wss://signal.callsafe.tech/ws DASHBOARD_URL=https://www.callsafe.tech
+# For prod testing: make flutter-apk WS_URL=wss://signal.callsafe.online/ws DASHBOARD_URL=https://www.callsafe.online
 DASHBOARD_URL ?= http://$(LOCAL_IP):5173
 
 .PHONY: help server-up server-logs server-health preflight web-up flutter-apk flutter-ios-build

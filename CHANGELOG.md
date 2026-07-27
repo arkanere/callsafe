@@ -33,6 +33,12 @@ independently in [`protocol/protocol.json`](protocol/protocol.json)
 
 ### Changed
 
+- **Domain migrated from `callsafe.tech` to `callsafe.online`** after the old
+  domain expired. `www.callsafe.online` is the canonical public origin (apex
+  redirects to it) and `signal.callsafe.online` is the single signaling host;
+  the stale `tunnel.callsafe.tech` name is retired. All hardcoded fallbacks,
+  build defaults (Android `build.gradle`, iOS ATS), the embed bundle, and docs
+  now point at the new domain.
 - **Frontend migrated from SvelteKit to Next.js (App Router)** on React 19,
   as a behaviour-parity port: same routes, responses, cookies, security
   headers, and log lines. Marketing pages are now React Server Components;

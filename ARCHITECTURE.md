@@ -23,7 +23,7 @@ flowchart LR
     end
 
     subgraph Vercel
-        F["Next.js frontend<br/>callsafe.tech<br/>signs socket JWTs"]
+        F["Next.js frontend<br/>callsafe.online<br/>signs socket JWTs"]
     end
 
     subgraph "DigitalOcean droplet (sgp1)"
@@ -36,7 +36,7 @@ flowchart LR
     FCM["Firebase Cloud<br/>Messaging"]
 
     W & D -->|HTTPS| F
-    W & D & M -->|"wss://signal.callsafe.tech/ws"| C
+    W & D & M -->|"wss://signal.callsafe.online/ws"| C
     S -->|push to offline devices| FCM
     FCM -.->|"wake (data message)"| M
     W <-.->|"SRTP media (P2P or relayed)"| M

@@ -23,7 +23,7 @@ export default function UserPage() {
 			open,
 			"  window.addEventListener('load', function() {",
 			"    var script = document.createElement('script');",
-			"    script.src = 'https://callsafe.tech/embed.js';",
+			"    script.src = 'https://www.callsafe.online/embed.js';",
 			`    script.setAttribute('data-handle', '${callSafeHandle}');`,
 			"    script.setAttribute('data-source-id', 'PUT_YOUR_PAGE_ID_HERE');",
 			'    document.body.appendChild(script);',
@@ -220,7 +220,7 @@ export default function UserPage() {
 									{`<script>
   window.addEventListener('load', function() {
     var script = document.createElement('script');
-    script.src = 'https://callsafe.tech/embed.js';
+    script.src = 'https://www.callsafe.online/embed.js';
     script.setAttribute('data-handle', '${callSafeHandle}');
     script.setAttribute('data-source-id', 'PUT_YOUR_PAGE_ID_HERE');
     document.body.appendChild(script);

@@ -234,10 +234,10 @@ export default function Home() {
 						</div>
 						<div className="text-center">
 							<a
-								href="mailto:hello@callsafe.tech"
+								href="mailto:hello@callsafe.online"
 								className="font-light text-gray-600 transition-colors duration-300 hover:text-gray-900"
 							>
-								hello@callsafe.tech
+								hello@callsafe.online
 							</a>
 						</div>
 					</div>

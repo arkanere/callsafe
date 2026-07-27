@@ -5,7 +5,7 @@
 **Voice & video calling for businesses — a customer clicks a widget on your
 website, and your phone rings like a real call, even if the app was killed.**
 
-Deployed and operating at [callsafe.tech](https://callsafe.tech) (beta).
+Deployed and operating at [callsafe.online](https://www.callsafe.online) (beta).
 Built and operated by a solo developer: an Elixir/OTP signaling server, a
 Flutter mobile app, a Next.js frontend with an embeddable widget, and a
 code-generated wire protocol shared across four platforms.

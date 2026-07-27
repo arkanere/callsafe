@@ -51,7 +51,7 @@ const isStateMutating = (method: string): boolean => {
 // Pure function to generate Content Security Policy directive
 const generateCSP = (pathname: string): string => {
 	const signalingUrl =
-		process.env.NEXT_PUBLIC_SIGNALING_SERVER_URL || 'https://signal.callsafe.tech';
+		process.env.NEXT_PUBLIC_SIGNALING_SERVER_URL || 'https://signal.callsafe.online';
 	const signalingWss = signalingUrl.replace(/^https:\/\//, 'wss://').replace(/^http:\/\//, 'ws://');
 
 	const baseDirectives = [

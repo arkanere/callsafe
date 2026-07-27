@@ -20,7 +20,7 @@ import { WebRTCManager } from '$lib/managers/webrtc-manager';
 // ============================================================================
 
 const CONFIG = {
-  DEFAULT_SIGNALING_SERVER: 'https://signal.callsafe.tech',
+  DEFAULT_SIGNALING_SERVER: 'https://signal.callsafe.online',
   CONNECTION_TIMEOUT: 30000,
   CLEANUP_DELAY: 5000,
   AUTO_RESET_DELAY: 3000,
@@ -246,7 +246,7 @@ class CallSafeWidget {
               </button>
             </div>
             <div class="callsafe-branding" id="callsafe-branding">
-              Powered with <a href="https://callsafe.tech" target="_blank" rel="noopener noreferrer" class="callsafe-link">CallSafe</a>
+              Powered with <a href="https://www.callsafe.online" target="_blank" rel="noopener noreferrer" class="callsafe-link">CallSafe</a>
             </div>
           </div>
         </div>

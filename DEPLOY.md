@@ -11,7 +11,7 @@ that powers real-time call signaling for CallSafe.
 
 ```
 Browser / mobile client
-        │  wss://signal.callsafe.tech/ws   (TLS)
+        │  wss://signal.callsafe.online/ws   (TLS)
         ▼
    Caddy (:443, :80)         ← auto Let's Encrypt cert, HTTP→HTTPS redirect
         │  reverse_proxy 127.0.0.1:4000
@@ -19,7 +19,7 @@ Browser / mobile client
    Elixir release (:4000)    ← systemd service `callsafe-signaling`
 ```
 
-- **Host:** DigitalOcean droplet, region `sgp1`, hostname `signal.callsafe.tech`.
+- **Host:** DigitalOcean droplet, region `sgp1`, hostname `signal.callsafe.online`.
 - **DNS:** Cloudflare, an **A record** for `signal` → droplet IP, set to
   **DNS-only (grey cloud)** so Caddy can issue its own cert and WebSockets pass
   through untouched.
@@ -32,6 +32,8 @@ Browser / mobile client
 
 - Ubuntu 24.04 (noble) droplet, with your SSH key installed for `root`.
 - A Cloudflare-managed zone for the domain, with permission to edit DNS records.
+  The registrar is GoDaddy with nameservers delegated to Cloudflare — on a
+  rebuild, re-point the GoDaddy nameservers to the pair Cloudflare issues.
 - The frontend (Vercel) must sign socket tokens with the **same `JWT_SECRET`**
   as this server (see [Secrets](#secrets)).
 
@@ -113,7 +115,7 @@ systemctl daemon-reload && systemctl enable callsafe-signaling
 ### Caddy — `/etc/caddy/Caddyfile`
 
 ```
-signal.callsafe.tech {
+signal.callsafe.online {
 	reverse_proxy 127.0.0.1:4000
 }
 ```
@@ -163,7 +165,7 @@ systemctl restart callsafe-signaling
 
 The Next.js frontend derives the WebSocket URL from an HTTPS base:
 
-- `NEXT_PUBLIC_SIGNALING_SERVER_URL = https://signal.callsafe.tech`
+- `NEXT_PUBLIC_SIGNALING_SERVER_URL = https://signal.callsafe.online`
   (the code converts `https://` → `wss://…/ws` and reuses the base for the
   guest-token / TURN-credential HTTP calls — do **not** put `wss://` here).
 - `NEXT_PUBLIC_*` values are inlined at **build time**, so changing this
@@ -178,11 +180,11 @@ The Next.js frontend derives the WebSocket URL from an HTTPS base:
 ## Verify
 
 ```sh
-curl https://signal.callsafe.tech/health          # -> {"status":"ok",...}
+curl https://signal.callsafe.online/health          # -> {"status":"ok",...}
 # WebSocket upgrade (force HTTP/1.1; ws upgrade is invalid over HTTP/2):
 curl --http1.1 -i -H "Connection: Upgrade" -H "Upgrade: websocket" \
   -H "Sec-WebSocket-Version: 13" -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
-  https://signal.callsafe.tech/ws                  # -> HTTP/1.1 101
+  https://signal.callsafe.online/ws                  # -> HTTP/1.1 101
 ```
 
 Logs: `journalctl -u callsafe-signaling -f` and `journalctl -u caddy -f`.

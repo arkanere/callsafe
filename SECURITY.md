@@ -19,7 +19,7 @@ credited in the release notes (unless you prefer to remain anonymous).
 
 This repository contains the source code for the CallSafe WebRTC signaling
 infrastructure (Elixir server, Next.js frontend, Flutter/Android client). The
-hosted service at **callsafe.tech** is in scope. Third-party dependencies are
+hosted service at **callsafe.online** is in scope. Third-party dependencies are
 out of scope — please report those to their respective maintainers.
 
 ## Supported Versions
