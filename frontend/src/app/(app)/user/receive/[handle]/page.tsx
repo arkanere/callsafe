@@ -632,12 +632,15 @@ export default function ReceivePage() {
 
 		setIsSwitchingCamera(true);
 		try {
-			const stream = await webrtcManagerRef.current.switchCamera();
-			if (stream) {
-				setLocalVideoStream(stream);
-			} else {
-				setErrorMessage('Could not switch camera');
-			}
+			setLocalVideoStream(await webrtcManagerRef.current.switchCamera());
+		} catch (error) {
+			// The manager reopens the previous camera on failure, so rebind either way
+			setLocalVideoStream(webrtcManagerRef.current.getLocalStream());
+			setErrorMessage(
+				error instanceof Error
+					? `Could not switch camera: ${error.message}`
+					: 'Could not switch camera'
+			);
 		} finally {
 			setIsSwitchingCamera(false);
 		}

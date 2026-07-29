@@ -318,8 +318,63 @@ export class WebRTCManager {
     }
   }
 
-  // Flip between front and rear camera. Returns the new local stream (a fresh
-  // MediaStream so preview elements rebind), or null if switching was not possible.
+  // Open a camera, trying progressively looser constraints. `avoidDeviceId` is the
+  // camera we are switching away from: a browser that ignores facingMode would
+  // otherwise hand back the same device and the switch would silently no-op.
+  private async openCamera(
+    facingMode: 'user' | 'environment',
+    avoidDeviceId?: string
+  ): Promise<MediaStreamTrack | null> {
+    const attempts: MediaTrackConstraints[] = [
+      { facingMode: { exact: facingMode } },
+      { facingMode }
+    ];
+
+    // Last resort for devices that report no facingMode (many desktop webcams,
+    // some Android builds): pick any camera that isn't the current one.
+    if (avoidDeviceId) {
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const other = devices.find(d => d.kind === 'videoinput' && d.deviceId && d.deviceId !== avoidDeviceId);
+        if (other) attempts.push({ deviceId: { exact: other.deviceId } });
+      } catch (error) {
+        dbg('[WEBRTC MANAGER] openCamera(): enumerateDevices failed:', error);
+      }
+    }
+
+    let lastError: unknown = null;
+    for (const video of attempts) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: false, video });
+        const track = stream.getVideoTracks()[0];
+        if (!track) {
+          stream.getTracks().forEach(t => t.stop());
+          continue;
+        }
+        // A looser attempt may have returned the very camera we came from
+        if (avoidDeviceId && track.getSettings().deviceId === avoidDeviceId) {
+          dbg('[WEBRTC MANAGER] openCamera(): Same device returned, trying next constraint');
+          track.stop();
+          continue;
+        }
+        return track;
+      } catch (error) {
+        lastError = error;
+        dbg('[WEBRTC MANAGER] openCamera(): Attempt failed:', video, error);
+      }
+    }
+
+    if (lastError) {
+      const name = lastError instanceof Error ? lastError.name : 'Error';
+      throw new Error(`Camera unavailable (${name})`);
+    }
+    return null;
+  }
+
+  // Flip between front and rear camera. Returns the current local stream — a fresh
+  // MediaStream, so preview elements rebind. Throws if the switch failed; the local
+  // stream from getLocalStream() is still the one to display in that case, since the
+  // previous camera is reopened when possible.
   async switchCamera(): Promise<MediaStream | null> {
     dbg('[WEBRTC MANAGER] switchCamera(): Switching camera');
 
@@ -334,45 +389,60 @@ export class WebRTCManager {
       return null;
     }
 
-    const nextFacingMode = this.facingMode === 'user' ? 'environment' : 'user';
+    const previousFacingMode = this.facingMode;
+    const nextFacingMode = previousFacingMode === 'user' ? 'environment' : 'user';
+    const oldDeviceId = oldTrack.getSettings().deviceId;
+    const wasEnabled = oldTrack.enabled;
 
-    let newStream: MediaStream;
-    try {
-      // exact: only devices with the requested camera should match, otherwise the
-      // browser happily hands back the same track and the switch silently no-ops.
-      newStream = await navigator.mediaDevices.getUserMedia({
-        audio: false,
-        video: { facingMode: { exact: nextFacingMode } }
-      });
-    } catch (error) {
-      console.error('[WEBRTC MANAGER] switchCamera(): Failed to open', nextFacingMode, 'camera:', error);
-      return null;
-    }
-
-    const newTrack = newStream.getVideoTracks()[0];
-    if (!newTrack) {
-      newStream.getTracks().forEach(track => track.stop());
-      return null;
-    }
-
-    // Preserve a camera-off state across the switch
-    newTrack.enabled = oldTrack.enabled;
-
-    const sender = this.peerConnection.getSenders().find(s => s.track?.kind === 'video');
-    if (sender) {
-      // replaceTrack avoids renegotiation — the remote peer keeps the same m-line
-      await sender.replaceTrack(newTrack);
-      dbg('[WEBRTC MANAGER] switchCamera(): Sender track replaced');
-    } else {
-      dbg('[WEBRTC MANAGER] switchCamera(): No video sender found');
-    }
-
+    // Release the camera first. Android Chrome (and some in-app browsers) refuse to
+    // open the second camera while the first one is still live — the reason a naive
+    // switch fails with NotReadableError on phones.
     oldTrack.stop();
-    this.localStream = new MediaStream([...this.localStream.getAudioTracks(), newTrack]);
+
+    let newTrack: MediaStreamTrack | null = null;
+    let switchError: unknown = null;
+    try {
+      newTrack = await this.openCamera(nextFacingMode, oldDeviceId);
+    } catch (error) {
+      switchError = error;
+    }
+
+    if (!newTrack) {
+      console.error('[WEBRTC MANAGER] switchCamera(): Could not open', nextFacingMode, 'camera:', switchError);
+      // Reopen the camera we just released so the call keeps its video
+      try {
+        const restored = await this.openCamera(previousFacingMode);
+        if (restored) await this.applyVideoTrack(restored, wasEnabled);
+      } catch (restoreError) {
+        console.error('[WEBRTC MANAGER] switchCamera(): Failed to restore previous camera:', restoreError);
+      }
+      throw switchError instanceof Error ? switchError : new Error('Camera unavailable');
+    }
+
+    await this.applyVideoTrack(newTrack, wasEnabled);
     this.facingMode = nextFacingMode;
 
     dbg('[WEBRTC MANAGER] switchCamera(): Now using', nextFacingMode, 'camera');
     return this.localStream;
+  }
+
+  // Send `track` to the peer and swap it into the local stream. The caller has
+  // already stopped the track being replaced.
+  private async applyVideoTrack(track: MediaStreamTrack, enabled: boolean): Promise<void> {
+    // Preserve a camera-off state across the switch
+    track.enabled = enabled;
+
+    const sender = this.peerConnection?.getSenders().find(s => s.track?.kind === 'video');
+    if (sender) {
+      // replaceTrack avoids renegotiation — the remote peer keeps the same m-line
+      await sender.replaceTrack(track);
+      dbg('[WEBRTC MANAGER] applyVideoTrack(): Sender track replaced');
+    } else {
+      dbg('[WEBRTC MANAGER] applyVideoTrack(): No video sender found');
+    }
+
+    const audioTracks = this.localStream ? this.localStream.getAudioTracks() : [];
+    this.localStream = new MediaStream([...audioTracks, track]);
   }
 
   toggleMute(): boolean {

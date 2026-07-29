@@ -862,14 +862,20 @@ class CallSafeWidget {
     if (switchCameraBtn) switchCameraBtn.disabled = true;
 
     try {
-      const stream = await this.webrtcManager.switchCamera();
-      // Re-bind the preview: switchCamera() returns a new MediaStream
-      if (stream) {
-        const localVideoEl = this.widgetElement.querySelector('video[data-callsafe-local]');
-        if (localVideoEl) {
-          localVideoEl.srcObject = stream;
-          localVideoEl.play().catch(() => {});
-        }
+      // Re-bind the preview: switchCamera() returns a new MediaStream. On failure the
+      // manager reopens the previous camera, so rebind from getLocalStream() instead.
+      let stream;
+      try {
+        stream = await this.webrtcManager.switchCamera();
+      } catch (error) {
+        this.updateStatusMessage(`Could not switch camera: ${error.message}`);
+        stream = this.webrtcManager.getLocalStream();
+      }
+
+      const localVideoEl = this.widgetElement.querySelector('video[data-callsafe-local]');
+      if (stream && localVideoEl) {
+        localVideoEl.srcObject = stream;
+        localVideoEl.play().catch(() => {});
       }
     } finally {
       if (switchCameraBtn) switchCameraBtn.disabled = false;
