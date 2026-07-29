@@ -66,6 +66,8 @@ export default function EmbedPage() {
 	const [statusMessage, setStatusMessage] = useState('');
 	const [isMuted, setIsMuted] = useState(false);
 	const [isVideoEnabled, setIsVideoEnabled] = useState(true);
+	const [canSwitchCamera, setCanSwitchCamera] = useState(false);
+	const [isSwitchingCamera, setIsSwitchingCamera] = useState(false);
 	const cleanupTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const [autoplayBlocked, setAutoplayBlocked] = useState(false);
 
@@ -404,6 +406,8 @@ export default function EmbedPage() {
 
 		if (type === 'video') {
 			setLocalVideoStream(webrtcManager.getLocalStream());
+			// Camera permission is granted by now, so the device list is complete
+			setCanSwitchCamera(await WebRTCManager.hasMultipleCameras());
 		}
 
 		const checkConnection = () => {
@@ -507,6 +511,18 @@ export default function EmbedPage() {
 		}
 	}
 
+	async function switchCamera() {
+		if (!webrtcManagerRef.current || callTypeRef.current !== 'video' || isSwitchingCamera) return;
+
+		setIsSwitchingCamera(true);
+		try {
+			const stream = await webrtcManagerRef.current.switchCamera();
+			if (stream) setLocalVideoStream(stream);
+		} finally {
+			setIsSwitchingCamera(false);
+		}
+	}
+
 	function resetCustomerCallState() {
 		setCallState('idle');
 		callAttemptIdRef.current = null;
@@ -515,6 +531,7 @@ export default function EmbedPage() {
 		setStatusMessage('');
 		setIsMuted(false);
 		setIsVideoEnabled(true);
+		setCanSwitchCamera(false);
 	}
 
 	function resumeAutoplay() {
@@ -825,6 +842,25 @@ export default function EmbedPage() {
 									</button>
 								)}
 
+								{callType === 'video' && canSwitchCamera && (
+									<button
+										onClick={switchCamera}
+										disabled={isSwitchingCamera}
+										aria-label="Switch camera"
+										title="Switch camera"
+										className="flex items-center justify-center rounded-xl bg-gray-600 px-4 py-3 font-semibold text-white transition-colors duration-200 hover:bg-gray-700 disabled:opacity-50"
+									>
+										<svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path
+												strokeLinecap="round"
+												strokeLinejoin="round"
+												strokeWidth="2"
+												d="M4 4v5h5M20 20v-5h-5M20 9A8 8 0 006.3 5.6L4 8m16 8l-2.3 2.4A8 8 0 014 15"
+											/>
+										</svg>
+									</button>
+								)}
+
 								<button
 									onClick={endCall}
 									className="flex flex-1 items-center justify-center rounded-xl bg-red-600 px-4 py-3 font-semibold text-white transition-colors duration-200 hover:bg-red-700"
@@ -1015,6 +1051,25 @@ export default function EmbedPage() {
 												Camera
 											</>
 										)}
+									</button>
+								)}
+
+								{callType === 'video' && canSwitchCamera && (
+									<button
+										onClick={switchCamera}
+										disabled={isSwitchingCamera}
+										aria-label="Switch camera"
+										title="Switch camera"
+										className="flex items-center justify-center rounded-xl bg-gray-600 px-4 py-3 font-semibold text-white transition-colors duration-200 hover:bg-gray-700 disabled:opacity-50"
+									>
+										<svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path
+												strokeLinecap="round"
+												strokeLinejoin="round"
+												strokeWidth="2"
+												d="M4 4v5h5M20 20v-5h-5M20 9A8 8 0 006.3 5.6L4 8m16 8l-2.3 2.4A8 8 0 014 15"
+											/>
+										</svg>
 									</button>
 								)}
 

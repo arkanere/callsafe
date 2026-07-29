@@ -94,6 +94,8 @@ export default function ReceivePage() {
 	const [currentCallType, setCurrentCallType] = useState<'voice' | 'video'>('voice');
 	const [isMuted, setIsMuted] = useState(false);
 	const [isCameraEnabled, setIsCameraEnabled] = useState(true);
+	const [canSwitchCamera, setCanSwitchCamera] = useState(false);
+	const [isSwitchingCamera, setIsSwitchingCamera] = useState(false);
 	const [autoplayBlocked, setAutoplayBlocked] = useState(false);
 
 	// Streams held in state so the video elements re-bind whenever React
@@ -399,6 +401,7 @@ export default function ReceivePage() {
 				setCurrentPhase('terminated');
 				setCurrentCallType('voice');
 				setIsCameraEnabled(true);
+				setCanSwitchCamera(false);
 				currentCallStartTimeRef.current = null;
 				setCallDuration(0);
 				setIsMuted(false);
@@ -499,6 +502,7 @@ export default function ReceivePage() {
 		setCurrentPhase('connecting');
 		setCurrentCallType(callType);
 		setIsCameraEnabled(true);
+		setCanSwitchCamera(false);
 
 		try {
 			const webrtcManager = new WebRTCManager(socket);
@@ -517,6 +521,8 @@ export default function ReceivePage() {
 			await webrtcManager.initialize(callId, callType);
 			if (callType === 'video') {
 				setLocalVideoStream(webrtcManager.getLocalStream());
+				// Camera permission is granted by now, so the device list is complete
+				setCanSwitchCamera(await WebRTCManager.hasMultipleCameras());
 			}
 		} catch (error) {
 			console.error('[CONNECTION] acceptCall(): WebRTC initialization failed:', error);
@@ -586,6 +592,7 @@ export default function ReceivePage() {
 		setCurrentPhase('terminated');
 		setCurrentCallType('voice');
 		setIsCameraEnabled(true);
+		setCanSwitchCamera(false);
 		currentCallStartTimeRef.current = null;
 		setCallDuration(0);
 		setIsMuted(false);
@@ -617,6 +624,22 @@ export default function ReceivePage() {
 				action: isDisabled ? MediaToggleAction.DISABLE_CAMERA : MediaToggleAction.ENABLE_CAMERA,
 				timestamp: Date.now()
 			});
+		}
+	}
+
+	async function switchCamera() {
+		if (!webrtcManagerRef.current || currentCallType !== 'video' || isSwitchingCamera) return;
+
+		setIsSwitchingCamera(true);
+		try {
+			const stream = await webrtcManagerRef.current.switchCamera();
+			if (stream) {
+				setLocalVideoStream(stream);
+			} else {
+				setErrorMessage('Could not switch camera');
+			}
+		} finally {
+			setIsSwitchingCamera(false);
 		}
 	}
 
@@ -1133,6 +1156,30 @@ export default function ReceivePage() {
 													Camera
 												</>
 											)}
+										</button>
+									)}
+
+									{currentCallType === 'video' && canSwitchCamera && (
+										<button
+											onClick={switchCamera}
+											disabled={isSwitchingCamera}
+											aria-label="Switch camera"
+											title="Switch camera"
+											className="flex items-center justify-center rounded-xl bg-gray-600 px-4 py-3 font-semibold text-white transition-colors duration-200 hover:bg-gray-700 disabled:opacity-50"
+										>
+											<svg
+												className="h-5 w-5"
+												fill="none"
+												stroke="currentColor"
+												viewBox="0 0 24 24"
+											>
+												<path
+													strokeLinecap="round"
+													strokeLinejoin="round"
+													strokeWidth="2"
+													d="M4 4v5h5M20 20v-5h-5M20 9A8 8 0 006.3 5.6L4 8m16 8l-2.3 2.4A8 8 0 014 15"
+												/>
+											</svg>
 										</button>
 									)}
 

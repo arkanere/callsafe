@@ -238,6 +238,11 @@ class CallSafeWidget {
                 </svg>
                 Camera
               </button>
+              <button class="callsafe-control-btn switch-camera-btn" id="callsafe-switch-camera" style="display: none;" aria-label="Switch camera" title="Switch camera">
+                <svg viewBox="0 0 24 24" width="20" height="20">
+                  <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h5M20 20v-5h-5M20 9A8 8 0 006.3 5.6L4 8m16 8l-2.3 2.4A8 8 0 014 15"/>
+                </svg>
+              </button>
               <button class="callsafe-control-btn end-btn" id="callsafe-end">
                 <svg viewBox="0 0 24 24" width="20" height="20">
                   <path fill="currentColor" d="M12 9c-1.6 0-3.15.25-4.6.72v3.1c0 .39-.23.74-.56.9-.98.49-1.87 1.12-2.66 1.85-.18.18-.43.28-.7.28-.28 0-.53-.11-.71-.29L.29 13.08c-.18-.17-.29-.42-.29-.7 0-.28.11-.53.29-.71C3.34 8.78 7.46 7 12 7s8.66 1.78 11.71 4.67c.18.18.29.43.29.71 0 .28-.11.53-.29.7l-2.48 2.48c-.18.18-.43.29-.71.29-.27 0-.52-.1-.7-.28-.79-.73-1.68-1.36-2.66-1.85-.33-.16-.56-.51-.56-.9v-3.1C15.15 9.25 13.6 9 12 9z"/>
@@ -322,6 +327,8 @@ class CallSafeWidget {
       .callsafe-control-btn.mute-btn.muted { background: #667eea; color: white; }
       .callsafe-control-btn.camera-btn { background: #f0f0f0; color: #333; }
       .callsafe-control-btn.camera-btn.camera-off { background: #ef4444; color: white; }
+      .callsafe-control-btn.switch-camera-btn { background: #f0f0f0; color: #333; }
+      .callsafe-control-btn.switch-camera-btn:disabled { opacity: 0.5; cursor: default; }
 
       .callsafe-call-status { text-align: center; }
       .callsafe-status-message { font-size: 16px; color: #333; margin-bottom: 8px; }
@@ -355,6 +362,7 @@ class CallSafeWidget {
     const cancelBtn = modal.querySelector('#callsafe-cancel');
     const muteBtn = modal.querySelector('#callsafe-mute');
     const cameraBtn = modal.querySelector('#callsafe-camera');
+    const switchCameraBtn = modal.querySelector('#callsafe-switch-camera');
     const endBtn = modal.querySelector('#callsafe-end');
 
     closeBtn.onclick = () => this.hideModal();
@@ -363,6 +371,7 @@ class CallSafeWidget {
     cancelBtn.onclick = () => this.hideModal();
     muteBtn.onclick = () => this.toggleMute();
     cameraBtn.onclick = () => this.toggleCamera();
+    switchCameraBtn.onclick = () => this.switchCamera();
     endBtn.onclick = () => this.endCall();
 
     modal.querySelector('.callsafe-modal-overlay').onclick = (e) => {
@@ -431,7 +440,9 @@ class CallSafeWidget {
 
       const mediaConstraints = {
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-        video: type === 'video' ? { width: { ideal: 1280 }, height: { ideal: 720 } } : false
+        video: type === 'video'
+          ? { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' }
+          : false
       };
 
       debugLog('call', 'Requesting media, TURN credentials and guest token in parallel');
@@ -776,20 +787,31 @@ class CallSafeWidget {
   showCallControls() {
     const muteBtn = this.widgetElement.querySelector('#callsafe-mute');
     const cameraBtn = this.widgetElement.querySelector('#callsafe-camera');
+    const switchCameraBtn = this.widgetElement.querySelector('#callsafe-switch-camera');
     const timer = this.widgetElement.querySelector('#callsafe-timer');
 
     if (muteBtn) muteBtn.style.display = 'flex';
     if (cameraBtn && this.callType === 'video') cameraBtn.style.display = 'flex';
     if (timer) timer.style.display = 'block';
+
+    // Only worth offering on devices with more than one camera. Media permission
+    // has been granted by this point, so the device list is complete.
+    if (switchCameraBtn && this.callType === 'video') {
+      WebRTCManager.hasMultipleCameras().then((hasMultiple) => {
+        if (hasMultiple) switchCameraBtn.style.display = 'flex';
+      });
+    }
   }
 
   hideCallControls() {
     const muteBtn = this.widgetElement.querySelector('#callsafe-mute');
     const cameraBtn = this.widgetElement.querySelector('#callsafe-camera');
+    const switchCameraBtn = this.widgetElement.querySelector('#callsafe-switch-camera');
     const timer = this.widgetElement.querySelector('#callsafe-timer');
 
     if (muteBtn) { muteBtn.style.display = 'none'; muteBtn.classList.remove('muted'); }
     if (cameraBtn) { cameraBtn.style.display = 'none'; cameraBtn.classList.remove('camera-off'); }
+    if (switchCameraBtn) { switchCameraBtn.style.display = 'none'; switchCameraBtn.disabled = false; }
     if (timer) { timer.style.display = 'none'; timer.textContent = '00:00'; }
   }
 
@@ -830,6 +852,27 @@ class CallSafeWidget {
         action: isNowDisabled ? 'disable_camera' : 'enable_camera',
         timestamp: Date.now()
       });
+    }
+  }
+
+  async switchCamera() {
+    if (!this.webrtcManager || this.callType !== 'video') return;
+
+    const switchCameraBtn = this.widgetElement.querySelector('#callsafe-switch-camera');
+    if (switchCameraBtn) switchCameraBtn.disabled = true;
+
+    try {
+      const stream = await this.webrtcManager.switchCamera();
+      // Re-bind the preview: switchCamera() returns a new MediaStream
+      if (stream) {
+        const localVideoEl = this.widgetElement.querySelector('video[data-callsafe-local]');
+        if (localVideoEl) {
+          localVideoEl.srcObject = stream;
+          localVideoEl.play().catch(() => {});
+        }
+      }
+    } finally {
+      if (switchCameraBtn) switchCameraBtn.disabled = false;
     }
   }
 
