@@ -1,10 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:permission_handler/permission_handler.dart';
-import '../../protocol/protocol.dart';
 import '../providers/call_providers.dart';
-import '../providers/permissions_providers.dart';
 import '../router/app_router.dart';
 
 /// Home screen - displayed when no call is active
@@ -20,9 +17,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final callManager = ref.read(callManagerProvider.notifier);
-    final audio = ref.read(audioPlatformProvider);
-
     return Scaffold(
       backgroundColor: const Color(0xFF1A1A1A),
       appBar: AppBar(
@@ -73,8 +67,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Widget _buildBody() {
-    final callManager = ref.read(callManagerProvider.notifier);
-    final audio = ref.read(audioPlatformProvider);
     // Signaling connection state: isAvailable follows connected/disconnected.
     final isConnected =
         ref.watch(callManagerProvider.select((s) => s.isAvailable));
@@ -107,52 +99,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 color: isConnected ? Colors.grey[400] : Colors.orange,
                 fontSize: 16,
               ),
-            ),
-            const SizedBox(height: 48),
-            // Test buttons for development
-            ElevatedButton(
-              onPressed: () async {
-                // Request microphone permission before call
-                final permissionsService =
-                    ref.read(permissionsServiceProvider);
-                final granted = await permissionsService
-                    .requestMicrophonePermission()
-                    .run();
-
-                if (!granted) {
-                  if (context.mounted) {
-                    _showPermissionDeniedDialog(context, false);
-                  }
-                  return;
-                }
-
-                callManager
-                    .initiateCall(
-                      handle: 'test-handle',
-                      callType: CallType.voice,
-                    )
-                    .run();
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-              ),
-              child: const Text('Test Outgoing Call'),
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: () {
-                audio.startRinging().run();
-                // Simulate incoming call
-                // In real app, this comes from signaling server
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blue,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-              ),
-              child: const Text('Test Incoming Call'),
             ),
           ],
         ),
@@ -188,32 +134,5 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     await ref.read(authServiceProvider).logout();
     ref.read(authMessageProvider.notifier).state = null;
     ref.read(authStateProvider.notifier).state = false;
-  }
-
-  void _showPermissionDeniedDialog(BuildContext context, bool isVideo) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Permission Required'),
-        content: Text(
-          isVideo
-              ? 'CallSafe needs access to your microphone and camera to make video calls. Please grant permissions in Settings.'
-              : 'CallSafe needs access to your microphone to make calls. Please grant permission in Settings.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              openAppSettings();
-            },
-            child: const Text('Open Settings'),
-          ),
-        ],
-      ),
-    );
   }
 }
