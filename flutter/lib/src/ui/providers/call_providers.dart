@@ -83,6 +83,10 @@ final authServiceProvider = Provider<AuthService>((ref) {
 /// Whether the user is logged in. null = not yet determined (startup).
 final authStateProvider = StateProvider<bool?>((ref) => null);
 
+/// Message shown on the login screen when the session ended on its own
+/// (expired auth token, server-side auth rejection) rather than via logout.
+final authMessageProvider = StateProvider<String?>((ref) => null);
+
 /// Push platform provider (FCM via native channel)
 final pushPlatformProvider = Provider<PushPlatform>((ref) {
   final platform = PushMethodChannel();
@@ -170,7 +174,39 @@ final appStartupProvider = FutureProvider<void>((ref) async {
 
   final push = ref.watch(pushPlatformProvider);
   final callManager = ref.read(callManagerProvider.notifier);
+  final signaling = ref.watch(signalingClientProvider);
   final deviceId = await auth.getDeviceId();
+
+  /// End the session and send the user to the login screen. Without this the
+  /// socket retries forever against a dead token and the app silently stops
+  /// receiving calls.
+  Future<void> endSession(String message) async {
+    signaling.stopReconnecting();
+    // Drop the dead token too, so a cold start goes to login instead of
+    // resuming this same broken state.
+    await auth.logout();
+    ref.read(authMessageProvider.notifier).state = message;
+    ref.read(authStateProvider.notifier).state = false;
+  }
+
+  // The auth token is only valid for 24h. fetchSocketToken is called on every
+  // (re)connect, so this is where expiry surfaces.
+  Future<String> getSocketToken() async {
+    try {
+      return await auth.fetchSocketToken();
+    } on NotAuthenticatedException catch (e) {
+      await endSession(e.message);
+      rethrow;
+    }
+  }
+
+  // The server rejecting device:connect is equally unrecoverable by retrying.
+  final errorSub = signaling.errorStream.listen((error) async {
+    if (error.code == 'auth_failed') {
+      await endSession('Session expired, please log in again');
+    }
+  });
+  ref.onDispose(errorSub.cancel);
 
   // Background-ring notification (socket-delivered call:incoming while the
   // app is not resumed).
@@ -196,10 +232,23 @@ final appStartupProvider = FutureProvider<void>((ref) async {
       .initialize(
         deviceType: DeviceType.mobile,
         deviceId: deviceId,
-        getToken: auth.fetchSocketToken,
+        getToken: getSocketToken,
         pushToken: pushToken,
       )
       .run();
+
+  // Reconnect when the user opens the app: the socket may have been dropped
+  // while backgrounded and be sitting in the capped-backoff retry window.
+  final lifecycle = AppLifecycleListener(
+    onResume: () {
+      final state = signaling.state;
+      if (state == SignalingState.disconnected ||
+          state == SignalingState.error) {
+        connect();
+      }
+    },
+  );
+  ref.onDispose(lifecycle.dispose);
 
   // FCM wake path: a data push means a call is ringing. Ensure the socket is
   // connected; the server re-delivers call:incoming to newly connected

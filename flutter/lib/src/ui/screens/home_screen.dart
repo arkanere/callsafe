@@ -36,7 +36,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             fontWeight: FontWeight.w600,
           ),
         ),
-        actions: const [],
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout, color: Colors.white70),
+            tooltip: 'Log out',
+            onPressed: _confirmLogout,
+          ),
+        ],
       ),
       body: _buildBody(),
       bottomNavigationBar: BottomNavigationBar(
@@ -152,6 +158,36 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _confirmLogout() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Log out?'),
+        content: const Text(
+          'This device will stop receiving calls until you log in again.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Log out'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    // Drop the socket first so the server stops routing calls here, then
+    // clear the token; the router redirects to /login on authState=false.
+    await ref.read(signalingClientProvider).disconnect().run();
+    await ref.read(authServiceProvider).logout();
+    ref.read(authMessageProvider.notifier).state = null;
+    ref.read(authStateProvider.notifier).state = false;
   }
 
   void _showPermissionDeniedDialog(BuildContext context, bool isVideo) {

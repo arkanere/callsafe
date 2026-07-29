@@ -26,8 +26,10 @@ class SignalingError {
 
 const _heartbeatInterval = Duration(seconds: 25);
 const _heartbeatTimeout = Duration(seconds: 5);
-const _maxReconnectAttempts = 5;
 const _baseReconnectDelay = Duration(seconds: 1);
+// Backoff is capped rather than abandoned: a device that stops retrying stops
+// receiving calls, with nothing in the UI to say so.
+const _maxReconnectDelay = Duration(seconds: 60);
 
 /// Thin WebSocket wrapper for protocol message serialization
 /// Pure data transformation — no business logic
@@ -78,6 +80,9 @@ class SignalingClient {
       _pushToken = pushToken;
       _getToken = getToken;
       _intentionallyClosed = false;
+      // An explicit connect restarts the backoff, so a resume or push wake
+      // retries immediately rather than at the capped interval.
+      _reconnectAttempts = 0;
 
       await _connect();
       return unit;
@@ -233,14 +238,24 @@ class SignalingClient {
   }
 
   void _scheduleReconnect() {
-    if (_intentionallyClosed || _reconnectAttempts >= _maxReconnectAttempts) return;
-    final delay = _baseReconnectDelay * (1 << _reconnectAttempts);
+    if (_intentionallyClosed) return;
+    // Exponential up to _maxReconnectDelay, then retry at that interval
+    // indefinitely. The shift is clamped so `1 << n` cannot overflow.
+    var delay = _baseReconnectDelay * (1 << _reconnectAttempts.clamp(0, 6));
+    if (delay > _maxReconnectDelay) delay = _maxReconnectDelay;
     _reconnectAttempts++;
     Timer(delay, () {
       if (!_intentionallyClosed) {
         _connect();
       }
     });
+  }
+
+  /// Stop the reconnect loop without emitting device:disconnect.
+  /// Used when retrying cannot succeed — an expired session, where the caller
+  /// is about to send the user back to the login screen.
+  void stopReconnecting() {
+    _intentionallyClosed = true;
   }
 
   void _close() {

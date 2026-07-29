@@ -37,6 +37,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       await ref
           .read(authServiceProvider)
           .login(_emailController.text.trim(), _passwordController.text);
+      ref.read(authMessageProvider.notifier).state = null;
       ref.read(authStateProvider.notifier).state = true;
       // Re-run startup: registers the device now that we are logged in.
       ref.invalidate(appStartupProvider);
@@ -52,6 +53,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Set when the session ended on its own (expired token) rather than by
+    // an explicit logout — otherwise the login screen appears unexplained.
+    final sessionMessage = ref.watch(authMessageProvider);
+
     return Scaffold(
       backgroundColor: const Color(0xFF1A1A1A),
       body: SafeArea(
@@ -71,6 +76,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     fontWeight: FontWeight.w600,
                   ),
                 ),
+                if (sessionMessage != null) ...[
+                  const SizedBox(height: 16),
+                  Text(
+                    sessionMessage,
+                    style: const TextStyle(color: Colors.orange),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
                 const SizedBox(height: 32),
                 TextField(
                   controller: _emailController,
