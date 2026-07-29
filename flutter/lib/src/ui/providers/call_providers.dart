@@ -326,8 +326,9 @@ final audioMutedProvider = StateProvider<bool>((ref) => false);
 /// Speaker enabled state provider (local state for UI)
 final speakerEnabledProvider = StateProvider<bool>((ref) => false);
 
-/// Camera enabled state provider (mirrors call session isVideoEnabled)
-final cameraEnabledProvider = StateProvider<bool>((ref) => true);
+/// Camera enabled state provider (mirrors call session isVideoEnabled).
+/// Accepted video calls start with the camera off.
+final cameraEnabledProvider = StateProvider<bool>((ref) => false);
 
 /// Camera facing front (true) or back (false)
 final cameraFacingFrontProvider = StateProvider<bool>((ref) => true);

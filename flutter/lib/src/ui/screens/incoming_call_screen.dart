@@ -159,6 +159,10 @@ class IncomingCallScreen extends ConsumerWidget {
                         return;
                       }
 
+                      // The provider outlives the call it belongs to, so reset
+                      // it here — every accepted call starts camera-off.
+                      ref.read(cameraEnabledProvider.notifier).state = false;
+
                       // Permissions granted, accept call
                       ref.read(callManagerProvider.notifier).acceptCall().run();
                     },

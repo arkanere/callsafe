@@ -151,11 +151,15 @@ class CallManager extends StateNotifier<CallManagerState> {
                 : ['audio'],
           );
 
-      // Update state to connecting
+      // Update state to connecting. Accepted video calls start with the
+      // camera off; the track is still negotiated so toggleCamera can turn it
+      // on mid-call without renegotiation.
+      final isVideo = session.callType == CallType.video;
       state = state.copyWith(
         currentCall: session.copyWith(
           state: CallState.connecting,
           localCapabilities: capabilities,
+          isVideoEnabled: isVideo ? false : session.isVideoEnabled,
         ),
       );
 
@@ -173,6 +177,12 @@ class CallManager extends StateNotifier<CallManagerState> {
             iceServers: iceServers,
           )
           .run();
+
+      // getUserMedia hands back an enabled camera track; mute it so the call
+      // starts audio-only.
+      if (isVideo) {
+        await _webrtc.setVideoEnabled(session.callAttemptId, false).run();
+      }
 
       // Send call:accept message
       final payload = CallAcceptPayload(
