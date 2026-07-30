@@ -66,7 +66,7 @@ const BUTTON_CSS = `
   .callsafe-widget.position-bottom-left { position: fixed; bottom: 20px; left: 20px; }
   .callsafe-widget.position-top-right { position: fixed; top: 20px; right: 20px; }
   .callsafe-widget.position-top-left { position: fixed; top: 20px; left: 20px; }
-  .callsafe-button { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 50px; padding: 14px 24px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.3s ease; outline: none; display: flex; align-items: center; gap: 8px; text-decoration: none; user-select: none; box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4); }
+  .callsafe-button { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 50px; padding: 14px 24px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.3s ease; outline: none; display: flex; align-items: center; gap: 8px; text-decoration: none; user-select: none; -webkit-touch-callout: none; box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4); }
   .callsafe-button:focus { box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.3); }
   .callsafe-button:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5); }
   .callsafe-button:disabled { opacity: 0.6; cursor: not-allowed; transform: none !important; }
@@ -75,6 +75,12 @@ const BUTTON_CSS = `
   .callsafe-icon { flex-shrink: 0; }
   .callsafe-text { white-space: nowrap; }
   @media (prefers-reduced-motion: reduce) { .callsafe-button { transition: none; } }
+
+  /* Drag-to-move (fixed positions only). touch-action:none keeps a long-press
+     drag from being stolen by the page's scroll gesture. */
+  .callsafe-draggable .callsafe-button { touch-action: none; }
+  .callsafe-widget.callsafe-dragging { transition: none; }
+  .callsafe-widget.callsafe-dragging .callsafe-button { transform: scale(1.06); cursor: grabbing; box-shadow: 0 10px 28px rgba(102, 126, 234, 0.55); transition: none; }
 `;
 
 function renderUnsupported(scriptElement, position) {
@@ -146,7 +152,10 @@ function initStub() {
 
   // Build widget container + button.
   const widgetElement = document.createElement('div');
-  widgetElement.className = `callsafe-widget theme-${config.theme} position-${config.position}`;
+  const draggable = config.position !== 'inline';
+  widgetElement.className =
+    `callsafe-widget theme-${config.theme} position-${config.position}` +
+    (draggable ? ' callsafe-draggable' : '');
 
   const button = document.createElement('button');
   button.className = `callsafe-button size-${config.size}`;
@@ -154,13 +163,155 @@ function initStub() {
   button.setAttribute('aria-label', config.buttonText);
   widgetElement.appendChild(button);
 
-  if (config.position === 'inline' && script.parentNode) {
-    script.parentNode.insertBefore(widgetElement, script.nextSibling);
-  } else if (document.body) {
-    document.body.appendChild(widgetElement);
-  } else {
-    setTimeout(() => document.body && document.body.appendChild(widgetElement), 100);
+  // ---- Drag to move: long-press, then drag ---------------------------------
+  // Fixed-position widgets only — an inline widget sits in the page's flow and
+  // has no anchoring to override.
+
+  const LONG_PRESS_MS = 400;
+  const MOVE_CANCEL_PX = 8; // movement before the lift = a scroll or sloppy click
+  const EDGE_MARGIN = 8;
+  const POSITION_KEY = `callsafe:widget-position:${config.handle}`;
+
+  let suppressNextClick = false;
+  let hasCustomPosition = false;
+
+  function clampToViewport(left, top) {
+    const rect = widgetElement.getBoundingClientRect();
+    const maxLeft = Math.max(EDGE_MARGIN, window.innerWidth - rect.width - EDGE_MARGIN);
+    const maxTop = Math.max(EDGE_MARGIN, window.innerHeight - rect.height - EDGE_MARGIN);
+    return {
+      left: Math.min(Math.max(left, EDGE_MARGIN), maxLeft),
+      top: Math.min(Math.max(top, EDGE_MARGIN), maxTop)
+    };
   }
+
+  // Inline left/top override the position-* class's bottom/right anchoring.
+  function applyPosition(left, top) {
+    widgetElement.style.left = `${left}px`;
+    widgetElement.style.top = `${top}px`;
+    widgetElement.style.right = 'auto';
+    widgetElement.style.bottom = 'auto';
+    hasCustomPosition = true;
+  }
+
+  function savePosition() {
+    try {
+      const rect = widgetElement.getBoundingClientRect();
+      localStorage.setItem(POSITION_KEY, JSON.stringify({ left: rect.left, top: rect.top }));
+    } catch {
+      // Storage blocked (private mode, sandboxed iframe). The move still holds
+      // for this page view, it just won't survive a reload.
+    }
+  }
+
+  function restorePosition() {
+    let saved = null;
+    try {
+      saved = JSON.parse(localStorage.getItem(POSITION_KEY));
+    } catch {
+      return;
+    }
+    if (!saved || !isFinite(saved.left) || !isFinite(saved.top)) return;
+    const p = clampToViewport(saved.left, saved.top);
+    applyPosition(p.left, p.top);
+  }
+
+  function enableDrag() {
+    restorePosition();
+
+    let pressTimer = null;
+    let dragging = false;
+    let pointerId = null;
+    let startX = 0;
+    let startY = 0;
+    let originLeft = 0;
+    let originTop = 0;
+
+    button.addEventListener('pointerdown', (e) => {
+      if (e.isPrimary === false || (e.pointerType === 'mouse' && e.button !== 0)) return;
+      pointerId = e.pointerId;
+      startX = e.clientX;
+      startY = e.clientY;
+      pressTimer = setTimeout(() => {
+        pressTimer = null;
+        const rect = widgetElement.getBoundingClientRect();
+        originLeft = rect.left;
+        originTop = rect.top;
+        dragging = true;
+        // A lift is never a click, even if the pointer never moves.
+        suppressNextClick = true;
+        widgetElement.classList.add('callsafe-dragging');
+        try { button.setPointerCapture(pointerId); } catch { /* capture unsupported */ }
+        if (navigator.vibrate) navigator.vibrate(10);
+      }, LONG_PRESS_MS);
+    });
+
+    button.addEventListener('pointermove', (e) => {
+      if (e.pointerId !== pointerId) return;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+
+      if (pressTimer) {
+        if (Math.abs(dx) > MOVE_CANCEL_PX || Math.abs(dy) > MOVE_CANCEL_PX) {
+          clearTimeout(pressTimer);
+          pressTimer = null;
+          pointerId = null;
+        }
+        return;
+      }
+      if (!dragging) return;
+
+      e.preventDefault();
+      const p = clampToViewport(originLeft + dx, originTop + dy);
+      applyPosition(p.left, p.top);
+    });
+
+    function endDrag(e) {
+      if (pointerId !== null && e.pointerId !== pointerId) return;
+      if (pressTimer) {
+        clearTimeout(pressTimer);
+        pressTimer = null;
+      }
+      if (dragging) {
+        dragging = false;
+        widgetElement.classList.remove('callsafe-dragging');
+        try { button.releasePointerCapture(pointerId); } catch { /* already released */ }
+        savePosition();
+      }
+      pointerId = null;
+    }
+
+    button.addEventListener('pointerup', endDrag);
+    button.addEventListener('pointercancel', endDrag);
+
+    // The lift replaces the platform long-press menu.
+    button.addEventListener('contextmenu', (e) => {
+      if (dragging) e.preventDefault();
+    });
+
+    // A dropped widget must stay on screen when the viewport changes.
+    window.addEventListener('resize', () => {
+      if (!hasCustomPosition) return;
+      const rect = widgetElement.getBoundingClientRect();
+      const p = clampToViewport(rect.left, rect.top);
+      applyPosition(p.left, p.top);
+    });
+  }
+
+  function mount() {
+    if (config.position === 'inline' && script.parentNode) {
+      script.parentNode.insertBefore(widgetElement, script.nextSibling);
+    } else if (document.body) {
+      document.body.appendChild(widgetElement);
+    } else {
+      setTimeout(mount, 100);
+      return;
+    }
+    // Position restore measures the element, so it has to run once mounted.
+    if (draggable) enableDrag();
+  }
+
+  mount();
 
   // ---- Lazy-load the calling core on demand (singleton) --------------------
 
@@ -202,6 +353,10 @@ function initStub() {
 
   const textEl = button.querySelector('.callsafe-text');
   button.addEventListener('click', () => {
+    if (suppressNextClick) {
+      suppressNextClick = false;
+      return;
+    }
     if (widget) {
       widget.handleButtonClick();
       return;
